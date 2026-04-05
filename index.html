@@ -1469,7 +1469,7 @@
             );
         };
 
-        const OrderStatusTab = ({ orders, inventory, setInventory, downloadExcel, openModal, setProductHistory, addresses, addressMapping, shippingOverrides, specialCustomers, quickShipping, cardPayments }) => {
+        const OrderStatusTab = ({ orders, setOrders, inventory, setInventory, downloadExcel, openModal, setProductHistory, productHistory, addresses, addressMapping, shippingOverrides, specialCustomers, quickShipping, cardPayments }) => {
             const [searchTerm, setSearchTerm] = useState('');
             const [selectedProduct, setSelectedProduct] = useState(null);
             const [lastAddedId, setLastAddedId] = useState(null);
@@ -1519,6 +1519,10 @@
             }, [orders, cardPayments, getCalculatedShipping]);
 
             const updateInventory = (id, field, val) => {
+                const itemToUpdate = inventory.find(i => i.id === id);
+                if (!itemToUpdate) return;
+                const oldName = itemToUpdate.name;
+
                 setInventory(prev => prev.map(item => {
                     if (item.id === id) {
                         const next = { ...item, [field]: val };
@@ -1527,6 +1531,23 @@
                     }
                     return item;
                 }));
+
+                if (field === 'name' && oldName !== val && oldName.trim() !== '') {
+                    setOrders(prevOrders => prevOrders.map(o => {
+                        if (o.product === oldName) {
+                            return { ...o, product: val };
+                        }
+                        return o;
+                    }));
+                    
+                    setProductHistory(prevHist => {
+                        const nextHist = { ...prevHist };
+                        if (nextHist[oldName] !== undefined) {
+                            nextHist[val] = nextHist[oldName];
+                        }
+                        return nextHist;
+                    });
+                }
             };
 
             const addInventoryRow = (afterId = null) => {
@@ -1663,7 +1684,6 @@
 
             const handleCopyBuyers = () => {
                 if (!selectedProductDetails || selectedProductDetails.length === 0) return;
-                // 🚨 쉼표 대신 눈에 띄면서 글자수를 적게 차지하는 슬래시( / ) 기호로 구분자를 변경했습니다.
                 const textToCopy = `[ ${selectedProduct} ] ` + selectedProductDetails.map(d => d.qty > 1 ? `${d.nick}(${d.qty})` : d.nick).join(' / ');
                 
                 const textArea = document.createElement("textarea");
