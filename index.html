@@ -544,7 +544,6 @@
             const formatTimeOnly = useCallback((val) => { 
                 if (!val) return ''; 
                 const strVal = String(val);
-                // 🚨 애플 기기(아이폰/사파리)에서도 시간 인식이 고장나지 않도록 포맷 안전 처리
                 const dt = new Date(strVal.replace(/-/g, '/'));
                 if (!isNaN(dt) && strVal.length > 8) {
                     return dt.toLocaleTimeString('ko-KR', {hour12: false, hour:'2-digit', minute:'2-digit'});
@@ -667,7 +666,6 @@
                 const groups = {};
                 orders.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); });
                 
-                // 💡 주문서 내 아이템을 상품명 내림차순(15번 -> 1번)으로 정렬 (숫자 인식)
                 Object.values(groups).forEach(items => {
                     items.sort((a, b) => String(b.product || '').localeCompare(String(a.product || ''), 'ko', { numeric: true }));
                 });
@@ -768,6 +766,8 @@
                 return results;
             }, [manualNick, orders, addresses, depositorNames, findAddress]);
 
+            const chatScrollRef = useRef(null);
+
             const fetchData = async () => {
                 if (!googleScriptUrl) { setConnectionStatus({ code: 'error_config', msg: '설정필요' }); return; }
                 try {
@@ -788,19 +788,7 @@
                             const safeTime = String(chat.time || '').replace(/[^0-9]/g, '');
                             const baseKey = `c_${safeTime}_${safeNick}_${safeContent}`;
                             counts[baseKey] = (counts[baseKey] || 0) + 1;
-                            // 🚨 데이터가 들어온 엑셀 원본 고유 순서표(idx)를 함께 저장
                             return { ...chat, id: `${baseKey}_${counts[baseKey]}`, nickname: String(chat.nickname).replace(/@/g, '').trim(), _originalIndex: idx };
-                        });
-                        
-                        // 🚨 [핵심 해결] 엑셀 순서를 믿지 않고, 오직 '시간(초 단위)'를 기준으로 무조건 내림차순(최신이 맨 위) 강제 정렬!
-                        incoming.sort((a, b) => {
-                            const timeA = new Date(String(a.time).replace(/-/g, '/')).getTime();
-                            const timeB = new Date(String(b.time).replace(/-/g, '/')).getTime();
-                            if (!isNaN(timeA) && !isNaN(timeB)) {
-                                if (timeA === timeB) return b._originalIndex - a._originalIndex; // 1초 내에 달린 동일한 시간이면 엑셀 아랫줄을 더 최신으로 간주
-                                return timeB - timeA; // 무조건 시간이 더 큰(최신) 데이터가 위로 오도록 정렬
-                            }
-                            return b._originalIndex - a._originalIndex;
                         });
                         
                         setChats(incoming);
@@ -825,6 +813,12 @@
                 const interval = setInterval(fetchData, 2000); 
                 return () => clearInterval(interval); 
             }, [googleScriptUrl, customerSheetId]);
+
+            useEffect(() => {
+                if (chatScrollRef.current) {
+                    chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+                }
+            }, [chats.length]);
 
             useEffect(() => {
                 const timer = setTimeout(() => {
@@ -915,7 +909,7 @@
                 return () => clearTimeout(timer);
             }, [allDeposits, orders, matchedDeposits, depositorNames, deletedDepositIds, getCalculatedShipping, findAddress, ignoredAutoMatch]);
 
-            const autoSaveToGoogleSheet = async () => { 
+            const autoSaveToGoogleSheet = useCallback(async () => { 
                 if (!googleScriptUrl || Object.keys(orders).length === 0) return; 
                 setIsSaving(true); 
                 const saveList = orders.filter(o=>!o.isCancelled).map(o => { 
@@ -934,12 +928,19 @@
                         headers: { 'Content-Type': 'text/plain;charset=utf-8' }
                     }); 
                 } catch(e) { } finally { setIsSaving(false); } 
-            };
-            
+            }, [orders, cardPayments, getCalculatedShipping, googleScriptUrl, findAddress, customerSheetId]);
+
+            const autoSaveRef = useRef();
+            useEffect(() => {
+                autoSaveRef.current = autoSaveToGoogleSheet;
+            }, [autoSaveToGoogleSheet]);
+
             useEffect(() => { 
-                const saveInterval = setInterval(autoSaveToGoogleSheet, 60000); 
+                const saveInterval = setInterval(() => {
+                    if (autoSaveRef.current) autoSaveRef.current();
+                }, 60000); 
                 return () => clearInterval(saveInterval); 
-            }, [orders, cardPayments, getCalculatedShipping, googleScriptUrl, findAddress, customerSheetId]); 
+            }, []); 
 
             useEffect(() => {
                 if (lastAddedOrderId) {
@@ -1142,7 +1143,6 @@
                 const invItem = Array.isArray(inv) ? inv.find(i => String(i.name).trim() === cContent) : null;
                 
                 let price = 0;
-                // 🚨 재고 등록 방어를 위한 금액 입력 여부 확인
                 const isCustomPriceValid = customPrice !== null && customPrice !== '';
                 
                 if (isCustomPriceValid) {
@@ -1151,8 +1151,6 @@
                     price = invItem ? Number(invItem.price) : (hist[cContent] || 0);
                 }
 
-                // 🚨 [재고 등록 수정] 단순히 댓글을 클릭했을 때(단가가 없는 상태)는 재고에 무작위로 등록되지 않도록 방어.
-                // 수동으로 금액을 입력했거나(isCustomPriceValid), 기존 재고/내역에 있어 단가가 1원 이상일 때만 등록!
                 if (cContent !== '' && (isCustomPriceValid || price > 0)) {
                     const priceToSave = price || 0;
                     setInventory(prevInv => {
@@ -1344,7 +1342,7 @@
                              </div>
                              {keywords.size > 0 && (<div className="flex gap-1 overflow-x-auto scrollbar-hide py-0.5">{Array.from(keywords).map(k => (<span key={k} onClick={() => handleRemoveKeyword(k)} className="bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 rounded-full text-[10px] cursor-pointer whitespace-nowrap hover:bg-red-100 hover:text-red-600 transition-colors flex items-center gap-0.5">{k} <Icon name="x" weight="bold" size={8}/></span>))}</div>)}
                         </div>
-                        <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5 bg-gray-100 dark:bg-slate-900">
+                        <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-1.5 space-y-0.5 bg-gray-100 dark:bg-slate-900">
                             {filteredChats.map(c => {
                                 const safeContent = String(c.content || '');
                                 const isMatched = Array.from(keywords).some(k => safeContent.includes(k));
@@ -1375,9 +1373,11 @@
                                     <button onClick={handleCloseAllAndRecord} className="bg-purple-600 hover:bg-purple-700 text-white px-2 py-1 rounded text-xs font-bold flex items-center gap-1 shadow-sm transition-colors animate-pulse"><Icon name="check-circle" weight="fill"/> 전체 마감 (단골/노쇼)</button>
                                     <button onClick={handleLoadOrders} className="bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded text-xs font-bold flex items-center gap-1 shadow-sm transition-colors"><Icon name="cloud-arrow-down" weight="fill"/> 불러오기</button>
                                     <button onClick={resetAllStatus} className="bg-rose-500 hover:bg-rose-600 text-white px-2 py-1 rounded text-xs font-bold flex items-center gap-1 shadow-sm transition-colors"><Icon name="trash" weight="fill"/> 초기화</button>
-                                    <div className={`px-2 py-1 rounded text-xs font-bold flex items-center gap-1 shadow-inner ${isSaving ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400' : 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'}`}>
-                                        {isSaving ? <Icon name="spinner" className="animate-spin" /> : <Icon name="cloud-check" weight="fill" />} {isSaving ? "저장중" : "자동저장"}
-                                    </div>
+                                    
+                                    {/* 🚨 수동 저장 가능한 강제 클릭 버튼으로 변경 */}
+                                    <button onClick={() => { if(autoSaveRef.current) autoSaveRef.current(); }} disabled={isSaving} className={`px-2 py-1 rounded text-xs font-bold flex items-center gap-1 shadow-inner transition-colors ${isSaving ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 cursor-not-allowed' : 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-900/50 cursor-pointer'}`}>
+                                        {isSaving ? <Icon name="spinner" className="animate-spin" /> : <Icon name="cloud-check" weight="fill" />} {isSaving ? "저장중..." : "시트 저장"}
+                                    </button>
                                 </div>
                             </div>
                             <div className="flex gap-2 items-stretch w-full">
@@ -2466,7 +2466,18 @@
                 }
             }, []); 
             
-            const EMOJI_LIST = ["💙", "💖", "💛", "💚", "💜", "🤍", "❤️", "⭐", "🌟", "✨", "🌸", "🌼", "🍀", "🌹", "🌻", "✅", "🎁", "📢", "🌈", "🔥", "💎", "👑", "🎀", "🍎", "🍓", "🍒", "🍑", "🍋", "🐶", "🐱", "🐰", "🐻", "🐼", "🐾", "🎈", "🎉", "🛍️", "🛒", "💰", "💸", "💳", "🧾"];
+            const EMOJI_LIST = [
+                "💙", "💖", "💛", "💚", "💜", "🤍", "❤️", "🖤", "🤎", "💕", "💞", "⭐", "🌟", "✨", "🔥", "💥", "💯",
+                "🎠", "🐎", "🐴", "🦢", "🐆", "🐍", "🐊", "🐢", "🦓", "🦄", "🦋",
+                "💎", "💍", "👑", "💄", "💅", "🧴", "🎀", "🎁", "🛍️", "🛒", "🏷️", "📦", "🎫",
+                "👜", "👝", "👛", "🎒", "💼", "👠", "👡", "👢", "👟", "🩰", "👞",
+                "👗", "🥻", "🧥", "👕", "👖", "👔", "🧣", "🧤", "🧦", "🧢", "👒", "🎩", "⌚", "🕶️", "👓",
+                "🐶", "🐩", "🐱", "🐈", "🐰", "🐇", "🐻", "🧸", "🐼", "🐨", "🦊", "🐯", "🦁", "🐮", "🐷", "🐸", "🐵", "🐧", "🐥", "🦉", "🐾",
+                "🌸", "🌼", "🍀", "🌹", "🌻", "🌷", "🌿", "🍁", "🌴", "🌵",
+                "🍎", "🍓", "🍒", "🍑", "🍋", "🍊", "🍉", "🍇", "🍍", "🥑", "🥕",
+                "🍔", "🍟", "🍕", "🍰", "🍩", "🍪", "🍫", "🍬", "🍭", "☕", "🧋", "🧃", "🍷", "🥂", "🍻",
+                "✅", "✔️", "❌", "❗", "❓", "📢", "🔔", "🌈", "💰", "💸", "💳", "🧾", "🪙", "🚗", "🚚", "✈️", "📱", "💻", "🎉", "🎈"
+            ];
 
             const resetAllStatus = () => {
                 openModal("주문서, 채팅, 입금매칭 내역만 초기화됩니다.\n(주소록, VIP명단, 재고, 상품단가는 유지됩니다)", 'confirm', () => {
