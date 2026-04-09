@@ -544,6 +544,7 @@
             const formatTimeOnly = useCallback((val) => { 
                 if (!val) return ''; 
                 const strVal = String(val);
+                // 🚨 애플 기기(아이폰/사파리)에서도 시간 인식이 고장나지 않도록 포맷 안전 처리
                 const dt = new Date(strVal.replace(/-/g, '/'));
                 if (!isNaN(dt) && strVal.length > 8) {
                     return dt.toLocaleTimeString('ko-KR', {hour12: false, hour:'2-digit', minute:'2-digit'});
@@ -730,9 +731,8 @@
                         if (aNick.startsWith(term) && !bNick.startsWith(term)) return -1;
                         if (!aNick.startsWith(term) && bNick.startsWith(term)) return 1;
                     }
-                    // 🚨 [핵심 버그 수정 2] 새 주문을 추가할 때마다 고객 블록이 맨 위로 튀어오르는 화면 출렁임 방지
-                    // 고객의 '첫 주문' 시간을 기준으로 위치를 딱 고정시켰습니다.
-                    return Math.min(...b[1].map(o=>o.id)) - Math.min(...a[1].map(o=>o.id));
+                    // 🚨 가장 최근에 추가된 주문(가장 큰 id)이 있는 고객이 맨 위로 올라오도록 최신순 정렬 복구
+                    return Math.max(...b[1].map(o=>o.id)) - Math.max(...a[1].map(o=>o.id));
                 });
             }, [orders, orderSearch, filterStatus, cardPayments, getCalculatedShipping, findAddress, depositorNames]);
 
@@ -1380,7 +1380,7 @@
                              </div>
                              {keywords.size > 0 && (<div className="flex gap-1 overflow-x-auto scrollbar-hide py-0.5">{Array.from(keywords).map(k => (<span key={k} onClick={() => handleRemoveKeyword(k)} className="bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 rounded-full text-[10px] cursor-pointer whitespace-nowrap hover:bg-red-100 hover:text-red-600 transition-colors flex items-center gap-0.5">{k} <Icon name="x" weight="bold" size={8}/></span>))}</div>)}
                         </div>
-                        <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-1.5 space-y-0.5 bg-gray-100 dark:bg-slate-900">
+                        <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5 bg-gray-100 dark:bg-slate-900">
                             {filteredChats.map(c => {
                                 const safeContent = String(c.content || '');
                                 const isMatched = Array.from(keywords).some(k => safeContent.includes(k));
