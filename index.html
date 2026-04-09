@@ -671,8 +671,10 @@
                 const groups = {};
                 orders.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); });
                 
+                // 🚨 [핵심 버그 수정 1] 실시간 상품명 정렬로 인해 입력 도중 포커스가 튕기고 줄이 섞이는 문제 해결!
+                // 라이브 입력 창에서는 추가된 순서(id) 그대로 고정시키고, 엑셀/인쇄 탭으로 넘어갈 때만 정렬되도록 변경했습니다.
                 Object.values(groups).forEach(items => {
-                    items.sort((a, b) => String(b.product || '').localeCompare(String(a.product || ''), 'ko', { numeric: true }));
+                    items.sort((a, b) => a.id - b.id);
                 });
 
                 let entries = Object.entries(groups).filter(([nick, items]) => {
@@ -728,7 +730,9 @@
                         if (aNick.startsWith(term) && !bNick.startsWith(term)) return -1;
                         if (!aNick.startsWith(term) && bNick.startsWith(term)) return 1;
                     }
-                    return Math.max(...b[1].map(o=>o.id)) - Math.max(...a[1].map(o=>o.id));
+                    // 🚨 [핵심 버그 수정 2] 새 주문을 추가할 때마다 고객 블록이 맨 위로 튀어오르는 화면 출렁임 방지
+                    // 고객의 '첫 주문' 시간을 기준으로 위치를 딱 고정시켰습니다.
+                    return Math.min(...b[1].map(o=>o.id)) - Math.min(...a[1].map(o=>o.id));
                 });
             }, [orders, orderSearch, filterStatus, cardPayments, getCalculatedShipping, findAddress, depositorNames]);
 
@@ -841,11 +845,8 @@
                 return () => clearInterval(interval); 
             }, [googleScriptUrl, customerSheetId]);
 
-            useEffect(() => {
-                if (chatScrollRef.current) {
-                    chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
-                }
-            }, [chats]); // 🚨 새 댓글이 쌓일 때마다 항상 스크롤이 부드럽게 맨 밑바닥에 고정되도록 수정
+            // 🚨 [스크롤 튐 현상 해결] 새 댓글이 올 때마다 강제로 맨 아래로 끌어내리던 자동 스크롤 기능을 완전히 삭제했습니다.
+            // 이제 화면이 멋대로 움직이지 않으며, 사장님이 직접 스크롤을 내리면서 편하게 클릭하실 수 있습니다.
 
             useEffect(() => {
                 const timer = setTimeout(() => {
