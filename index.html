@@ -619,6 +619,11 @@
                         const getScore = (val) => { 
                             if (!val) return 10; 
                             if (val === targetNick || val === targetReal || val === addressRealName) return 0; 
+                            
+                            // 🚨 [새로 추가된 로직] 닉네임과 실명이 합쳐진 경우 (예: 깔로김선정, 김선정깔로) 완벽 일치로 간주하여 점수 0점 부여
+                            if ((targetNick && targetReal && (val === targetNick + targetReal || val === targetReal + targetNick)) || 
+                                (targetNick && addressRealName && (val === targetNick + addressRealName || val === addressRealName + targetNick))) return 0;
+                                
                             if ((targetNick && val.startsWith(targetNick)) || (targetReal && val.startsWith(targetReal)) || (addressRealName && val.startsWith(addressRealName))) return 1; 
                             if ((targetNick && val.includes(targetNick)) || (targetReal && val.includes(targetReal)) || (addressRealName && val.includes(addressRealName))) return 2; 
                             return 10; 
@@ -781,14 +786,36 @@
                     if (data.error) { setConnectionStatus({ code: 'error_auth', msg: '시트오류(ID확인)' }); return; }
                     if (data.chats) {
                         const rawChats = data.chats.length > 5000 ? data.chats.slice(-5000) : data.chats;
-                        const counts = {};
-                        const incoming = rawChats.map((chat, idx) => {
+                        const seen = new Set();
+                        const incoming = [];
+                        
+                        rawChats.forEach((chat, idx) => {
                             const safeNick = String(chat.nickname || '').replace(/\s/g, '');
                             const safeContent = String(chat.content || '').replace(/\s/g, '').substring(0, 20);
                             const safeTime = String(chat.time || '').replace(/[^0-9]/g, '');
-                            const baseKey = `c_${safeTime}_${safeNick}_${safeContent}`;
-                            counts[baseKey] = (counts[baseKey] || 0) + 1;
-                            return { ...chat, id: `${baseKey}_${counts[baseKey]}`, nickname: String(chat.nickname).replace(/@/g, '').trim(), _originalIndex: idx };
+                            // 🚨 [핵심 버그 수정 1] 파이썬 수집기가 인터넷 문제로 똑같은 댓글을 중복해서 보내더라도 화면에는 무조건 1개만 뜨도록 철벽 방어!
+                            const uniqueKey = `c_${safeTime}_${safeNick}_${safeContent}`;
+                            
+                            if (!seen.has(uniqueKey)) {
+                                seen.add(uniqueKey);
+                                incoming.push({
+                                    ...chat,
+                                    id: uniqueKey,
+                                    nickname: String(chat.nickname).replace(/@/g, '').trim(),
+                                    _originalIndex: idx
+                                });
+                            }
+                        });
+                        
+                        // 🚨 [핵심 버그 수정 2] 오름차순(a - b) 정렬로 변경하여 새 댓글이 화면 '아래'로 계속 쌓이도록 완벽 복구
+                        incoming.sort((a, b) => {
+                            const timeA = new Date(String(a.time).replace(/-/g, '/')).getTime();
+                            const timeB = new Date(String(b.time).replace(/-/g, '/')).getTime();
+                            if (!isNaN(timeA) && !isNaN(timeB)) {
+                                if (timeA === timeB) return a._originalIndex - b._originalIndex; 
+                                return timeA - timeB; 
+                            }
+                            return a._originalIndex - b._originalIndex;
                         });
                         
                         setChats(incoming);
@@ -818,7 +845,7 @@
                 if (chatScrollRef.current) {
                     chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
                 }
-            }, [chats.length]);
+            }, [chats]); // 🚨 새 댓글이 쌓일 때마다 항상 스크롤이 부드럽게 맨 밑바닥에 고정되도록 수정
 
             useEffect(() => {
                 const timer = setTimeout(() => {
@@ -862,9 +889,19 @@
                         let exactMatches = [];
                         Object.keys(customerBalances).forEach(nick => {
                             const matchData = precalcCustomerMatches[nick];
-                            if ((matchData.savedRealName && matchData.savedRealName === depositNameClean) || 
-                                (matchData.addressRealName && matchData.addressRealName === depositNameClean) || 
-                                (matchData.nickClean && matchData.nickClean === depositNameClean)) {
+                            const n = matchData.nickClean;
+                            const r1 = matchData.savedRealName;
+                            const r2 = matchData.addressRealName;
+                            const dep = depositNameClean;
+
+                            // 🚨 [새로 추가된 로직] 닉네임과 실명이 합쳐진 경우 (예: 깔로김선정, 김선정깔로) 완벽 일치로 간주하여 매칭
+                            if (
+                                (r1 && r1 === dep) || 
+                                (r2 && r2 === dep) || 
+                                (n && n === dep) ||
+                                (n && r1 && (dep === n + r1 || dep === r1 + n)) ||
+                                (n && r2 && (dep === n + r2 || dep === r2 + n))
+                            ) {
                                 exactMatches.push(nick);
                             }
                         });
