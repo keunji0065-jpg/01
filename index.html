@@ -1380,16 +1380,23 @@
                              </div>
                              {keywords.size > 0 && (<div className="flex gap-1 overflow-x-auto scrollbar-hide py-0.5">{Array.from(keywords).map(k => (<span key={k} onClick={() => handleRemoveKeyword(k)} className="bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 rounded-full text-[10px] cursor-pointer whitespace-nowrap hover:bg-red-100 hover:text-red-600 transition-colors flex items-center gap-0.5">{k} <Icon name="x" weight="bold" size={8}/></span>))}</div>)}
                         </div>
-                        <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5 bg-gray-100 dark:bg-slate-900">
+                        <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-1.5 space-y-0.5 bg-gray-100 dark:bg-slate-900">
                             {filteredChats.map(c => {
                                 const safeContent = String(c.content || '');
                                 const isMatched = Array.from(keywords).some(k => safeContent.includes(k));
                                 const isProcessed = clickedChats?.has(c.id);
                                 const chatClasses = isProcessed ? 'opacity-80 bg-gray-100 dark:bg-slate-800/80 border-transparent' : (isMatched ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-300 dark:border-blue-700 ring-1 ring-blue-300 dark:ring-blue-700 shadow-sm' : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700');
                                 return (
-                                    <div key={c.id} onClick={() => handleChatClick(c)} className={`py-1 px-1.5 border rounded cursor-pointer transition-all flex flex-col gap-0.5 ${chatClasses}`}>
-                                        <div className="flex justify-between items-center text-xs font-bold"><span className="flex items-center break-all">{c.nickname} {renderSpecialBadge(c.nickname)}</span><span className="text-[10px] text-gray-400 shrink-0">{formatTimeOnly(c.time)}</span></div>
-                                        <div className={`text-sm leading-tight break-all ${isProcessed ? 'text-gray-500 dark:text-slate-400' : 'dark:text-slate-300'}`}>{renderChatContent(safeContent, keywords)}</div>
+                                    <div key={c.id} onClick={() => handleChatClick(c)} className={`py-1.5 px-2 border rounded cursor-pointer transition-all flex flex-col gap-1 ${chatClasses}`}>
+                                        <div className="flex justify-between items-start">
+                                            <span className={`flex items-center gap-1 break-all text-[14px] font-bold ${isProcessed ? 'text-gray-400 dark:text-slate-500' : 'text-indigo-700 dark:text-indigo-300'}`}>
+                                                {c.nickname} {renderSpecialBadge(c.nickname)}
+                                            </span>
+                                            <span className="text-[10px] text-gray-400 dark:text-slate-500 shrink-0 mt-0.5">{formatTimeOnly(c.time)}</span>
+                                        </div>
+                                        <div className={`text-sm font-medium leading-snug break-all pl-1 ${isProcessed ? 'text-gray-400 dark:text-slate-500' : 'text-gray-900 dark:text-slate-100'}`}>
+                                            {renderChatContent(safeContent, keywords)}
+                                        </div>
                                     </div>
                                 );
                             })}
@@ -1412,7 +1419,6 @@
                                     <button onClick={handleLoadOrders} className="bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded text-xs font-bold flex items-center gap-1 shadow-sm transition-colors"><Icon name="cloud-arrow-down" weight="fill"/> 불러오기</button>
                                     <button onClick={resetAllStatus} className="bg-rose-500 hover:bg-rose-600 text-white px-2 py-1 rounded text-xs font-bold flex items-center gap-1 shadow-sm transition-colors"><Icon name="trash" weight="fill"/> 초기화</button>
                                     
-                                    {/* 🚨 수동 저장 가능한 강제 클릭 버튼으로 변경 */}
                                     <button onClick={() => { if(autoSaveRef.current) autoSaveRef.current(); }} disabled={isSaving} className={`px-2 py-1 rounded text-xs font-bold flex items-center gap-1 shadow-inner transition-colors ${isSaving ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 cursor-not-allowed' : 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-900/50 cursor-pointer'}`}>
                                         {isSaving ? <Icon name="spinner" className="animate-spin" /> : <Icon name="cloud-check" weight="fill" />} {isSaving ? "저장중..." : "시트 저장"}
                                     </button>
