@@ -1173,7 +1173,81 @@
                 }
             }, [orders, findAddress, openModal]);
 
-            const addOrderLogic = useCallback((nick, content, qty = 1, force = false, afterId = null, customPrice = null, markAsModified = false) => {
+            const clickedChatsRef = useRef(clickedChats);
+            useEffect(() => { clickedChatsRef.current = clickedChats; }, [clickedChats]);
+
+            // 🚨 [자동 주문 수집 로직] 수량 인식 기능 추가 업그레이드!
+            useEffect(() => {
+                if (!inventoryRef.current || inventoryRef.current.length === 0 || chats.length === 0) return;
+
+                let addedAny = false;
+                const newIds = [];
+
+                // 긴 상품명부터 먼저 매칭되도록 정렬 (예: "A원피스 블랙"이 "A원피스"보다 먼저 매칭되도록)
+                const sortedInv = [...inventoryRef.current].sort((a, b) => String(b.name).length - String(a.name).length);
+
+                chats.forEach(chat => {
+                    if (clickedChatsRef.current.has(chat.id)) return; // 이미 클릭했거나 자동 처리된 댓글 무시
+
+                    const contentStr = String(chat.content || '').trim();
+                    if (!contentStr) return;
+
+                    let matchedItem = null;
+                    let parsedQty = 1;
+
+                    for (const invMatch of sortedInv) {
+                        const prodName = String(invMatch.name).trim();
+                        if (!prodName) continue;
+
+                        // 1. 완벽히 일치하는 경우 (기본 1개)
+                        if (contentStr === prodName) {
+                            matchedItem = invMatch;
+                            parsedQty = 1;
+                            break;
+                        }
+                        
+                        // 2. 상품명 뒤에 띄어쓰기 유무 상관없이 수량이 붙은 경우 (예: "A원피스 2", "A원피스 3개", "A원피스 2장")
+                        if (contentStr.startsWith(prodName)) {
+                            const remainder = contentStr.substring(prodName.length).trim();
+                            // 숫자 하나와 그 뒤에 올 수 있는 단위들(개, 장, 벌, 세트 등)을 캐치해냅니다.
+                            const qtyMatch = remainder.match(/^(\d+)\s*(개|장|벌|세트|켤레|피스)?$/);
+                            if (qtyMatch) {
+                                let num = parseInt(qtyMatch[1], 10);
+                                let unit = qtyMatch[2];
+                                
+                                // 🚨 [사이즈/수량 자동 판별 방어 로직]
+                                // '개', '장' 등의 명확한 단위가 없는데 숫자가 10 이상으로 크다면 (예: 44, 55, 66, 230 등)
+                                // 이건 구매 수량이 아니라 '사이즈'일 확률이 높으므로 수량으로 강제 뻥튀기하지 않고 패스합니다!
+                                if (!unit && num >= 10) {
+                                    continue;
+                                }
+
+                                matchedItem = invMatch;
+                                parsedQty = num;
+                                if (parsedQty <= 0) parsedQty = 1; // 혹시 0개라고 적었어도 최소 1개로 처리
+                                break;
+                            }
+                        }
+                    }
+
+                    if (matchedItem) {
+                        // isAuto = true 로 호출하여 UI 깜빡임 없이 조용히 주문서에 추가
+                        addOrderLogic(chat.nickname, matchedItem.name, parsedQty, false, null, matchedItem.price, false, true); 
+                        newIds.push(chat.id);
+                        addedAny = true;
+                    }
+                });
+
+                if (addedAny) {
+                    setClickedChats(prev => {
+                        const next = new Set(prev);
+                        newIds.forEach(id => next.add(id));
+                        return next;
+                    });
+                }
+            }, [chats, addOrderLogic]);
+
+            const addOrderLogic = useCallback((nick, content, qty = 1, force = false, afterId = null, customPrice = null, markAsModified = false, isAuto = false) => {
                 const cNick = String(nick).replace(/@/g, '').trim();
                 const cContent = String(content || '').trim();
                 const inv = inventoryRef.current;
@@ -1204,10 +1278,13 @@
                     }
                 }
 
-                setCheckedOrders(prev => { const n = new Set(prev); n.delete(cNick); return n; });
-                setSelectedNick(cNick);
-                setOrderSearch('');
-                const newOrder = { id: Date.now(), customer: cNick, product: cContent, quantity: qty, price: Number(price) * qty, deposit: 0, isCancelled: false, isUnmodified: !markAsModified };
+                if (!isAuto) {
+                    setCheckedOrders(prev => { const n = new Set(prev); n.delete(cNick); return n; });
+                    setSelectedNick(cNick);
+                    setOrderSearch('');
+                }
+                
+                const newOrder = { id: Date.now() + Math.random(), customer: cNick, product: cContent, quantity: qty, price: Number(price) * qty, deposit: 0, isCancelled: false, isUnmodified: !markAsModified };
                 setOrders(prev => {
                     if (!afterId && !force && cContent !== '') {
                         const existIdx = prev.findIndex(o => o.customer === cNick && o.product === cContent && !o.isCancelled);
