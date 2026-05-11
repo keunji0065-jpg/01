@@ -1393,7 +1393,7 @@
                         </div>
                     </div>
 
-                    <div className="w-[33%] bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg flex flex-col overflow-hidden shadow-sm min-w-[330px]">
+                    <div className="w-[43%] bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg flex flex-col overflow-hidden shadow-sm min-w-[400px]">
                         <div className="grid grid-cols-5 gap-1 p-2 bg-indigo-50 dark:bg-slate-700/50 border-b dark:border-slate-700 text-center text-[10px]">
                             {[{id:'all', label:'총매출', val:dashboardStats.totalSales}, {id:'paid', label:'입금액', val:dashboardStats.totalDeposit}, {id:'unpaid', label:'미수금', val:dashboardStats.totalUnpaid}, {id:'card', label:'카드예정', val:dashboardStats.totalCardExpected}, {id:'no-address', label:'주소미입력', val:dashboardStats.missingAddressCount, onClick:handleNoAddressClick}].map(s => (
                                 <div key={s.id} onClick={s.onClick || (()=>setFilterStatus(s.id))} className={`bg-white dark:bg-slate-800 p-1 rounded border-2 cursor-pointer shadow-sm transition-colors ${filterStatus===s.id ? 'border-indigo-500' : 'border-transparent hover:border-indigo-200 dark:hover:border-indigo-800'}`}><div>{s.label}</div><div className={`font-bold text-[12px] ${s.id==='paid'?'text-green-600':s.id==='unpaid'?'text-red-500':s.id==='card'?'text-purple-600':s.id==='no-address'?'text-orange-500':'text-indigo-700 dark:text-indigo-400'}`}>{s.val.toLocaleString()}{s.id==='no-address'?'명':''}</div></div>
@@ -1523,11 +1523,14 @@
                         </div>
                     </div>
 
-                    <div className="w-[26%] flex flex-col bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg overflow-hidden shadow-sm min-w-[260px]">
+                    <div className="w-[16%] flex flex-col bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg overflow-hidden shadow-sm min-w-[160px]">
                         <div className="p-2 bg-blue-50 dark:bg-slate-700/50 border-b dark:border-slate-700 flex flex-col gap-2 shrink-0">
                             <div className="font-bold text-blue-700 dark:text-blue-400 flex items-center justify-between">
-                                <span className="flex items-center gap-1"><Icon name="package" weight="fill"/> 실시간 재고 (확장형)</span>
-                                <span className="text-xs text-gray-500 dark:text-slate-400 mr-1">{inventory.length}종</span>
+                                <span className="flex items-center gap-1"><Icon name="package" weight="fill"/> 실시간 재고</span>
+                                <div className="flex items-center gap-1.5">
+                                    <span className="text-xs text-gray-500 dark:text-slate-400">{inventory.length}종</span>
+                                    <button onClick={() => openModal("재고 목록을 모두 비우시겠습니까?\n(주문 내역은 유지됩니다)", "confirm", () => setInventory([]))} className="bg-red-500 hover:bg-red-600 text-white text-[9px] px-1.5 py-0.5 rounded shadow-sm transition-colors flex items-center gap-0.5" title="재고 비우기"><Icon name="trash" weight="bold"/></button>
+                                </div>
                             </div>
                             <div className="relative"><Icon name="magnifying-glass" className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-400 text-[10px]"/><input type="text" placeholder="상품명 검색" value={currentSearchTerm} onChange={e => setCurrentSearchTerm(e.target.value)} className="w-full text-[10px] pl-6 pr-6 py-1.5 border dark:border-slate-600 rounded focus:ring-1 focus:ring-blue-500 outline-none bg-white dark:bg-slate-800" />{currentSearchTerm && <button onClick={()=>setCurrentSearchTerm('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-slate-200"><Icon name="x-circle" weight="fill" size={12}/></button>}</div>
                         </div>
