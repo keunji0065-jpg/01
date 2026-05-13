@@ -1838,11 +1838,15 @@
                     const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0); const grandTotal = productTotal + (activeItems.length > 0 ? currentShipping : 0);
                     const depositTotal = items.reduce((sum, i) => sum + (i.deposit || 0), 0); const balance = grandTotal - depositTotal;
                     if (balance > 0) { 
-                        const depositStatus = depositTotal > 0 ? `부분입금(${depositTotal.toLocaleString()}원)` : '미입금';
-                        activeItems.forEach(item => {
-                            const unitPrice = item.quantity > 0 ? item.price / item.quantity : 0;
-                            const prodNameDisplay = item.quantity > 1 ? `${item.product} (${item.quantity}개)` : item.product;
-                            data.push({ '닉네임': nick, '상품명': prodNameDisplay, '단가': unitPrice.toLocaleString(), '입금여부': depositStatus });
+                        let itemListText = activeItems.map(item => `${item.product}${item.quantity > 1 ? ` (${item.quantity}개)` : ''} ${Number(item.price).toLocaleString()}원`).join('\n');
+                        if (currentShipping > 0) itemListText += `\n배송비 ${currentShipping.toLocaleString()}원`;
+                        
+                        data.push({ 
+                            '닉네임': nick, 
+                            '주문내역': itemListText, 
+                            '총금액': grandTotal.toLocaleString() + '원', 
+                            '입금액': depositTotal.toLocaleString() + '원',
+                            '미입금액': balance.toLocaleString() + '원'
                         });
                     }
                 });
