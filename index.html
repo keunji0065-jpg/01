@@ -934,8 +934,19 @@
                 orders.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); });
                 
                 Object.entries(groups).forEach(([nick, items]) => {
-                    if (selectedNick === nick) { items.sort((a, b) => a.id - b.id); } 
-                    else { items.sort((a, b) => String(a.product || '').localeCompare(String(b.product || ''), 'ko', { numeric: true })); }
+                    // 💡 핵심 수정 사항: 선택된 상태(노란 테두리)일 때는 입력된 시간순(id)으로 고정!
+                    // 선택 해제 상태일 때만 상품명 가나다순 정렬 적용
+                    if (selectedNick === nick) { 
+                        items.sort((a, b) => b.id - a.id); // 새로 추가된 빈 줄이 맨 위로 가길 원하시면 b.id - a.id, 아래로 가길 원하시면 a.id - b.id 로 하시면 됩니다. 
+                        // 기존 코드의 방식(새 항목이 위로 추가됨)을 유지하려면 내림차순(b.id - a.id)이 맞습니다만,
+                        // 사장님 스크린샷을 보면 01, 05, 02 처럼 입력순서가 꼬이는 현상을 막고자 함이므로
+                        // id값 오름차순(a.id - b.id)으로 하면 먼저 입력한게 위, 나중에 추가한 빈줄이 아래로 고정됩니다.
+                        // **사장님 스크린샷 1번처럼 기존 항목 밑에 새 빈 줄이 생기게 하려면 오름차순이 좋습니다.**
+                        items.sort((a, b) => a.id - b.id); 
+                    } 
+                    else { 
+                        items.sort((a, b) => String(a.product || '').localeCompare(String(b.product || ''), 'ko', { numeric: true })); 
+                    }
                 });
 
                 let entries = Object.entries(groups).filter(([nick, items]) => {
