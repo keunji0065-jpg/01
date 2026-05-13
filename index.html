@@ -6,7 +6,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>260514 </title>
+    <title>20260513- 완전판</title>
     
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin="anonymous"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
@@ -1716,10 +1716,10 @@
                                 </div>
                             </div>
                             <div className="flex items-center gap-1 mt-1">
-                                <form onSubmit={handleQuickAddProduct} className="flex-1 flex gap-1 items-center bg-white dark:bg-slate-800 p-0.5 rounded border dark:border-slate-600">
-                                    <input type="text" placeholder="새 상품명" value={newInvName} onChange={e=>setNewInvName(e.target.value)} className="w-full text-[10px] px-1.5 py-1 bg-transparent outline-none dark:text-white font-bold" />
-                                    <input type="text" placeholder="단가" value={newInvPrice} onChange={e=> { const val = e.target.value.replace(/,/g, ''); if(!isNaN(val)) setNewInvPrice(val ? Number(val).toLocaleString() : ''); }} className="w-14 text-[10px] px-1 py-1 bg-transparent text-right outline-none dark:text-white font-bold" />
-                                    <button type="submit" className="bg-blue-500 text-white px-1.5 py-1 rounded text-[10px] font-bold shrink-0">등록</button>
+                                <form onSubmit={handleQuickAddProduct} className="flex-1 flex gap-1 items-center bg-blue-50/50 dark:bg-slate-800 p-1 rounded-lg border border-blue-200 dark:border-slate-600 shadow-inner">
+                                    <input type="text" placeholder="새 상품명" value={newInvName} onChange={e=>setNewInvName(e.target.value)} className="w-full text-[10px] px-2 py-1.5 bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded outline-none focus:border-blue-500 dark:text-white font-bold transition-colors" />
+                                    <input type="text" placeholder="단가" value={newInvPrice} onChange={e=> { const val = e.target.value.replace(/,/g, ''); if(!isNaN(val)) setNewInvPrice(val ? Number(val).toLocaleString() : ''); }} className="w-16 text-[10px] px-2 py-1.5 bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded text-right outline-none focus:border-blue-500 dark:text-white font-black text-blue-700 dark:text-blue-400 transition-colors" />
+                                    <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-2 py-1.5 rounded text-[10px] font-bold shrink-0 transition-colors shadow-sm">등록</button>
                                 </form>
                                 <div className="relative w-16 sm:w-20 shrink-0">
                                     <Icon name="magnifying-glass" className="absolute left-1 top-1/2 -translate-y-1/2 text-gray-400 text-[10px]"/>
