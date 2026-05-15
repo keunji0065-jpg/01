@@ -1435,14 +1435,20 @@
                 else { 
                     const isPaid = (balance <= 0) && (grandTotal >= 0) && (activeItems.length > 0); 
                     if (depositTotal > 0) msg += `[입금확인]\n${depositTotal.toLocaleString()}원\n------------------\n\n`; 
-                    if (isPaid) msg += `${paidMsg}\n------------------\n`; 
-                    else msg += `${unpaidPrefix}\n${(balance > 0 ? balance : 0).toLocaleString()}원 \n\n${bankAccount}\n입금 부탁드립니다 🙏\n------------------\n\n`; 
+                    if (isPaid) msg += `${String(paidMsg||'').replace(/\\n/g, '\n').replace(/^"|"$/g, '')}\n------------------\n`; 
+                    else {
+                        let parsedPrefix = String(unpaidPrefix || '[미입금] 총 입금하실 금액 👉').replace(/\\n/g, '\n').replace(/^"|"$/g, '');
+                        let parsedBank = String(bankAccount).replace(/\\n/g, '\n').replace(/^"|"$/g, '');
+                        msg += `${parsedPrefix}\n${(balance > 0 ? balance : 0).toLocaleString()}원 \n\n${parsedBank}\n\n입금 부탁드립니다 🙏\n------------------\n\n`; 
+                    }
                 }
                 
                 if (addr && addr.address && !alwaysRequestAddress) {
-                    msg += `\n[배송지 확인]\n\n${addr.realname || nick}\n${addr.phone || ''}\n${addr.address} ${addr.zipcode ? `(${addr.zipcode})` : ''}\n${addr.memo ? addr.memo + '\n' : ''}\n------------------\n${addrNotice}`;
+                    let parsedAddrNotice = String(addrNotice || '').replace(/\\n/g, '\n').replace(/^"|"$/g, '');
+                    msg += `\n[배송지 확인]\n\n${addr.realname || nick}\n${addr.phone || ''}\n${addr.address} ${addr.zipcode ? `(${addr.zipcode})` : ''}\n${addr.memo ? addr.memo + '\n' : ''}\n------------------\n${parsedAddrNotice}`;
                 } else if (!sentAddressRequests.has(nick) || alwaysRequestAddress) { 
-                    msg += `\n${surveyNotice}`; setSentAddressRequests(prev => new Set(prev).add(nick)); 
+                    let parsedSurveyNotice = String(surveyNotice || '').replace(/\\n/g, '\n').replace(/^"|"$/g, '');
+                    msg += `\n${parsedSurveyNotice}`; setSentAddressRequests(prev => new Set(prev).add(nick)); 
                 }
                 
                 const textArea = document.createElement("textarea"); textArea.value = msg; document.body.appendChild(textArea); textArea.select();
@@ -1733,10 +1739,10 @@
                                 </div>
                             </div>
                             <div className="flex gap-2 items-stretch w-full">
-                                <form onSubmit={handleManualSubmit} className="flex-1 flex gap-1.5 items-center bg-slate-100 dark:bg-slate-800 p-1.5 rounded border border-slate-200 dark:border-slate-700 shadow-sm min-w-[280px]">
+                                <form onSubmit={handleManualSubmit} className="flex-1 flex gap-1.5 items-center bg-slate-100 dark:bg-slate-800 p-1.5 rounded border dark:border-slate-600 shadow-sm min-w-[280px]">
                                     <div className="relative w-20 sm:w-24 shrink-0">
                                         <input type="text" placeholder="닉네임" value={manualNick} onChange={e => {setManualNick(e.target.value); setShowNickSuggestions(true);}} onFocus={()=>setShowNickSuggestions(true)} onBlur={()=>setTimeout(()=>setShowNickSuggestions(false), 200)} className="w-full border dark:border-slate-600 rounded px-2 py-1.5 text-xs font-bold outline-none focus:ring-1 focus:ring-slate-500 bg-white dark:bg-slate-900 dark:text-white" />
-                                        {showNickSuggestions && nicknameSuggestions.length > 0 && (<div className="absolute top-full left-0 mt-1 w-full min-w-[200px] bg-white dark:bg-slate-800 border dark:border-slate-600 rounded shadow-xl z-50 overflow-hidden">{nicknameSuggestions.map((s, i) => (<div key={i} onClick={()=>{setManualNick(s.nick); setShowNickSuggestions(false); document.getElementById('manual-prod-input')?.focus();}} className="px-2 py-1.5 text-xs hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer border-b border-slate-50 dark:border-slate-700/50 last:border-0 flex flex-col"><span className="font-bold">{s.nick}</span>{s.realName && <span className="text-[10px] text-slate-500">👤 {s.realName}</span>}</div>))}</div>)}
+                                        {showNickSuggestions && nicknameSuggestions.length > 0 && (<div className="absolute top-full left-0 mt-1 w-full min-w-[200px] bg-white dark:bg-slate-800 border dark:border-slate-600 rounded shadow-xl z-50 overflow-hidden">{nicknameSuggestions.map((s, i) => (<div key={i} onClick={()=>{setManualNick(s.nick); setShowNickSuggestions(false); document.getElementById('manual-prod-input')?.focus();}} className="px-2 py-1.5 text-xs hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer border-b dark:border-slate-700/50 last:border-0 flex flex-col"><span className="font-bold">{s.nick}</span>{s.realName && <span className="text-[10px] text-slate-500">👤 {s.realName}</span>}</div>))}</div>)}
                                     </div>
                                     <div className="flex-1 flex gap-1 items-center relative">
                                         <div className="relative flex-1">
@@ -1972,26 +1978,32 @@
                     const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0); const grandTotal = productTotal + (activeItems.length > 0 ? currentShipping : 0);
                     const depositTotal = items.reduce((sum, i) => sum + (i.deposit || 0), 0); const balance = grandTotal - depositTotal;
                     if (balance > 0) { 
-                        const depositStatus = depositTotal > 0 ? `부분입금(${depositTotal.toLocaleString()}원)` : '미입금';
                         let itemListText = activeItems.map(item => {
                             const unitPrice = item.quantity > 0 ? item.price / item.quantity : 0;
                             return `${item.product}${item.quantity > 1 ? ` (${item.quantity}개)` : ''} ${unitPrice.toLocaleString()}원`;
-                        }).join('\r\n');
-                        if (currentShipping > 0) itemListText += `\r\n배송비 ${currentShipping.toLocaleString()}원`;
+                        }).join('\n');
+                        if (currentShipping > 0) itemListText += `\n배송비 ${currentShipping.toLocaleString()}원`;
                         
                         const { emoji, unpaidPrefix } = JSON.parse(localStorage.getItem('templateConfig') || "{}");
-                        const bankStr = localStorage.getItem('bankAccount') || FIXED_BANK_ACCOUNT;
-                        const safeUnpaidPrefix = (unpaidPrefix || '[미입금] 총 입금하실 금액 👉').replace(/\n/g, '\r\n');
-                        const safeBankStr = bankStr.replace(/\n/g, '\r\n');
+                        let bankStr = localStorage.getItem('bankAccount') || FIXED_BANK_ACCOUNT;
+                        try { bankStr = JSON.parse(bankStr); } catch(e){}
                         
-                        const msgText = `${emoji} ${nick} 님 ${emoji}\r\n[주문내역]\r\n${itemListText}\r\n\r\n총 주문금액: ${grandTotal.toLocaleString()}원\r\n입금확인: ${depositTotal.toLocaleString()}원\r\n미입금액: ${balance.toLocaleString()}원\r\n------------------\r\n${safeUnpaidPrefix}\r\n${safeBankStr}\r\n입금 부탁드립니다 🙏`;
+                        let parsedPrefix = String(unpaidPrefix || '[미입금] 총 입금하실 금액 👉').replace(/\\n/g, '\n').replace(/^"|"$/g, '');
+                        let parsedBank = String(bankStr).replace(/\\n/g, '\n').replace(/^"|"$/g, '');
+                        
+                        const msgText = `${emoji || '💙'} ${nick} 님 ${emoji || '💙'}\n\n[주문내역]\n${itemListText}\n\n총 주문금액: ${grandTotal.toLocaleString()}원\n입금확인: ${depositTotal.toLocaleString()}원\n미입금액: ${balance.toLocaleString()}원\n------------------\n${parsedPrefix}\n${balance.toLocaleString()}원\n\n${parsedBank}\n\n입금 부탁드립니다 🙏`;
                         
                         data.push({ '닉네임': nick, '주문내역 (상세)': itemListText, '총금액': grandTotal.toLocaleString() + '원', '입금액': depositTotal.toLocaleString() + '원', '미입금액': balance.toLocaleString() + '원', '카톡안내메시지': msgText });
                     }
                 });
                 if (data.length === 0) { openModal("미입금 내역이 없습니다.", "alert"); return; }
                 data.sort((a, b) => String(a['닉네임'] || '').localeCompare(String(b['닉네임'] || '')));
-                downloadExcel(data, '미입금자_상세리스트');
+                
+                const ws = XLSX.utils.json_to_sheet(data);
+                ws['!cols'] = [{wch: 15}, {wch: 40}, {wch: 15}, {wch: 15}, {wch: 15}, {wch: 50}];
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+                XLSX.writeFile(wb, `미입금자_상세리스트_${new Date().toLocaleDateString()}.xlsx`);
            };
 
            const handleCopyUnpaidText = () => {
@@ -2011,8 +2023,13 @@
                         if (currentShipping > 0) itemListText += `\n배송비 ${currentShipping.toLocaleString()}원`;
                         
                         const { emoji, unpaidPrefix } = JSON.parse(localStorage.getItem('templateConfig') || "{}");
-                        const bankStr = localStorage.getItem('bankAccount') || FIXED_BANK_ACCOUNT;
-                        const msgText = `${emoji} ${nick} 님 ${emoji}\n[주문내역]\n${itemListText}\n\n총 주문금액: ${grandTotal.toLocaleString()}원\n입금확인: ${depositTotal.toLocaleString()}원\n미입금액: ${balance.toLocaleString()}원\n------------------\n${unpaidPrefix || '[미입금] 총 입금하실 금액 👉'}\n${bankStr}\n입금 부탁드립니다 🙏`;
+                        let bankStr = localStorage.getItem('bankAccount') || FIXED_BANK_ACCOUNT;
+                        try { bankStr = JSON.parse(bankStr); } catch(e){}
+
+                        let parsedPrefix = String(unpaidPrefix || '[미입금] 총 입금하실 금액 👉').replace(/\\n/g, '\n').replace(/^"|"$/g, '');
+                        let parsedBank = String(bankStr).replace(/\\n/g, '\n').replace(/^"|"$/g, '');
+                        
+                        const msgText = `${emoji || '💙'} ${nick} 님 ${emoji || '💙'}\n\n[주문내역]\n${itemListText}\n\n총 주문금액: ${grandTotal.toLocaleString()}원\n입금확인: ${depositTotal.toLocaleString()}원\n미입금액: ${balance.toLocaleString()}원\n------------------\n${parsedPrefix}\n${balance.toLocaleString()}원\n\n${parsedBank}\n\n입금 부탁드립니다 🙏`;
                         
                         dataList.push({ nick, msgText });
                     }
@@ -2020,7 +2037,7 @@
                 if (dataList.length === 0) { openModal("미입금 내역이 없습니다.", "alert"); return; }
                 
                 dataList.sort((a, b) => a.nick.localeCompare(b.nick));
-                const textToCopy = dataList.map(d => d.msgText).join('\n\n\n============================\n\n\n');
+                const textToCopy = dataList.map(d => d.msgText).join('\n\n============================\n\n');
 
                 const textArea = document.createElement("textarea"); textArea.value = textToCopy; document.body.appendChild(textArea); textArea.select();
                 try { document.execCommand('copy'); openModal('미입금자 카톡 메시지가 모두 복사되었습니다!\n(카톡 대화창에 바로 붙여넣기 하세요)', 'alert'); } catch (err) { openModal('복사 실패', 'alert'); } document.body.removeChild(textArea);
@@ -2104,8 +2121,24 @@
                             <h2 className="text-lg font-bold mb-2 text-red-600 dark:text-red-400 flex items-center justify-center gap-2"><Icon name="warning-circle" weight="fill"/> 미입금자 상세 리스트</h2>
                             <p className="text-slate-500 dark:text-slate-400 mb-4 text-xs">입금을 완료하지 않은 노쇼 고객 목록</p>
                             <div className="flex gap-2">
-                                <button onClick={handleExportUnpaid} className="flex-1 bg-red-500 text-white font-bold py-3 rounded-lg transition-transform hover:scale-105 shadow-md flex items-center justify-center gap-1 hover:bg-red-600 text-sm"><Icon name="file-xls" weight="bold"/> 엑셀 저장</button>
-                                <button onClick={handleCopyUnpaidText} className="flex-1 bg-slate-700 text-white font-bold py-3 rounded-lg transition-transform hover:scale-105 shadow-md flex items-center justify-center gap-1 hover:bg-slate-800 text-sm"><Icon name="copy" weight="bold"/> 카톡 텍스트 복사</button>
+                                <button onClick={handleExportUnpaid} className="flex-1 bg-red-500 text-white font-bold py-3 rounded-lg transition-transform hover:scale-105 shadow-md flex items-center justify-center gap-1 hover:bg-red-600 text-sm"><Icon name="file-xls" weight="bold"/> 엑셀 다운로드</button>
+                                <button onClick={handleCopyUnpaidText} className="flex-1 bg-slate-700 text-white font-bold py-3 rounded-lg transition-transform hover:scale-105 shadow-md flex items-center justify-center gap-1 hover:bg-slate-800 text-sm"><Icon name="copy" weight="bold"/> 전체 텍스트 복사</button>
+                            </div>
+                        </div>
+                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-lg border dark:border-slate-700 text-center ring-2 ring-slate-200 dark:ring-slate-900/30">
+                            <h2 className="text-lg font-bold mb-2 text-slate-700 dark:text-slate-300 flex items-center justify-center gap-2"><Icon name="printer" weight="fill"/> 포장 리스트 인쇄</h2>
+                            <p className="text-slate-500 dark:text-slate-400 mb-4 text-xs">감열지 10x15cm 세로 양식 (닉네임 오름차순 정렬)</p>
+                            <button onClick={handlePrintPackingList} className="w-full bg-slate-600 text-white font-bold py-3 rounded-lg transition-transform hover:scale-105 shadow-md flex items-center justify-center gap-2 hover:bg-slate-700"><Icon name="printer" weight="bold"/> 10x15cm 인쇄</button>
+                        </div>
+                        <div className="col-span-2 bg-slate-100 dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 flex flex-row items-center justify-between">
+                            <div className="text-left">
+                                <h2 className="text-lg font-bold mb-2 text-slate-800 dark:text-slate-200 flex items-center gap-2"><Icon name="database" weight="fill"/> 전체 데이터 백업 / 복구</h2>
+                                <p className="text-slate-500 dark:text-slate-400 text-xs">장소 이동 시 작업 내역을 파일로 저장하고 불러옵니다.</p>
+                            </div>
+                            <div className="flex gap-3 w-1/2">
+                                <button onClick={handleExportBackup} className="flex-1 bg-slate-700 text-white font-bold py-3 rounded-lg transition-transform hover:scale-105 shadow-md flex items-center justify-center gap-1 hover:bg-slate-800"><Icon name="export" weight="bold"/> 파일로 저장</button>
+                                <input type="file" ref={fileInputRef} onChange={handleImportBackup} className="hidden" />
+                                <button onClick={() => fileInputRef.current.click()} className="flex-1 bg-slate-500 text-white font-bold py-3 rounded-lg transition-transform hover:scale-105 shadow-md flex items-center justify-center gap-1 hover:bg-slate-600"><Icon name="file-arrow-up" weight="bold"/> 파일 불러오기</button>
                             </div>
                         </div>
                     </div>
@@ -2128,7 +2161,7 @@
             const [clickedChats, setClickedChats] = useState(() => { const s = localStorage.getItem('clickedChats'); return s ? new Set(JSON.parse(s)) : new Set(); });
             const [keywords, setKeywords] = useState(() => {
                 try {
-                    const s = localStorage.getItem('keywords_v3'); // 새 저장소 사용
+                    const s = localStorage.getItem('keywords_v3');
                     if (s) {
                         const parsed = JSON.parse(s);
                         if (Array.isArray(parsed)) return parsed;
