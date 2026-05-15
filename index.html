@@ -52,7 +52,7 @@
         const DEFAULT_GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyvKtCHXSz47oGqNire1eREUJyjMVX_zBcodtGrwyIfYCrtrkzr1X6Q_mKJMzoo5Ev2ug/exec";
         const FIXED_BANK_ACCOUNT = "카카오뱅크 김선정\n7942 18 01611";
         const DEFAULT_CUSTOMER_SHEET_ID = "1ywl4gRvswQpvIYtPVbSROzz7a5elbLieYhqMZmt191U";
-        const EMOJI_LIST = ["💙", "💖", "💛", "💚", "💜", "🤍", "❤️", "🖤", "🤎", "💕", "💞", "⭐", "🌟", "✨", "🔥", "💥", "💯", "🎠", "🐎", "🐴", "🦢", "🐆", "🐍", "🐊", "🐢", "🦓", "🦄", "🦋", "💎", "💍", "👑", "💄", "💅", "🧴", "🎀", "🎁", "🛍️", "🛒", "🏷️", "📦", "👜", "👝", "👛", "🎒", "💼", "👠", "👡", "👢", "👟", "🩰", "👞", "👗", "🥻", "🧥", "👕", "👖", "👔", "🧣", "🧤", "🧦", "🧢", "👒", "🎩", "⌚", "🕶️", "👓", "🐶", "🐩", "🐱", "🐈", "🐰", "🐇", "🐻", "🧸", "🐼", "🐨", "🦊", "🐯", "🦁", "🐮", "🐷", "🐸", "🐵", "🐧", "🐥", "🦉", "🐾", "🌸", "🌼", "🍀", "🌹", "🌻", "🌷", "🌿", "🍁", "🌴", "🌵", "🍎", "🍓", "🍒", "🍑", "🍋", "🍊", "🍉", "🍇", "🍍", "🥑", "🥕", "🍔", "🍟", "🍕", "🍰", "🍩", "🍪", "🍫", "🍬", "🍭", "☕", "🧋", "🧃", "🍷", "🥂", "🍻", "✅", "✔️", "❌", "❗", "❓", "📢", "🔔", "🌈", "💰", "💸", "💳", "🧾", "🪙", "🚗", "🚚", "✈️", "📱", "💻", "🎉", "🎈"];
+        const EMOJI_LIST = Array.from("💙💖💛💚💜🤍❤️🖤🤎💕💞⭐🌟✨🔥💥💯🎠🐎🐴🦢🐆🐍🐊🐢🦓🦄🦋💎💍👑💄💅🧴🎀🎁🛍️🛒🏷️📦👜👝👛🎒💼👠👡👢👟🩰👞👗🥻🧥👕👖👔🧣🧤🧦🧢👒🎩⌚🕶️👓🐶🐩🐱🐈🐰🐇🐻🧸🐼🐨🦊🐯🦁🐮🐷🐸🐵🐧🐥🦉🐾🌸🌼🍀🌹🌻🌷🌿🍁🌴🌵🍎🍓🍒🍑🍋🍊🍉🍇🍍🥑🥕🍔🍟🍕🍰🍩🍪🍫🍬🍭☕🧋🧃🍷🥂🍻✅✔️❌❗❓📢🔔🌈💰💸💳🧾🪙🚗🚚✈️📱💻🎉🎈");
 
         const Icon = ({ name, className="", weight="regular", size }) => <i className={`ph ph-${name} ${className}`} data-phosphor-icon-weight={weight} style={{fontSize: size}}></i>;
         
@@ -1182,20 +1182,21 @@
 
             const copyOrderSheet = useCallback((nick, items, grandTotal, depositTotal, balance, isCard, addrData) => {
                 const activeItems = items.filter(i => !i.isCancelled); const addr = addrData || addressLookup.get(nick)?.data || {};
-                const itemListText = activeItems.map(i => `- ${i.product}${i.quantity > 1 ? ` ★${i.quantity}개` : ''} ${Number(i.price).toLocaleString()}원`).join('\n');
+                const itemListText = activeItems.map(i => `${i.product}${i.quantity > 1 ? ` (${i.quantity}개)` : ''} ${Number(i.price).toLocaleString()}원`).join('\n');
                 const currentShipping = getCalculatedShipping(nick); const { emoji, paidMsg, unpaidPrefix, addrNotice, surveyNotice, alwaysRequestAddress } = templateConfig;
-                let msg = `${emoji || '💙'} ${nick} 님 ${emoji || '💙'}\n\n\n${itemListText}\n- 배송비 ${currentShipping.toLocaleString()}원\n\n총 주문금액 ${grandTotal.toLocaleString()}원\n------------------\n`;
+                let msg = `${emoji || '💙'} ${nick} 님 ${emoji || '💙'}\n\n[주문내역]\n${itemListText}\n배송비 ${currentShipping.toLocaleString()}원\n\n총 주문금액: ${grandTotal.toLocaleString()}원\n`;
                 if (isCard) { 
-                    const cardBase = Math.max(0, balance); if (depositTotal > 0) msg += `[입금확인]\n${depositTotal.toLocaleString()}원\n------------------\n\n`; 
-                    msg += `[카드결제]\n금액 ${cardBase.toLocaleString()}원\n수수료(10%) ${(cardBase * 0.1).toLocaleString()}원\n👉결제요청액 ${(cardBase * 1.1).toLocaleString()}원 예정\n\n핸드폰번호 남겨주세요🌸\n------------------\n\n`; 
+                    const cardBase = Math.max(0, balance); if (depositTotal > 0) msg += `[입금확인]\n${depositTotal.toLocaleString()}원\n------------------\n`; 
+                    msg += `[카드결제]\n금액 ${cardBase.toLocaleString()}원\n수수료(10%) ${(cardBase * 0.1).toLocaleString()}원\n👉결제요청액 ${(cardBase * 1.1).toLocaleString()}원 예정\n\n핸드폰번호 남겨주세요🌸\n------------------\n`; 
                 } 
                 else { 
                     const isPaid = (balance <= 0) && (grandTotal >= 0) && (activeItems.length > 0); 
-                    if (depositTotal > 0) msg += `[입금확인]\n${depositTotal.toLocaleString()}원\n------------------\n\n`; 
+                    if (depositTotal > 0) msg += `입금확인: ${depositTotal.toLocaleString()}원\n미입금액: ${balance.toLocaleString()}원\n------------------\n`; 
+                    else msg += `입금확인: 0원\n미입금액: ${balance.toLocaleString()}원\n------------------\n`;
                     if (isPaid) msg += `${String(paidMsg||'').replace(/\\n/g, '\n').replace(/^"|"$/g, '')}\n------------------\n`; 
                     else {
                         let parsedPrefix = String(unpaidPrefix || '[미입금] 총 입금하실 금액 👉').replace(/\\n/g, '\n').replace(/^"|"$/g, ''); let parsedBank = String(bankAccount).replace(/\\n/g, '\n').replace(/^"|"$/g, '');
-                        msg += `${parsedPrefix}\n${(balance > 0 ? balance : 0).toLocaleString()}원 \n\n${parsedBank}\n\n입금 부탁드립니다 🙏\n------------------\n\n`; 
+                        msg += `${parsedPrefix}\n${(balance > 0 ? balance : 0).toLocaleString()}원\n\n${parsedBank}\n\n입금 부탁드립니다 🙏\n------------------\n`; 
                     }
                 }
                 if (addr && addr.address && !alwaysRequestAddress) {
@@ -1592,15 +1593,15 @@
                     if (balance > 0) { 
                         let itemListTextForExcel = activeItems.map(item => {
                             const unitPrice = item.quantity > 0 ? item.price / item.quantity : 0;
-                            return `- ${item.product}${item.quantity > 1 ? ` (${item.quantity}개)` : ''} ${unitPrice.toLocaleString()}원`;
-                        }).join('\r\n');
-                        if (currentShipping > 0) itemListTextForExcel += `\r\n- 배송비 ${currentShipping.toLocaleString()}원`;
+                            return `${item.product}${item.quantity > 1 ? ` (${item.quantity}개)` : ''} ${unitPrice.toLocaleString()}원`;
+                        }).join('\n');
+                        if (currentShipping > 0) itemListTextForExcel += `\n배송비 ${currentShipping.toLocaleString()}원`;
 
                         let itemListTextForCopy = activeItems.map(item => {
                             const unitPrice = item.quantity > 0 ? item.price / item.quantity : 0;
-                            return `- ${item.product}${item.quantity > 1 ? ` (${item.quantity}개)` : ''} ${unitPrice.toLocaleString()}원`;
+                            return `${item.product}${item.quantity > 1 ? ` (${item.quantity}개)` : ''} ${unitPrice.toLocaleString()}원`;
                         }).join('\n');
-                        if (currentShipping > 0) itemListTextForCopy += `\n- 배송비 ${currentShipping.toLocaleString()}원`;
+                        if (currentShipping > 0) itemListTextForCopy += `\n배송비 ${currentShipping.toLocaleString()}원`;
                         
                         const { emoji, unpaidPrefix } = JSON.parse(localStorage.getItem('templateConfig') || "{}");
                         let bankStr = localStorage.getItem('bankAccount') || FIXED_BANK_ACCOUNT;
@@ -1609,11 +1610,7 @@
                         let parsedPrefix = String(unpaidPrefix || '[미입금] 총 입금하실 금액 👉').replace(/\\n/g, '\n').replace(/^"|"$/g, '');
                         let parsedBank = String(bankStr).replace(/\\n/g, '\n').replace(/^"|"$/g, '');
 
-                        let parsedPrefixExcel = String(unpaidPrefix || '[미입금] 총 입금하실 금액 👉').replace(/\\n/g, '\r\n').replace(/^"|"$/g, '');
-                        let parsedBankExcel = String(bankStr).replace(/\\n/g, '\r\n').replace(/^"|"$/g, '');
-                        
-                        const msgTextExcel = `${emoji || '💙'} ${nick} 님 ${emoji || '💙'}\r\n\r\n[주문내역]\r\n${itemListTextForExcel}\r\n\r\n총 주문금액: ${grandTotal.toLocaleString()}원\r\n입금확인: ${depositTotal.toLocaleString()}원\r\n미입금액: ${balance.toLocaleString()}원\r\n------------------\r\n${parsedPrefixExcel}\r\n${balance.toLocaleString()}원\r\n\r\n${parsedBankExcel}\r\n\r\n입금 부탁드립니다 🙏`;
-
+                        const msgTextExcel = `${emoji || '💙'} ${nick} 님 ${emoji || '💙'}\n\n[주문내역]\n${itemListTextForExcel}\n\n총 주문금액: ${grandTotal.toLocaleString()}원\n입금확인: ${depositTotal.toLocaleString()}원\n미입금액: ${balance.toLocaleString()}원\n------------------\n${parsedPrefix}\n${balance.toLocaleString()}원\n\n${parsedBank}\n\n입금 부탁드립니다 🙏`;
                         const msgTextCopy = `${emoji || '💙'} ${nick} 님 ${emoji || '💙'}\n\n[주문내역]\n${itemListTextForCopy}\n\n총 주문금액: ${grandTotal.toLocaleString()}원\n입금확인: ${depositTotal.toLocaleString()}원\n미입금액: ${balance.toLocaleString()}원\n------------------\n${parsedPrefix}\n${balance.toLocaleString()}원\n\n${parsedBank}\n\n입금 부탁드립니다 🙏`;
                         
                         dataList.push({ nick, itemListTextForExcel, grandTotal, depositTotal, balance, msgTextExcel, msgTextCopy });
