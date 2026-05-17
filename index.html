@@ -1066,6 +1066,7 @@
                 if (addedAny) { setClickedChats(prev => { const next = new Set(prev); newIds.forEach(id => next.add(id)); return next; }); }
             }, [chats, addOrderLogic]);
 
+            // 🚨 완벽 수정: 매칭 시 이중 잠금장치 설정 및 메모리 보존
             useEffect(() => {
                 const timer = setTimeout(() => {
                     if (allDeposits.length === 0 || orders.length === 0) return;
@@ -1180,30 +1181,47 @@
             const handleOrderCancel = useCallback((id) => setOrders(prev => prev.map(o => o.id === id ? { ...o, isCancelled: !o.isCancelled } : o)), [setOrders]);
             const handleOrderDelete = useCallback((id) => openModal("주문 삭제하시겠습니까?", 'confirm', () => setOrders(prev => prev.filter(o => o.id !== id))), [openModal, setOrders]);
 
+            // 🚨 수정 포인트: 개별 카톡 복사 로직에 과납 메시지 적용
             const copyOrderSheet = useCallback((nick, items, grandTotal, depositTotal, balance, isCard, addrData) => {
                 const activeItems = items.filter(i => !i.isCancelled); const addr = addrData || addressLookup.get(nick)?.data || {};
-                const itemListText = activeItems.map(i => `${i.product}${i.quantity > 1 ? ` (${i.quantity}개)` : ''} ${Number(i.price).toLocaleString()}원`).join('\n');
-                const currentShipping = getCalculatedShipping(nick); const { emoji, paidMsg, unpaidPrefix, addrNotice, surveyNotice, alwaysRequestAddress } = templateConfig;
-                let msg = `${emoji || '💙'} ${nick} 님 ${emoji || '💙'}\n\n[주문내역]\n${itemListText}\n배송비 ${currentShipping.toLocaleString()}원\n\n총 주문금액: ${grandTotal.toLocaleString()}원\n`;
+                const itemListText = activeItems.map(i => `- ${i.product}${i.quantity > 1 ? ` (${i.quantity}개)` : ''} ${Number(i.price).toLocaleString()}원`).join('\n');
+                const currentShipping = getCalculatedShipping(nick); const { emoji, paidMsg, unpaidPrefix, overpaidMsg, addrNotice, surveyNotice, alwaysRequestAddress } = templateConfig;
+                
+                let msg = `${emoji || '💙'} ${nick} 님 ${emoji || '💙'}\n\n[주문내역]\n${itemListText}\n- 배송비 ${currentShipping.toLocaleString()}원\n\n총 주문금액: ${grandTotal.toLocaleString()}원\n`;
+                
                 if (isCard) { 
                     const cardBase = Math.max(0, balance); if (depositTotal > 0) msg += `[입금확인]\n${depositTotal.toLocaleString()}원\n------------------\n`; 
                     msg += `[카드결제]\n금액 ${cardBase.toLocaleString()}원\n수수료(10%) ${(cardBase * 0.1).toLocaleString()}원\n👉결제요청액 ${(cardBase * 1.1).toLocaleString()}원 예정\n\n핸드폰번호 남겨주세요🌸\n------------------\n`; 
                 } 
                 else { 
-                    const isPaid = (balance <= 0) && (grandTotal >= 0) && (activeItems.length > 0); 
-                    if (depositTotal > 0) msg += `입금확인: ${depositTotal.toLocaleString()}원\n미입금액: ${balance.toLocaleString()}원\n------------------\n`; 
-                    else msg += `입금확인: 0원\n미입금액: ${balance.toLocaleString()}원\n------------------\n`;
-                    if (isPaid) msg += `${String(paidMsg||'').replace(/\\n/g, '\n').replace(/^"|"$/g, '')}\n------------------\n`; 
-                    else {
-                        let parsedPrefix = String(unpaidPrefix || '[미입금] 총 입금하실 금액 👉').replace(/\\n/g, '\n').replace(/^"|"$/g, ''); let parsedBank = String(bankAccount).replace(/\\n/g, '\n').replace(/^"|"$/g, '');
-                        msg += `${parsedPrefix}\n${(balance > 0 ? balance : 0).toLocaleString()}원\n\n${parsedBank}\n\n입금 부탁드립니다 🙏\n------------------\n`; 
+                    const isExactPaid = balance === 0;
+                    const isOverpaid = balance < 0;
+                    const absBalance = Math.abs(balance);
+                    
+                    if (depositTotal > 0) msg += `입금확인: ${depositTotal.toLocaleString()}원\n`;
+                    else msg += `입금확인: 0원\n`;
+                    
+                    if (isOverpaid) {
+                        msg += `과납금액: ${absBalance.toLocaleString()}원\n------------------\n`;
+                        let parsedOver = String(overpaidMsg || '과납금액이 있습니다!\n환불받으실 계좌를 남겨주시거나, 적립금으로 처리 원하시면 말씀해주세요.').replace(/\\n/g, '\n').replace(/^"|"$/g, '');
+                        msg += `${parsedOver}\n------------------\n`;
+                    } else if (isExactPaid && activeItems.length > 0) {
+                        msg += `------------------\n`;
+                        msg += `${String(paidMsg||'😍 완납 확인! 감사합니다 😍').replace(/\\n/g, '\n').replace(/^"|"$/g, '')}\n------------------\n`;
+                    } else {
+                        let parsedPrefix = String(unpaidPrefix || '[미입금] 총 입금하실 금액 👉').replace(/\\n/g, '\n').replace(/^"|"$/g, ''); 
+                        let parsedBank = String(bankAccount).replace(/\\n/g, '\n').replace(/^"|"$/g, '');
+                        msg += `미입금액: ${balance.toLocaleString()}원\n------------------\n${parsedPrefix}\n${balance.toLocaleString()}원\n\n${parsedBank}\n\n입금 부탁드립니다 🙏\n------------------\n`; 
                     }
                 }
+                
                 if (addr && addr.address && !alwaysRequestAddress) {
-                    let parsedAddrNotice = String(addrNotice || '').replace(/\\n/g, '\n').replace(/^"|"$/g, '');
-                    msg += `\n[배송지 확인]\n\n${addr.realname || nick}\n${addr.phone || ''}\n${addr.address} ${addr.zipcode ? `(${addr.zipcode})` : ''}\n${addr.memo ? addr.memo + '\n' : ''}\n------------------\n${parsedAddrNotice}`;
+                    let parsedAddrNotice = String(addrNotice || '※ 배송지 변경 시 채팅으로 변경할 주소를 남겨주세요!').replace(/\\n/g, '\n').replace(/^"|"$/g, '');
+                    msg += `[배송지 확인]\n\n${addr.realname || nick}\n${addr.phone || ''}\n${addr.address} ${addr.zipcode ? `(${addr.zipcode})` : ''}\n${addr.memo ? addr.memo + '\n' : ''}\n------------------\n${parsedAddrNotice}`;
                 } else if (!sentAddressRequests.has(nick) || alwaysRequestAddress) { 
-                    let parsedSurveyNotice = String(surveyNotice || '').replace(/\\n/g, '\n').replace(/^"|"$/g, ''); msg += `\n${parsedSurveyNotice}`; setSentAddressRequests(prev => new Set(prev).add(nick)); 
+                    let parsedSurveyNotice = String(surveyNotice || '방송마다 1회 하단의 주문서(배송지입력) 필수!!').replace(/\\n/g, '\n').replace(/^"|"$/g, ''); 
+                    msg += `${parsedSurveyNotice}`; 
+                    setSentAddressRequests(prev => new Set(prev).add(nick)); 
                 }
                 const textArea = document.createElement("textarea"); textArea.value = msg; document.body.appendChild(textArea); textArea.select(); setCheckedOrders(prev => new Set(prev).add(nick));
                 try { document.execCommand('copy'); setCopyStatus(prev => ({ ...prev, [nick]: true })); setTimeout(() => { setCopyStatus(prev => ({ ...prev, [nick]: false })); }, 2000); } catch (err) { openModal('복사 실패', 'alert'); } document.body.removeChild(textArea);
@@ -1590,7 +1608,11 @@
                     }
                     const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0); const grandTotal = productTotal + (activeItems.length > 0 ? currentShipping : 0);
                     const depositTotal = items.reduce((sum, i) => sum + (i.deposit || 0), 0); const balance = grandTotal - depositTotal;
-                    if (balance > 0) { 
+                    
+                    if (balance !== 0) { 
+                        const isOverpaid = balance < 0;
+                        const absBalance = Math.abs(balance);
+
                         let itemListTextForExcel = activeItems.map(item => {
                             const unitPrice = item.quantity > 0 ? item.price / item.quantity : 0;
                             return `${item.product}${item.quantity > 1 ? ` (${item.quantity}개)` : ''} ${unitPrice.toLocaleString()}원`;
@@ -1603,17 +1625,25 @@
                         }).join('\n');
                         if (currentShipping > 0) itemListTextForCopy += `\n배송비 ${currentShipping.toLocaleString()}원`;
                         
-                        const { emoji, unpaidPrefix } = JSON.parse(localStorage.getItem('templateConfig') || "{}");
+                        const { emoji, unpaidPrefix, overpaidMsg } = JSON.parse(localStorage.getItem('templateConfig') || "{}");
                         let bankStr = localStorage.getItem('bankAccount') || FIXED_BANK_ACCOUNT;
                         try { bankStr = JSON.parse(bankStr); } catch(e){}
                         
                         let parsedPrefix = String(unpaidPrefix || '[미입금] 총 입금하실 금액 👉').replace(/\\n/g, '\n').replace(/^"|"$/g, '');
                         let parsedBank = String(bankStr).replace(/\\n/g, '\n').replace(/^"|"$/g, '');
+                        let parsedOverpaidMsg = String(overpaidMsg || '과납금액이 있습니다!\n환불받으실 계좌를 남겨주시거나, 적립금으로 처리 원하시면 말씀해주세요.').replace(/\\n/g, '\n').replace(/^"|"$/g, '');
 
-                        const msgTextExcel = `${emoji || '💙'} ${nick} 님 ${emoji || '💙'}\n\n[주문내역]\n${itemListTextForExcel}\n\n총 주문금액: ${grandTotal.toLocaleString()}원\n입금확인: ${depositTotal.toLocaleString()}원\n미입금액: ${balance.toLocaleString()}원\n------------------\n${parsedPrefix}\n${balance.toLocaleString()}원\n\n${parsedBank}\n\n입금 부탁드립니다 🙏`;
-                        const msgTextCopy = `${emoji || '💙'} ${nick} 님 ${emoji || '💙'}\n\n[주문내역]\n${itemListTextForCopy}\n\n총 주문금액: ${grandTotal.toLocaleString()}원\n입금확인: ${depositTotal.toLocaleString()}원\n미입금액: ${balance.toLocaleString()}원\n------------------\n${parsedPrefix}\n${balance.toLocaleString()}원\n\n${parsedBank}\n\n입금 부탁드립니다 🙏`;
+                        let msgTextCopy = `${emoji || '💙'} ${nick} 님 ${emoji || '💙'}\n\n[주문내역]\n${itemListTextForCopy}\n\n총 주문금액: ${grandTotal.toLocaleString()}원\n입금확인: ${depositTotal.toLocaleString()}원\n`;
                         
-                        dataList.push({ nick, itemListTextForExcel, grandTotal, depositTotal, balance, msgTextExcel, msgTextCopy });
+                        if (isOverpaid) {
+                            msgTextCopy += `과납금액: ${absBalance.toLocaleString()}원\n------------------\n${parsedOverpaidMsg}`;
+                        } else {
+                            msgTextCopy += `미입금액: ${balance.toLocaleString()}원\n------------------\n${parsedPrefix}\n${balance.toLocaleString()}원\n\n${parsedBank}\n\n입금 부탁드립니다 🙏`;
+                        }
+
+                        let msgTextExcel = msgTextCopy;
+                        
+                        dataList.push({ nick, activeItems, grandTotal, depositTotal, balance, absBalance, isOverpaid, msgTextExcel, msgTextCopy, currentShipping });
                     }
                 });
                 return dataList.sort((a, b) => String(a.nick || '').localeCompare(String(b.nick || '')));
@@ -1621,17 +1651,29 @@
 
             const handleExportUnpaid = () => {
                 const dataList = getUnpaidDataList();
-                if (dataList.length === 0) { openModal("미입금 내역이 없습니다.", "alert"); return; }
-                const data = dataList.map(d => ({
-                    '닉네임': d.nick,
-                    '주문내역 (상세)': d.itemListTextForExcel,
-                    '총금액': d.grandTotal.toLocaleString() + '원',
-                    '입금액': d.depositTotal.toLocaleString() + '원',
-                    '미입금액': d.balance.toLocaleString() + '원',
-                    '카톡안내메시지': d.msgTextExcel
-                }));
+                if (dataList.length === 0) { openModal("안내할 내역(미납/과납)이 없습니다.", "alert"); return; }
+                const data = [];
+                
+                dataList.forEach(d => {
+                    d.activeItems.forEach((item, idx) => {
+                        const unitPrice = item.quantity > 0 ? item.price / item.quantity : 0;
+                        const rowText = `${item.product}${item.quantity > 1 ? ` (${item.quantity}개)` : ''} ${unitPrice.toLocaleString()}원`;
+                        
+                        if(idx === 0) {
+                            data.push({ '닉네임': d.nick, '주문내역': rowText, '총금액': d.grandTotal.toLocaleString() + '원', '입금액': d.depositTotal.toLocaleString() + '원', '미납/과납액': d.isOverpaid ? `과납 ${d.absBalance.toLocaleString()}원` : `미입금 ${d.balance.toLocaleString()}원`, '카톡안내메시지': d.msgTextExcel });
+                        } else {
+                            data.push({ '닉네임': d.nick, '주문내역': rowText, '총금액': '', '입금액': '', '미납/과납액': '', '카톡안내메시지': '' });
+                        }
+                    });
+
+                    if (d.currentShipping > 0) {
+                        data.push({ '닉네임': d.nick, '주문내역': `배송비 ${d.currentShipping.toLocaleString()}원`, '총금액': '', '입금액': '', '미납/과납액': '', '카톡안내메시지': '' });
+                    }
+                });
                 
                 const ws = XLSX.utils.json_to_sheet(data);
+                
+                // 줄바꿈 적용 설정
                 const range = XLSX.utils.decode_range(ws['!ref']);
                 for(let R = range.s.r; R <= range.e.r; ++R) {
                     for(let C = range.s.c; C <= range.e.c; ++C) {
@@ -1640,18 +1682,19 @@
                         ws[cell_ref].s.alignment = { wrapText: true, vertical: 'top' };
                     }
                 }
-                ws['!cols'] = [{wch: 15}, {wch: 40}, {wch: 15}, {wch: 15}, {wch: 15}, {wch: 55}];
+                
+                ws['!cols'] = [{wch: 15}, {wch: 40}, {wch: 15}, {wch: 15}, {wch: 15}, {wch: 60}];
                 const wb = XLSX.utils.book_new();
                 XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
-                XLSX.writeFile(wb, `미입금자_상세리스트_${new Date().toLocaleDateString()}.xlsx`);
+                XLSX.writeFile(wb, `미납_과납_상세리스트_${new Date().toLocaleDateString()}.xlsx`);
             };
 
             const handleCopyUnpaidText = () => {
                 const dataList = getUnpaidDataList();
-                if (dataList.length === 0) { openModal("미입금 내역이 없습니다.", "alert"); return; }
+                if (dataList.length === 0) { openModal("안내할 내역(미납/과납)이 없습니다.", "alert"); return; }
                 const textToCopy = dataList.map(d => d.msgTextCopy).join('\n\n============================\n\n');
                 const textArea = document.createElement("textarea"); textArea.value = textToCopy; document.body.appendChild(textArea); textArea.select();
-                try { document.execCommand('copy'); openModal('미입금자 카톡 메시지가 모두 복사되었습니다!\n(카톡 대화창에 바로 붙여넣기 하세요)', 'alert'); } catch (err) { openModal('복사 실패', 'alert'); } document.body.removeChild(textArea);
+                try { document.execCommand('copy'); openModal('카톡 안내 메시지가 모두 복사되었습니다!\n(카톡 대화창에 바로 붙여넣기 하세요)', 'alert'); } catch (err) { openModal('복사 실패', 'alert'); } document.body.removeChild(textArea);
             };
 
             const findAddress = (nick) => { if (addressMapping[nick]) return addresses.find(a => normalizeString(a.nickname) === normalizeString(addressMapping[nick])); return addresses.find(a => normalizeString(a.nickname) === normalizeString(nick)); };
@@ -1780,8 +1823,8 @@
                             <button onClick={handleExportCustomers} className="w-full bg-slate-700 text-white font-bold py-3 rounded-lg transition-transform hover:scale-105 shadow-md flex items-center justify-center gap-2 hover:bg-slate-800"><Icon name="download-simple" weight="bold"/> 엑셀 다운로드</button>
                         </div>
                         <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-lg border dark:border-slate-700 text-center ring-2 ring-red-100 dark:ring-red-900/30">
-                            <h2 className="text-lg font-bold mb-2 text-red-600 dark:text-red-400 flex items-center justify-center gap-2"><Icon name="warning-circle" weight="fill"/> 미입금자 상세 리스트</h2>
-                            <p className="text-slate-500 dark:text-slate-400 mb-4 text-xs">입금을 완료하지 않은 노쇼 고객 목록</p>
+                            <h2 className="text-lg font-bold mb-2 text-red-600 dark:text-red-400 flex items-center justify-center gap-2"><Icon name="warning-circle" weight="fill"/> 안내 필요(미납/과납) 리스트</h2>
+                            <p className="text-slate-500 dark:text-slate-400 mb-4 text-xs">안내가 필요한 노쇼/과납 고객 목록</p>
                             <div className="flex gap-2">
                                 <button onClick={handleExportUnpaid} className="flex-1 bg-red-500 text-white font-bold py-3 rounded-lg transition-transform hover:scale-105 shadow-md flex items-center justify-center gap-1 hover:bg-red-600 text-sm"><Icon name="file-xls" weight="bold"/> 엑셀 다운로드</button>
                                 <button onClick={handleCopyUnpaidText} className="flex-1 bg-slate-700 text-white font-bold py-3 rounded-lg transition-transform hover:scale-105 shadow-md flex items-center justify-center gap-1 hover:bg-slate-800 text-sm"><Icon name="copy" weight="bold"/> 전체 텍스트 복사</button>
@@ -1846,7 +1889,7 @@
             const [addressMapping, setAddressMapping] = useLocalStorage('addressMapping', {});
             const [specialCustomers, setSpecialCustomers] = useLocalStorage('specialCustomers', {});
             const [inventory, setInventory] = useLocalStorage('productInventory', []);
-            const [templateConfig, setTemplateConfig] = useLocalStorage('templateConfig', { emoji: '💙', paidMsg: '😍 완납 확인! 감사합니다 😍', unpaidPrefix: '[미입금]\n총 입금하실 금액\n👉', addrNotice: '※ 배송지 변경 시 채팅으로 변경할 주소를 남겨주세요!', surveyNotice: '방송마다 1회 하단의 주문서(배송지입력) 필수!!', alwaysRequestAddress: false });
+            const [templateConfig, setTemplateConfig] = useLocalStorage('templateConfig', { emoji: '💙', paidMsg: '😍 완납 확인! 감사합니다 😍', unpaidPrefix: '[미입금]\n총 입금하실 금액\n👉', overpaidMsg: '과납금액이 있습니다!\n환불받으실 계좌를 남겨주시거나, 적립금으로 처리 원하시면 말씀해주세요.', addrNotice: '※ 배송지 변경 시 채팅으로 변경할 주소를 남겨주세요!', surveyNotice: '방송마다 1회 하단의 주문서(배송지입력) 필수!!', alwaysRequestAddress: false });
             const [quickMessages, setQuickMessages] = useLocalStorage('quickMessages', ["안녕하세요! 주문은 하단 링크 클릭💙", "⚠️ 주소 미입력시 배송 보류!", "문의는 카톡 채널로🙏", "확인 중입니다🥰"]);
             const [isSettingsOpen, setIsSettingsOpen] = useState(false);
             const [isVipModalOpen, setIsVipModalOpen] = useState(false);
@@ -1971,6 +2014,7 @@
                                         </div>
                                         <div><label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1">완납 메시지</label><input type="text" value={templateConfig.paidMsg} onChange={(e)=>{const v = e.target.value; setTemplateConfig(p => ({...p, paidMsg: v}));}} className="w-full border dark:border-slate-600 rounded px-2 py-1.5 text-sm bg-slate-50 dark:bg-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-slate-400" /></div>
                                         <div><label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1">미납 안내</label><textarea value={templateConfig.unpaidPrefix} onChange={(e)=>{const v = e.target.value; setTemplateConfig(p => ({...p, unpaidPrefix: v}));}} className="w-full border dark:border-slate-600 rounded px-2 py-1.5 text-xs h-16 resize-none bg-slate-50 dark:bg-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-slate-400" /></div>
+                                        <div><label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1">과납 안내</label><textarea value={templateConfig.overpaidMsg} onChange={(e)=>{const v = e.target.value; setTemplateConfig(p => ({...p, overpaidMsg: v}));}} className="w-full border dark:border-slate-600 rounded px-2 py-1.5 text-xs h-16 resize-none bg-slate-50 dark:bg-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-slate-400" /></div>
                                         <div><label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1">계좌번호</label><textarea value={bankAccount} onChange={(e)=>{const v = e.target.value; setBankAccount(() => v);}} className="w-full border dark:border-slate-600 rounded px-2 py-1.5 text-xs h-12 resize-none bg-slate-50 dark:bg-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-slate-400" /></div>
                                         <div><label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1">주소 있음 안내</label><textarea value={templateConfig.addrNotice} onChange={(e)=>{const v = e.target.value; setTemplateConfig(p => ({...p, addrNotice: v}));}} className="w-full border dark:border-slate-600 rounded px-2 py-1.5 text-xs h-12 resize-none bg-slate-50 dark:bg-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-slate-400" /></div>
                                         <div><label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1">주소 없음 안내</label><textarea value={templateConfig.surveyNotice} onChange={(e)=>{const v = e.target.value; setTemplateConfig(p => ({...p, surveyNotice: v}));}} className="w-full border dark:border-slate-600 rounded px-2 py-1.5 text-xs h-24 resize-none bg-slate-50 dark:bg-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-slate-400" /></div>
