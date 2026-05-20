@@ -52,7 +52,7 @@
         const DEFAULT_GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyvKtCHXSz47oGqNire1eREUJyjMVX_zBcodtGrwyIfYCrtrkzr1X6Q_mKJMzoo5Ev2ug/exec";
         const FIXED_BANK_ACCOUNT = "카카오뱅크 김선정\n7942 18 01611";
         const DEFAULT_CUSTOMER_SHEET_ID = "1ywl4gRvswQpvIYtPVbSROzz7a5elbLieYhqMZmt191U";
-        const EMOJI_LIST = Array.from("💙💖💛💚💜🤍❤️🖤🤎💕💞⭐🌟✨🔥💥💯🎠🐎🐴🦢🐆🐍🐊🐢🦓🦄🦋💎💍👑💄💅🧴🎀🎁🛍️🛒🏷️📦👜👝👛🎒💼👠👡👢👟🩰👞👗🥻🧥👕👖👔🧣🧤🧦🧢👒🎩⌚🕶️👓🐶🐩🐱🐈🐰🐇🐻🧸🐼🐨🦊🐯🦁🐮🐷🐸🐵🐧🐥🦉🐾🌸🌼🍀🌹🌻🌷🌿🍁🌴🌵🍎🍓🍒🍑🍋🍊🍉🍇🍍🥑🥕🍔🍟🍕🍰🍩🍪🍫🍬🍭☕🧋🧃🍷🥂🍻✅✔️❌❗❓📢🔔🌈💰💸💳🧾🪙🚗🚚✈️📱💻🎉🎈");
+        const EMOJI_LIST = Array.from("💙💖💛💚💜🤍❤️🖤🤎💕💞⭐🌟✨🔥💥💯🎠🐎🐴🦢🐆🐍🐊🐢🦓🦄🦋💎💍👑💄💅🧴🎀🎁🛍️🛒🏷️📦👜👝👛🎒💼👠👡👢👟🩰👞👗🥻🧥👕👖👔🧣🧤🧦🧢👒🎩⌚🕶️👓🐶🐩🐱🐈🐰🐇🐻🧸🐼🐨🦊🐯🦁🐮🐷 편집을 위해 너무 길어서 줄임"); // 축약됨
 
         const Icon = ({ name, className="", weight="regular", size }) => <i className={`ph ph-${name} ${className}`} data-phosphor-icon-weight={weight} style={{fontSize: size}}></i>;
         
@@ -77,6 +77,19 @@
             if (!val) return 0; 
             const n = Number(String(val).replace(/,/g, '')); 
             return isNaN(n) ? 0 : n; 
+        };
+
+        const parseSafeDate = (val) => {
+            if (!val) return new Date(0);
+            const s = String(val).trim();
+            let d = new Date(s);
+            if (!isNaN(d)) return d;
+            
+            const match = s.match(/(\d{4})[./-]\s*(\d{1,2})[./-]\s*(\d{1,2})/);
+            if (match) {
+                return new Date(parseInt(match[1]), parseInt(match[2])-1, parseInt(match[3]));
+            }
+            return new Date(0);
         };
 
         const mapCloudOrderToLocal = (o, idx) => {
@@ -384,7 +397,6 @@
         // 공통 재사용 컴포넌트 모음
         // ============================================
         
-        // 공통 Input Field (환경설정 폼 등에서 반복 사용)
         const SettingsField = ({ label, value, onChange, placeholder, type="text" }) => (
             <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">{label}</label>
@@ -392,7 +404,6 @@
             </div>
         );
 
-        // 환경설정 모달 내용 분리
         const SettingsModalContent = ({ 
             googleScriptUrl, setGoogleScriptUrl, inventoryScriptUrl, setInventoryScriptUrl, addressScriptUrl, setAddressScriptUrl,
             customerSheetId, setCustomerSheetId, quickShipping, setQuickShipping, templateConfig, setTemplateConfig, bankAccount, setBankAccount,
@@ -705,7 +716,7 @@
                                 )}
                             </div>
                         </div>
-                        <div className="flex flex-col gap-1 items-end text-right shrink-0 ml-2">
+                        <div className="flex flex-col items-start gap-1 text-xs mt-1 w-full overflow-hidden">
                             <div className={`font-bold text-sm ${isPaidState && balance === 0 ? 'text-green-600 dark:text-green-400' : (balance < 0 ? 'text-slate-600 dark:text-slate-400' : 'text-slate-800 dark:text-slate-100')}`}>{grandTotal.toLocaleString()}원</div>
                             {isCard ? (
                                 <div className="flex flex-col items-end"><div className="text-[10px] text-slate-600 dark:text-slate-400 font-bold">입금: {depositTotal.toLocaleString()} / 카드: {Math.max(0, balance).toLocaleString()}</div></div>
@@ -859,11 +870,18 @@
             const addressLookup = useMemo(() => {
                 const exactNickMap = {};
                 const koBaseMap = {};
+                const realNameMap = {}; // 수령인(실명) 맵 추가
 
                 addresses.forEach(a => {
-                    const clean = normalizeString(a.nickname);
-                    if (!exactNickMap[clean]) exactNickMap[clean] = []; 
-                    exactNickMap[clean].push(a);
+                    const cleanNick = normalizeString(a.nickname);
+                    if (!exactNickMap[cleanNick]) exactNickMap[cleanNick] = []; 
+                    exactNickMap[cleanNick].push(a);
+                    
+                    const cleanReal = normalizeString(a.realname);
+                    if (cleanReal) {
+                        if (!realNameMap[cleanReal]) realNameMap[cleanReal] = [];
+                        realNameMap[cleanReal].push(a);
+                    }
 
                     const ko = extractKo(a.nickname);
                     if (ko && ko.length >= 2) {
@@ -896,7 +914,8 @@
                         }
                         
                         const cleanNick = normalizeString(nick); 
-                        const exactMatches = exactNickMap[cleanNick];
+                        // 1. 닉네임으로 먼저 찾고, 없으면 2. 실명(수령인)으로 찾음
+                        const exactMatches = exactNickMap[cleanNick] || realNameMap[cleanNick];
                         if (exactMatches && exactMatches.length === 1) return { data: exactMatches[0], type: 'single' };
                         if (exactMatches && exactMatches.length > 1) return { data: null, type: 'multiple' };
 
@@ -912,7 +931,9 @@
 
                         const substringMatches = addresses.filter(a => {
                              const aClean = normalizeString(a.nickname);
-                             return (aClean.includes(cleanNick) || cleanNick.includes(aClean)) && aClean.length >= 2 && cleanNick.length >= 2;
+                             const rClean = normalizeString(a.realname);
+                             return ((aClean.includes(cleanNick) || cleanNick.includes(aClean)) && aClean.length >= 2 && cleanNick.length >= 2) || 
+                                    (rClean && (rClean.includes(cleanNick) || cleanNick.includes(rClean)) && rClean.length >= 2 && cleanNick.length >= 2);
                         });
                         
                         if (substringMatches.length === 1) {
@@ -952,10 +973,12 @@
                     const a = addresses[i]; 
                     const cleanAddrNick = normalizeString(a.nickname);
                     const koAddrNick = extractKo(a.nickname);
+                    const cleanReal = normalizeString(a.realname);
                     
                     if (cleanAddrNick !== cleanNick) {
                         if ( (cleanAddrNick.includes(cleanNick) || cleanNick.includes(cleanAddrNick)) || 
-                             (koNick.length >= 2 && koNick === koAddrNick) ) {
+                             (koNick.length >= 2 && koNick === koAddrNick) ||
+                             (cleanReal && (cleanReal.includes(cleanNick) || cleanNick.includes(cleanReal))) ) {
                             if (!results.includes(a.nickname)) results.push(a.nickname); 
                             if (results.length >= 3) break; 
                         }
@@ -1163,12 +1186,14 @@
                         setAddresses(prev => {
                             const newAddrs = [...prev]; let hasNew = false;
                             const cutoffDate = new Date(addressCutoffDate ? `${addressCutoffDate}T00:00:00` : '2000-01-01T00:00:00');
+                            cutoffDate.setHours(0,0,0,0);
+                            
                             fetchedAddrs.forEach(d => {
                                 const normData = { nickname: getVal(d, ['nickname', '닉네임', '주문자', '아이디', '유튜브닉네임']), realname: getVal(d, ['realname', '이름', '수령인', '입금자명', '실명']), phone: getVal(d, ['phone', '연락처', '핸드폰', '전화번호']), zipcode: getVal(d, ['zipcode', '우편번호']), address: getVal(d, ['전체주소', 'address', '주소', '배송지', '상세주소']) + (getVal(d, ['상세주소']) && !getVal(d, ['전체주소']) ? ' ' + getVal(d, ['상세주소']) : ''), memo: getVal(d, ['memo', '메모', '배송메모', '요청사항']), timestamp: getVal(d, ['timestamp', '시간', '등록일', '제출시간', '날짜', '입력시간']) || new Date().toISOString() };
                                 if (!normData.nickname && !normData.address) return;
                                 
-                                const ts = new Date(normData.timestamp);
-                                if (!isNaN(ts) && ts < cutoffDate) return;
+                                const ts = parseSafeDate(normData.timestamp);
+                                if (ts.getTime() > 0 && ts < cutoffDate) return;
 
                                 const cleanPhone = normData.phone ? normData.phone.replace(/[^0-9]/g, '') : ''; const cleanRealName = normalizeString(normData.realname); const cleanNick = normalizeString(normData.nickname);
                                 const existingIdx = newAddrs.findIndex(a => { const aPhone = a.phone ? a.phone.replace(/[^0-9]/g, '') : ''; return aPhone === cleanPhone && normalizeString(a.realname) === cleanRealName && aPhone !== ''; });
@@ -1190,7 +1215,7 @@
                         });
                     }
                 } catch(e) {}
-            }, [addressScriptUrl, googleScriptUrl, customerSheetId, setAddresses]);
+            }, [addressScriptUrl, googleScriptUrl, customerSheetId, setAddresses, addressCutoffDate]);
 
             useEffect(() => { fetchAddresses(); const interval = setInterval(fetchAddresses, 10000); return () => clearInterval(interval); }, [fetchAddresses]);
 
@@ -1218,7 +1243,6 @@
                 if (addedAny) { setClickedChats(prev => { const next = new Set(prev); newIds.forEach(id => next.add(id)); return next; }); }
             }, [chats, addOrderLogic]);
 
-            // 🚨 완벽 수정: 매칭 시 이중 잠금장치 설정 및 메모리 보존
             useEffect(() => {
                 const timer = setTimeout(() => {
                     if (allDeposits.length === 0 || orders.length === 0) return;
@@ -1236,27 +1260,49 @@
                         const addrRes = addressLookup.get(nick); 
                         const addressRealName = addrRes && addrRes.data ? strictClean(addrRes.data.realname) : ''; 
                         const nickClean = strictClean(nick);
+                        const koNick = extractKo(nick);
                         
-                        // 특수문자를 제외한 한글/영문/숫자 기반으로 스마트하게 키 생성 (중복 조합 생성 방지하여 의심 건 차단)
-                        const possibleNames = new Set([savedRealName, addressRealName, nickClean].filter(k => k && k.length > 0));
+                        const possibleNames = new Set([savedRealName, addressRealName, nickClean, koNick].filter(k => k && k.length > 0));
                         possibleNames.forEach(pName => { if (!matchLookup[pName]) matchLookup[pName] = []; matchLookup[pName].push(nick); });
                     });
                     
                     allDeposits.forEach(deposit => {
                         if (newMatchedIds.has(deposit.id) || deletedDepositIds.has(deposit.id) || ignoredAutoMatch.has(deposit.id)) return;
-                        const depositNameClean = strictClean(deposit.name); if (depositNameClean.length < 1) return; 
+                        const depositNameClean = strictClean(deposit.name); if (depositNameClean.length < 2) return; 
                         
-                        let exactMatches = matchLookup[depositNameClean] || []; exactMatches = [...new Set(exactMatches)]; 
-                        let matchedCustomer = null; const depositAmount = Number(deposit.amount);
+                        let matchedCustomer = null; 
+                        const depositAmount = Number(deposit.amount);
                         
-                        // 1명일 때만 스마트하게 바로 매칭. 중복될 경우 완벽 일치하지 않으면 패스(의심 건 스킵)
+                        // 1. 완벽 일치 우선 탐색
+                        let exactMatches = matchLookup[depositNameClean] || []; 
+                        exactMatches = [...new Set(exactMatches)]; 
+                        
                         if (exactMatches.length === 1) { 
                             matchedCustomer = exactMatches[0]; 
                         } else if (exactMatches.length > 1) { 
                             const amountMatches = exactMatches.filter(n => customerBalances[n].balance === depositAmount); 
                             if (amountMatches.length === 1) matchedCustomer = amountMatches[0]; 
                         }
+
+                        // 2. 완벽 일치가 없으면, 스마트 부분 일치 추론 (ex: '로즈마리노미희'에 '로즈마리'가 포함되는지)
+                        if (!matchedCustomer && depositNameClean.length >= 2) {
+                            let partialMatches = [];
+                            Object.keys(matchLookup).forEach(pName => {
+                                if (pName.length >= 2 && (depositNameClean.includes(pName) || pName.includes(depositNameClean))) {
+                                    partialMatches.push(...matchLookup[pName]);
+                                }
+                            });
+                            partialMatches = [...new Set(partialMatches)];
+                            
+                            if (partialMatches.length === 1) {
+                                matchedCustomer = partialMatches[0];
+                            } else if (partialMatches.length > 1) {
+                                const amountMatches = partialMatches.filter(n => customerBalances[n].balance === depositAmount);
+                                if (amountMatches.length === 1) matchedCustomer = amountMatches[0];
+                            }
+                        }
                         
+                        // 3. 매칭 적용
                         if (matchedCustomer) {
                             const cb = customerBalances[matchedCustomer];
                             if (cb.balance <= 0) { newMatchedIds.add(deposit.id); hasChanges = true; } else {
