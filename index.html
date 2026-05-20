@@ -117,6 +117,11 @@
             return s;
         };
 
+        const strictClean = (str) => {
+            if (!str) return '';
+            return String(str).replace(/[^가-힣a-zA-Z0-9]/g, '').toLowerCase();
+        };
+
         const getCleanSheetId = (idOrUrl) => {
             if (!idOrUrl) return '';
             const match = idOrUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
@@ -386,7 +391,7 @@
         const SettingsModalContent = ({ 
             googleScriptUrl, setGoogleScriptUrl, inventoryScriptUrl, setInventoryScriptUrl, addressScriptUrl, setAddressScriptUrl,
             customerSheetId, setCustomerSheetId, quickShipping, setQuickShipping, templateConfig, setTemplateConfig, bankAccount, setBankAccount,
-            quickMessages, setQuickMessages, setIsSettingsOpen
+            quickMessages, setQuickMessages, setIsSettingsOpen, addressCutoffDate, setAddressCutoffDate
         }) => {
             return (
                 <div className="absolute top-12 right-4 bg-white dark:bg-slate-800 shadow-xl border dark:border-slate-700 rounded-lg p-4 w-[420px] z-50 animate-pop max-h-[85vh] overflow-y-auto">
@@ -396,7 +401,14 @@
                         <SettingsField label="고객용 상품 스크립트 URL (선택/자동저장용)" value={inventoryScriptUrl} onChange={setInventoryScriptUrl} placeholder="고객용 시트에서 배포한 앱스 스크립트 주소 입력" />
                         <SettingsField label="주소록 전용 앱스 스크립트 URL (선택)" value={addressScriptUrl} onChange={setAddressScriptUrl} placeholder="입력 시, 주소록은 이곳에서만 동기화됩니다." />
                         <SettingsField label="고객 주소록 시트 ID" value={customerSheetId} onChange={setCustomerSheetId} />
-                        <SettingsField label="기본 배송비" type="number" value={quickShipping} onChange={(v) => setQuickShipping(Number(v))} />
+                        
+                        <div className="grid grid-cols-2 gap-2">
+                            <SettingsField label="기본 배송비" type="number" value={quickShipping} onChange={(v) => setQuickShipping(Number(v))} />
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">주소록 수집 시작일</label>
+                                <input type="date" value={addressCutoffDate} onChange={e => setAddressCutoffDate(e.target.value)} className="w-full border dark:border-slate-600 rounded px-2 py-1.5 text-xs bg-slate-50 dark:bg-slate-900 dark:text-white focus:ring-1 focus:ring-slate-400 outline-none" />
+                            </div>
+                        </div>
                         
                         <div className="border-t dark:border-slate-700 pt-4">
                             <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-2 flex items-center gap-1"><Icon name="chat-text" weight="fill"/> 주문서 멘트 설정</h4>
@@ -724,7 +736,7 @@
         // ============================================
         // 컴포넌트: 탭 (LiveTab)
         // ============================================
-        const LiveTab = ({ orders, setOrders, productHistory, setProductHistory, quickShipping, shippingOverrides, setShippingOverrides, bankAccount, googleScriptUrl, addressScriptUrl, inventoryScriptUrl, addresses, setAddresses, cardPayments, setCardPayments, matchedDeposits, setMatchedDeposits, depositorNames, setDepositorNames, clickedChats, setClickedChats, openModal, keywords, setKeywords, sentAddressRequests, setSentAddressRequests, deletedDepositIds, setDeletedDepositIds, checkedOrders, setCheckedOrders, addressMapping, setAddressMapping, templateConfig, specialCustomers, setSpecialCustomers, inventory, setInventory, quickMessages, customerSheetId, handleResetAllData }) => {
+        const LiveTab = ({ orders, setOrders, productHistory, setProductHistory, quickShipping, shippingOverrides, setShippingOverrides, bankAccount, googleScriptUrl, addressScriptUrl, inventoryScriptUrl, addresses, setAddresses, cardPayments, setCardPayments, matchedDeposits, setMatchedDeposits, depositorNames, setDepositorNames, clickedChats, setClickedChats, openModal, keywords, setKeywords, sentAddressRequests, setSentAddressRequests, deletedDepositIds, setDeletedDepositIds, checkedOrders, setCheckedOrders, addressMapping, setAddressMapping, templateConfig, specialCustomers, setSpecialCustomers, inventory, setInventory, quickMessages, customerSheetId, handleResetAllData, addressCutoffDate }) => {
             const [chats, setChats] = useState([]);
             const [serverDeposits, setServerDeposits] = useState([]);
             const [manualDeposits, setManualDeposits] = useState([]);
@@ -1083,9 +1095,14 @@
                     if(fetchedAddrs.length > 0) {
                         setAddresses(prev => {
                             const newAddrs = [...prev]; let hasNew = false;
+                            const cutoffDate = new Date(addressCutoffDate ? `${addressCutoffDate}T00:00:00` : '2000-01-01T00:00:00');
                             fetchedAddrs.forEach(d => {
                                 const normData = { nickname: getVal(d, ['nickname', '닉네임', '주문자', '아이디', '유튜브닉네임']), realname: getVal(d, ['realname', '이름', '수령인', '입금자명', '실명']), phone: getVal(d, ['phone', '연락처', '핸드폰', '전화번호']), zipcode: getVal(d, ['zipcode', '우편번호']), address: getVal(d, ['전체주소', 'address', '주소', '배송지', '상세주소']) + (getVal(d, ['상세주소']) && !getVal(d, ['전체주소']) ? ' ' + getVal(d, ['상세주소']) : ''), memo: getVal(d, ['memo', '메모', '배송메모', '요청사항']), timestamp: getVal(d, ['timestamp', '시간', '등록일', '제출시간', '날짜', '입력시간']) || new Date().toISOString() };
                                 if (!normData.nickname && !normData.address) return;
+                                
+                                const ts = new Date(normData.timestamp);
+                                if (!isNaN(ts) && ts < cutoffDate) return;
+
                                 const cleanPhone = normData.phone ? normData.phone.replace(/[^0-9]/g, '') : ''; const cleanRealName = normalizeString(normData.realname); const cleanNick = normalizeString(normData.nickname);
                                 const existingIdx = newAddrs.findIndex(a => { const aPhone = a.phone ? a.phone.replace(/[^0-9]/g, '') : ''; return aPhone === cleanPhone && normalizeString(a.realname) === cleanRealName && aPhone !== ''; });
                                 if (existingIdx !== -1) {
@@ -1148,16 +1165,31 @@
                     const matchLookup = {};
                     Object.keys(customerBalances).forEach(nick => {
                         const cb = customerBalances[nick]; cb.grandTotal = cb.productTotal + (cb.activeItemsCount > 0 ? cb.shipping : 0); cb.balance = cb.grandTotal - cb.depositTotal;
-                        const savedRealName = depositorNames[nick] ? cleanForMatch(depositorNames[nick]) : ''; const addrRes = addressLookup.get(nick); const addressRealName = addrRes && addrRes.data ? cleanForMatch(addrRes.data.realname) : ''; const nickClean = cleanForMatch(nick);
-                        const possibleNames = new Set([savedRealName, addressRealName, nickClean, nickClean && savedRealName ? nickClean + savedRealName : null, nickClean && savedRealName ? savedRealName + nickClean : null, nickClean && addressRealName ? nickClean + addressRealName : null, nickClean && addressRealName ? addressRealName + nickClean : null].filter(Boolean));
+                        const savedRealName = depositorNames[nick] ? strictClean(depositorNames[nick]) : ''; 
+                        const addrRes = addressLookup.get(nick); 
+                        const addressRealName = addrRes && addrRes.data ? strictClean(addrRes.data.realname) : ''; 
+                        const nickClean = strictClean(nick);
+                        
+                        // 특수문자를 제외한 한글/영문/숫자 기반으로 스마트하게 키 생성 (중복 조합 생성 방지하여 의심 건 차단)
+                        const possibleNames = new Set([savedRealName, addressRealName, nickClean].filter(k => k && k.length > 0));
                         possibleNames.forEach(pName => { if (!matchLookup[pName]) matchLookup[pName] = []; matchLookup[pName].push(nick); });
                     });
+                    
                     allDeposits.forEach(deposit => {
                         if (newMatchedIds.has(deposit.id) || deletedDepositIds.has(deposit.id) || ignoredAutoMatch.has(deposit.id)) return;
-                        const depositNameClean = cleanForMatch(deposit.name); if (depositNameClean.length < 1) return; 
-                        let exactMatches = matchLookup[depositNameClean] || []; exactMatches = [...new Set(exactMatches)]; let matchedCustomer = null; const depositAmount = Number(deposit.amount);
-                        if (exactMatches.length === 1) { matchedCustomer = exactMatches[0]; } 
-                        else if (exactMatches.length > 1) { const amountMatches = exactMatches.filter(nick => customerBalances[nick].balance === depositAmount); if (amountMatches.length === 1) matchedCustomer = amountMatches[0]; }
+                        const depositNameClean = strictClean(deposit.name); if (depositNameClean.length < 1) return; 
+                        
+                        let exactMatches = matchLookup[depositNameClean] || []; exactMatches = [...new Set(exactMatches)]; 
+                        let matchedCustomer = null; const depositAmount = Number(deposit.amount);
+                        
+                        // 1명일 때만 스마트하게 바로 매칭. 중복될 경우 완벽 일치하지 않으면 패스(의심 건 스킵)
+                        if (exactMatches.length === 1) { 
+                            matchedCustomer = exactMatches[0]; 
+                        } else if (exactMatches.length > 1) { 
+                            const amountMatches = exactMatches.filter(n => customerBalances[n].balance === depositAmount); 
+                            if (amountMatches.length === 1) matchedCustomer = amountMatches[0]; 
+                        }
+                        
                         if (matchedCustomer) {
                             const cb = customerBalances[matchedCustomer];
                             if (cb.balance <= 0) { newMatchedIds.add(deposit.id); hasChanges = true; } else {
@@ -1371,20 +1403,68 @@
             const handleAddManualDeposit = (e) => { e.preventDefault(); if (!newDepositName.trim() || !newDepositAmount) return openModal("입금자명/금액 필수", 'alert'); const newDep = { id: `manual_${Date.now()}`, name: newDepositName, amount: newDepositAmount, source: 'manual' }; setManualDeposits(prev => [newDep, ...prev]); setNewDepositName(''); setNewDepositAmount(''); };
 
             const visibleDeposits = useMemo(() => {
-                if (depositSearch) return filteredDeposits; const unmatched = []; const matched = [];
-                filteredDeposits.forEach(d => { if (matchedDeposits?.has(d.id)) matched.push(d); else unmatched.push(d); }); return [...unmatched, ...matched];
-            }, [filteredDeposits, depositSearch, matchedDeposits]);
+                if (depositSearch) return filteredDeposits; 
+                let res = [...filteredDeposits];
+                
+                if (selectedNick) {
+                    const sNick = strictClean(selectedNick);
+                    const aData = addressLookup.get(selectedNick)?.data;
+                    const sReal = aData ? strictClean(aData.realname) : '';
+                    const sMan = strictClean(depositorNames[selectedNick]);
+
+                    res.sort((a, b) => {
+                        const aUsed = matchedDeposits?.has(a.id);
+                        const bUsed = matchedDeposits?.has(b.id);
+                        if (aUsed !== bUsed) return aUsed ? 1 : -1;
+
+                        const aName = strictClean(a.name);
+                        const bName = strictClean(b.name);
+
+                        const scoreA = (aName && (aName === sNick || aName === sReal || aName === sMan)) ? 3 : (aName && (sNick && aName.includes(sNick) || sReal && aName.includes(sReal))) ? 2 : 0;
+                        const scoreB = (bName && (bName === sNick || bName === sReal || bName === sMan)) ? 3 : (bName && (sNick && bName.includes(sNick) || sReal && bName.includes(sReal))) ? 2 : 0;
+
+                        if (scoreA !== scoreB) return scoreB - scoreA;
+                        return 0;
+                    });
+                    return res;
+                }
+
+                const unmatched = []; const matched = [];
+                res.forEach(d => { if (matchedDeposits?.has(d.id)) matched.push(d); else unmatched.push(d); }); 
+                return [...unmatched, ...matched];
+            }, [filteredDeposits, depositSearch, matchedDeposits, selectedNick, addressLookup, depositorNames]);
 
             const usedAddressNicks = useMemo(() => { const set = new Set(); orders.forEach(o => { if (!o.isCancelled) { const mappedTarget = addressMapping[o.customer]; if (mappedTarget) set.add(normalizeString(mappedTarget)); else set.add(normalizeString(o.customer)); } }); return set; }, [orders, addressMapping]);
 
             const visibleAddresses = useMemo(() => {
                 let res = [...addresses];
                 if (addressSearch) { const term = addressSearch.toLowerCase(); res = res.filter(a => String(a.nickname).toLowerCase().includes(term) || String(a.realname).toLowerCase().includes(term) || String(a.phone).includes(term) || (a.linkedNicks && a.linkedNicks.some(ln => String(ln).toLowerCase().includes(term)))); }
-                res.sort((a, b) => { const tA = new Date(a.timestamp || 0).getTime(); const tB = new Date(b.timestamp || 0).getTime(); return tB - tA; });
+                
                 if (selectedNick) {
-                    const targetClean = normalizeString(selectedNick);
-                    res.sort((a, b) => { const aMatch = normalizeString(a.nickname) === targetClean || (a.linkedNicks && a.linkedNicks.some(ln => normalizeString(ln) === targetClean)); const bMatch = normalizeString(b.nickname) === targetClean || (b.linkedNicks && b.linkedNicks.some(ln => normalizeString(ln) === targetClean)); if (aMatch && !bMatch) return -1; if (!aMatch && bMatch) return 1; return 0; });
-                } return res;
+                    const sNick = strictClean(selectedNick);
+                    res.sort((a, b) => { 
+                        const aNick = strictClean(a.nickname);
+                        const bNick = strictClean(b.nickname);
+                        const aReal = strictClean(a.realname);
+                        const bReal = strictClean(b.realname);
+                        const aLinked = (a.linkedNicks || []).map(ln => strictClean(ln));
+                        const bLinked = (b.linkedNicks || []).map(ln => strictClean(ln));
+
+                        const isAMatch = aNick === sNick || aReal === sNick || aLinked.includes(sNick);
+                        const isBMatch = bNick === sNick || bReal === sNick || bLinked.includes(sNick);
+                        const isAPartial = aNick.includes(sNick) || aReal.includes(sNick);
+                        const isBPartial = bNick.includes(sNick) || bReal.includes(sNick);
+
+                        const scoreA = isAMatch ? 3 : isAPartial ? 2 : 0;
+                        const scoreB = isBMatch ? 3 : isBPartial ? 2 : 0;
+
+                        if (scoreA !== scoreB) return scoreB - scoreA;
+                        const tA = new Date(a.timestamp || 0).getTime(); const tB = new Date(b.timestamp || 0).getTime(); return tB - tA;
+                    });
+                } else {
+                    res.sort((a, b) => { const tA = new Date(a.timestamp || 0).getTime(); const tB = new Date(b.timestamp || 0).getTime(); return tB - tA; });
+                }
+                return res;
             }, [addresses, addressSearch, selectedNick]);
 
             const handleQuickAddProduct = (e) => {
@@ -1961,6 +2041,7 @@
             const [inventory, setInventory] = useLocalStorage('productInventory', []);
             const [templateConfig, setTemplateConfig] = useLocalStorage('templateConfig', { emoji: '💙', paidMsg: '😍 완납 확인! 감사합니다 😍', unpaidPrefix: '[미입금]\n총 입금하실 금액\n👉', overpaidMsg: '과납금액이 있습니다!\n환불받으실 계좌를 남겨주시거나, 적립금으로 처리 원하시면 말씀해주세요.', addrNotice: '※ 배송지 변경 시 채팅으로 변경할 주소를 남겨주세요!', surveyNotice: '방송마다 1회 하단의 주문서(배송지입력) 필수!!', alwaysRequestAddress: false });
             const [quickMessages, setQuickMessages] = useLocalStorage('quickMessages', ["안녕하세요! 주문은 하단 링크 클릭💙", "⚠️ 주소 미입력시 배송 보류!", "문의는 카톡 채널로🙏", "확인 중입니다🥰"]);
+            const [addressCutoffDate, setAddressCutoffDate] = useLocalStorage('addressCutoffDate', '2026-05-20');
             const [isSettingsOpen, setIsSettingsOpen] = useState(false);
             const [isVipModalOpen, setIsVipModalOpen] = useState(false);
             const [googleScriptUrl, setGoogleScriptUrl] = useLocalStorage('googleScriptUrl', DEFAULT_GOOGLE_SCRIPT_URL);
@@ -2072,11 +2153,12 @@
                             bankAccount={bankAccount} setBankAccount={setBankAccount}
                             quickMessages={quickMessages} setQuickMessages={setQuickMessages}
                             setIsSettingsOpen={setIsSettingsOpen}
+                            addressCutoffDate={addressCutoffDate} setAddressCutoffDate={setAddressCutoffDate}
                         />
                     )}
                     
                     <main className="flex-1 overflow-hidden bg-slate-200 dark:bg-slate-950 p-2 relative">
-                        {activeTab === 'live' && <LiveTab {...{ orders, setOrders, productHistory, setProductHistory, quickShipping, shippingOverrides, setShippingOverrides, bankAccount, googleScriptUrl, addressScriptUrl, inventoryScriptUrl, addresses, setAddresses, cardPayments, setCardPayments, matchedDeposits, setMatchedDeposits, depositorNames, setDepositorNames, clickedChats, setClickedChats, openModal, keywords, setKeywords, sentAddressRequests, setSentAddressRequests, deletedDepositIds, setDeletedDepositIds, checkedOrders, setCheckedOrders, addressMapping, setAddressMapping, templateConfig, specialCustomers, setSpecialCustomers, inventory, setInventory, quickMessages, customerSheetId, handleResetAllData }} />}
+                        {activeTab === 'live' && <LiveTab {...{ orders, setOrders, productHistory, setProductHistory, quickShipping, shippingOverrides, setShippingOverrides, bankAccount, googleScriptUrl, addressScriptUrl, inventoryScriptUrl, addresses, setAddresses, cardPayments, setCardPayments, matchedDeposits, setMatchedDeposits, depositorNames, setDepositorNames, clickedChats, setClickedChats, openModal, keywords, setKeywords, sentAddressRequests, setSentAddressRequests, deletedDepositIds, setDeletedDepositIds, checkedOrders, setCheckedOrders, addressMapping, setAddressMapping, templateConfig, specialCustomers, setSpecialCustomers, inventory, setInventory, quickMessages, customerSheetId, handleResetAllData, addressCutoffDate }} />}
                         {activeTab === 'manage' && <OrderManagementTab {...{ orders, shippingOverrides, quickShipping, addresses, handleExportBackup, handleImportBackup, addressMapping, cardPayments, specialCustomers, openModal }} />}
                     </main>
                 </div>
