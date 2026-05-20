@@ -1966,20 +1966,23 @@
                 const data = [];
                 
                 dataList.forEach(d => {
-                    d.activeItems.forEach((item, idx) => {
+                    let orderListText = d.activeItems.map(item => {
                         const unitPrice = item.quantity > 0 ? item.price / item.quantity : 0;
-                        const rowText = `${item.product}${item.quantity > 1 ? ` (${item.quantity}개)` : ''} ${unitPrice.toLocaleString()}원`;
-                        
-                        if(idx === 0) {
-                            data.push({ '닉네임': d.nick, '주문내역': rowText, '총금액': d.grandTotal.toLocaleString() + '원', '입금액': d.depositTotal.toLocaleString() + '원', '상태': d.statusStr, '카톡안내메시지': d.msgTextExcel });
-                        } else {
-                            data.push({ '닉네임': d.nick, '주문내역': rowText, '총금액': '', '입금액': '', '상태': '', '카톡안내메시지': '' });
-                        }
-                    });
-
+                        return `${item.product}${item.quantity > 1 ? ` (${item.quantity}개)` : ''} ${unitPrice.toLocaleString()}원`;
+                    }).join('\n');
+                    
                     if (d.currentShipping > 0) {
-                        data.push({ '닉네임': d.nick, '주문내역': `배송비 ${d.currentShipping.toLocaleString()}원`, '총금액': '', '입금액': '', '상태': '', '카톡안내메시지': '' });
+                        orderListText += (orderListText ? '\n' : '') + `배송비 ${d.currentShipping.toLocaleString()}원`;
                     }
+
+                    data.push({
+                        '닉네임': d.nick,
+                        '주문내역': orderListText,
+                        '총금액': d.grandTotal.toLocaleString() + '원',
+                        '입금액': d.depositTotal.toLocaleString() + '원',
+                        '상태': d.statusStr,
+                        '카톡안내메시지': d.msgTextExcel
+                    });
                 });
                 
                 const ws = XLSX.utils.json_to_sheet(data);
