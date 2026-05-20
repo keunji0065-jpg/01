@@ -122,6 +122,11 @@
             return String(str).replace(/[^가-힣a-zA-Z0-9]/g, '').toLowerCase();
         };
 
+        const extractKo = (str) => {
+            if (!str) return '';
+            return String(str).replace(/[^가-힣]/g, '');
+        };
+
         const getCleanSheetId = (idOrUrl) => {
             if (!idOrUrl) return '';
             const match = idOrUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
@@ -852,20 +857,70 @@
             };
 
             const addressLookup = useMemo(() => {
-                const nickMap = {};
+                const exactNickMap = {};
+                const koBaseMap = {};
+
                 addresses.forEach(a => {
                     const clean = normalizeString(a.nickname);
-                    if (!nickMap[clean]) nickMap[clean] = []; nickMap[clean].push(a);
-                    if (a.linkedNicks && Array.isArray(a.linkedNicks)) { a.linkedNicks.forEach(ln => { const cleanLn = normalizeString(ln); if (!nickMap[cleanLn]) nickMap[cleanLn] = []; nickMap[cleanLn].push(a); }); }
+                    if (!exactNickMap[clean]) exactNickMap[clean] = []; 
+                    exactNickMap[clean].push(a);
+
+                    const ko = extractKo(a.nickname);
+                    if (ko && ko.length >= 2) {
+                        if (!koBaseMap[ko]) koBaseMap[ko] = [];
+                        koBaseMap[ko].push(a);
+                    }
+
+                    if (a.linkedNicks && Array.isArray(a.linkedNicks)) { 
+                        a.linkedNicks.forEach(ln => { 
+                            const cleanLn = normalizeString(ln); 
+                            if (!exactNickMap[cleanLn]) exactNickMap[cleanLn] = []; 
+                            exactNickMap[cleanLn].push(a); 
+
+                            const koLn = extractKo(ln);
+                            if (koLn && koLn.length >= 2) {
+                                if (!koBaseMap[koLn]) koBaseMap[koLn] = [];
+                                koBaseMap[koLn].push(a);
+                            }
+                        }); 
+                    }
                 });
+
                 return {
                     get: (nick) => {
                         if (!nick) return { data: null, type: 'none' };
                         const mappedTarget = addressMapping[nick];
-                        if (mappedTarget) { const mappedAddrs = nickMap[normalizeString(mappedTarget)]; if (mappedAddrs && mappedAddrs.length > 0) return { data: mappedAddrs[0], type: 'mapped' }; }
-                        const cleanNick = normalizeString(nick); const matches = nickMap[cleanNick];
-                        if (matches && matches.length === 1) return { data: matches[0], type: 'single' };
-                        if (matches && matches.length > 1) return { data: null, type: 'multiple' };
+                        if (mappedTarget) { 
+                            const mappedAddrs = exactNickMap[normalizeString(mappedTarget)]; 
+                            if (mappedAddrs && mappedAddrs.length > 0) return { data: mappedAddrs[0], type: 'mapped' }; 
+                        }
+                        
+                        const cleanNick = normalizeString(nick); 
+                        const exactMatches = exactNickMap[cleanNick];
+                        if (exactMatches && exactMatches.length === 1) return { data: exactMatches[0], type: 'single' };
+                        if (exactMatches && exactMatches.length > 1) return { data: null, type: 'multiple' };
+
+                        const koNick = extractKo(nick);
+                        if (koNick && koNick.length >= 2) {
+                            const koMatches = koBaseMap[koNick];
+                            if (koMatches && koMatches.length === 1) {
+                                return { data: koMatches[0], type: 'single_smart' };
+                            } else if (koMatches && koMatches.length > 1) {
+                                return { data: null, type: 'multiple' };
+                            }
+                        }
+
+                        const substringMatches = addresses.filter(a => {
+                             const aClean = normalizeString(a.nickname);
+                             return (aClean.includes(cleanNick) || cleanNick.includes(aClean)) && aClean.length >= 2 && cleanNick.length >= 2;
+                        });
+                        
+                        if (substringMatches.length === 1) {
+                             return { data: substringMatches[0], type: 'single_smart' };
+                        } else if (substringMatches.length > 1) {
+                             return { data: null, type: 'multiple' };
+                        }
+
                         return { data: null, type: 'none' };
                     }
                 };
@@ -888,11 +943,23 @@
             }, [shippingOverrides, specialCustomers, addressLookup, quickShipping]);
 
             const findAddressSuggestions = useCallback((nick) => {
-                if (!nick) return []; const cleanNick = normalizeString(nick); if (cleanNick.length < 2) return []; 
+                if (!nick) return []; 
+                const cleanNick = normalizeString(nick); 
+                const koNick = extractKo(nick);
+                if (cleanNick.length < 2 && koNick.length < 2) return []; 
                 const results = [];
                 for (let i = 0; i < addresses.length; i++) {
-                    const a = addresses[i]; const cleanAddrNick = normalizeString(a.nickname);
-                    if (cleanAddrNick !== cleanNick && (cleanAddrNick.includes(cleanNick) || cleanNick.includes(cleanAddrNick))) { results.push(a.nickname); if (results.length >= 3) break; }
+                    const a = addresses[i]; 
+                    const cleanAddrNick = normalizeString(a.nickname);
+                    const koAddrNick = extractKo(a.nickname);
+                    
+                    if (cleanAddrNick !== cleanNick) {
+                        if ( (cleanAddrNick.includes(cleanNick) || cleanNick.includes(cleanAddrNick)) || 
+                             (koNick.length >= 2 && koNick === koAddrNick) ) {
+                            if (!results.includes(a.nickname)) results.push(a.nickname); 
+                            if (results.length >= 3) break; 
+                        }
+                    }
                 }
                 return results;
             }, [addresses]);
