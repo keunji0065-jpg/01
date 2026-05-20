@@ -797,6 +797,25 @@
             const orderListRef = useRef(null);
             const [hiddenChatIds, setHiddenChatIds] = useLocalStorage('hiddenChatIds', []);
 
+            // 설정된 날짜 이전의 주소록 데이터를 즉시 필터링(제외)하는 로직 추가
+            useEffect(() => {
+                setAddresses(prev => {
+                    if (!prev || prev.length === 0) return prev;
+                    const cutoffDate = new Date(addressCutoffDate ? `${addressCutoffDate}T00:00:00` : '2000-01-01T00:00:00');
+                    cutoffDate.setHours(0,0,0,0);
+                    
+                    const filtered = prev.filter(a => {
+                        const ts = parseSafeDate(a.timestamp);
+                        // 타임스탬프가 유효하고 지정된 날짜 이전이면 목록에서 제외
+                        if (ts.getTime() > 0 && ts < cutoffDate) return false;
+                        return true;
+                    });
+                    
+                    // 필터링 결과가 기존 배열 길이와 다를 때만 상태 업데이트를 진행하여 최적화
+                    return filtered.length !== prev.length ? filtered : prev;
+                });
+            }, [addressCutoffDate, setAddresses]);
+
             useEffect(() => {
                 const handleKeyDown = (e) => {
                     if (e.key === 'Escape') {
@@ -1853,66 +1872,97 @@
 
         const OrderManagementTab = ({ orders, shippingOverrides, quickShipping, addresses, handleExportBackup, handleImportBackup, addressMapping, cardPayments, specialCustomers, openModal }) => {
             
-            const getUnpaidDataList = () => {
+            const getAllNotificationDataList = () => {
                 const groups = {}; orders.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); });
                 const dataList = [];
+                const sentAddressRequestsStr = localStorage.getItem('sentAddressRequests');
+                const sentAddressRequests = sentAddressRequestsStr ? new Set(JSON.parse(sentAddressRequestsStr)) : new Set();
+                const templateConfig = JSON.parse(localStorage.getItem('templateConfig') || "{}");
+                let bankStr = localStorage.getItem('bankAccount') || FIXED_BANK_ACCOUNT;
+                try { bankStr = JSON.parse(bankStr); } catch(e){}
+
                 Object.entries(groups).forEach(([nick, items]) => {
-                    if (cardPayments && cardPayments[nick]) return; 
                     const activeItems = items.filter(i => !i.isCancelled); if (activeItems.length === 0) return;
+                    
                     let currentShipping = Number(quickShipping);
                     if (shippingOverrides && shippingOverrides[nick] !== undefined) currentShipping = Number(shippingOverrides[nick]);
                     const nickNorm = normalizeString(nick); const specialKey = Object.keys(specialCustomers || {}).find(k => normalizeString(k) === nickNorm);
-                    if (specialKey && specialCustomers[specialKey].type === 'vip') currentShipping = 0;
-                    else {
-                        const targetAddr = addressMapping[nick] ? addresses.find(a => normalizeString(a.nickname) === normalizeString(addressMapping[nick])) : addresses.find(a => normalizeString(a.nickname) === normalizeString(nick));
-                        if (targetAddr && targetAddr.address && targetAddr.address.includes('제주')) currentShipping = 8000;
-                    }
-                    const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0); const grandTotal = productTotal + (activeItems.length > 0 ? currentShipping : 0);
-                    const depositTotal = items.reduce((sum, i) => sum + (i.deposit || 0), 0); const balance = grandTotal - depositTotal;
                     
-                    if (balance !== 0) { 
+                    let addrData = null;
+                    if (specialKey && specialCustomers[specialKey].type === 'vip') {
+                        currentShipping = 0;
+                    } 
+                    
+                    const mappedNick = addressMapping[nick] || nick;
+                    addrData = addresses.find(a => normalizeString(a.nickname) === normalizeString(mappedNick));
+                    
+                    if (!specialKey && addrData && addrData.address && addrData.address.includes('제주')) {
+                        currentShipping = 8000;
+                    }
+                    
+                    const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0); 
+                    const grandTotal = productTotal + (activeItems.length > 0 ? currentShipping : 0);
+                    const depositTotal = items.reduce((sum, i) => sum + (i.deposit || 0), 0); 
+                    const balance = grandTotal - depositTotal;
+                    const isCard = cardPayments && cardPayments[nick];
+                    
+                    const { emoji, paidMsg, unpaidPrefix, overpaidMsg, addrNotice, surveyNotice, alwaysRequestAddress } = templateConfig;
+                    
+                    let itemListTextForCopy = activeItems.map(item => {
+                        const unitPrice = item.quantity > 0 ? item.price / item.quantity : 0;
+                        return `${item.product}${item.quantity > 1 ? ` (${item.quantity}개)` : ''} ${unitPrice.toLocaleString()}원`;
+                    }).join('\n');
+                    
+                    let msg = `${emoji || '💙'} ${nick} 님 ${emoji || '💙'}\n\n[주문내역]\n${itemListTextForCopy}\n배송비 ${currentShipping.toLocaleString()}원\n\n총 주문금액: ${grandTotal.toLocaleString()}원\n`;
+                    let statusStr = "";
+                    
+                    if (isCard) { 
+                        const cardBase = Math.max(0, balance); 
+                        if (depositTotal > 0) msg += `[입금확인]\n${depositTotal.toLocaleString()}원\n------------------\n`; 
+                        msg += `[카드결제]\n금액 ${cardBase.toLocaleString()}원\n수수료(10%) ${(cardBase * 0.1).toLocaleString()}원\n👉결제요청액 ${(cardBase * 1.1).toLocaleString()}원 예정\n\n핸드폰번호 남겨주세요🌸\n------------------\n`; 
+                        statusStr = "카드결제";
+                    } 
+                    else { 
+                        const isExactPaid = balance === 0;
                         const isOverpaid = balance < 0;
                         const absBalance = Math.abs(balance);
-
-                        let itemListTextForExcel = activeItems.map(item => {
-                            const unitPrice = item.quantity > 0 ? item.price / item.quantity : 0;
-                            return `${item.product}${item.quantity > 1 ? ` (${item.quantity}개)` : ''} ${unitPrice.toLocaleString()}원`;
-                        }).join('\n');
-                        if (currentShipping > 0) itemListTextForExcel += `\n배송비 ${currentShipping.toLocaleString()}원`;
-
-                        let itemListTextForCopy = activeItems.map(item => {
-                            const unitPrice = item.quantity > 0 ? item.price / item.quantity : 0;
-                            return `${item.product}${item.quantity > 1 ? ` (${item.quantity}개)` : ''} ${unitPrice.toLocaleString()}원`;
-                        }).join('\n');
-                        if (currentShipping > 0) itemListTextForCopy += `\n배송비 ${currentShipping.toLocaleString()}원`;
                         
-                        const { emoji, unpaidPrefix, overpaidMsg } = JSON.parse(localStorage.getItem('templateConfig') || "{}");
-                        let bankStr = localStorage.getItem('bankAccount') || FIXED_BANK_ACCOUNT;
-                        try { bankStr = JSON.parse(bankStr); } catch(e){}
-                        
-                        let parsedPrefix = String(unpaidPrefix || '[미입금] 총 입금하실 금액 👉').replace(/\\n/g, '\n').replace(/^"|"$/g, '');
-                        let parsedBank = String(bankStr).replace(/\\n/g, '\n').replace(/^"|"$/g, '');
-                        let parsedOverpaidMsg = String(overpaidMsg || '과납금액이 있습니다!\n환불받으실 계좌를 남겨주시거나, 적립금으로 처리 원하시면 말씀해주세요.').replace(/\\n/g, '\n').replace(/^"|"$/g, '');
-
-                        let msgTextCopy = `${emoji || '💙'} ${nick} 님 ${emoji || '💙'}\n\n[주문내역]\n${itemListTextForCopy}\n\n총 주문금액: ${grandTotal.toLocaleString()}원\n입금확인: ${depositTotal.toLocaleString()}원\n`;
+                        if (depositTotal > 0) msg += `입금확인: ${depositTotal.toLocaleString()}원\n`;
+                        else msg += `입금확인: 0원\n`;
                         
                         if (isOverpaid) {
-                            msgTextCopy += `과납금액: ${absBalance.toLocaleString()}원\n------------------\n${parsedOverpaidMsg}`;
+                            msg += `과납금액: ${absBalance.toLocaleString()}원\n------------------\n`;
+                            let parsedOver = String(overpaidMsg || '과납금액이 있습니다!\n환불받으실 계좌를 남겨주시거나, 적립금으로 처리 원하시면 말씀해주세요.').replace(/\\n/g, '\n').replace(/^"|"$/g, '');
+                            msg += `${parsedOver}\n------------------\n`;
+                            statusStr = `과납 ${absBalance.toLocaleString()}원`;
+                        } else if (isExactPaid && activeItems.length > 0) {
+                            msg += `------------------\n`;
+                            msg += `${String(paidMsg||'😍 완납 확인! 감사합니다 😍').replace(/\\n/g, '\n').replace(/^"|"$/g, '')}\n------------------\n`;
+                            statusStr = "완납";
                         } else {
-                            msgTextCopy += `미입금액: ${balance.toLocaleString()}원\n------------------\n${parsedPrefix}\n${balance.toLocaleString()}원\n\n${parsedBank}\n\n입금 부탁드립니다 🙏`;
+                            let parsedPrefix = String(unpaidPrefix || '[미입금] 총 입금하실 금액 👉').replace(/\\n/g, '\n').replace(/^"|"$/g, ''); 
+                            let parsedBank = String(bankStr).replace(/\\n/g, '\n').replace(/^"|"$/g, '');
+                            msg += `미입금액: ${balance.toLocaleString()}원\n------------------\n${parsedPrefix}\n${balance.toLocaleString()}원\n\n${parsedBank}\n\n입금 부탁드립니다 🙏\n------------------\n`; 
+                            statusStr = `미입금 ${balance.toLocaleString()}원`;
                         }
-
-                        let msgTextExcel = msgTextCopy;
-                        
-                        dataList.push({ nick, activeItems, grandTotal, depositTotal, balance, absBalance, isOverpaid, msgTextExcel, msgTextCopy, currentShipping });
                     }
+                    
+                    if (addrData && addrData.address && !alwaysRequestAddress) {
+                        let parsedAddrNotice = String(addrNotice || '※ 배송지 변경 시 채팅으로 변경할 주소를 남겨주세요!').replace(/\\n/g, '\n').replace(/^"|"$/g, '');
+                        msg += `[배송지 확인]\n\n${addrData.realname || nick}\n${addrData.phone || ''}\n${addrData.address} ${addrData.zipcode ? `(${addrData.zipcode})` : ''}\n${addrData.memo ? addrData.memo + '\n' : ''}\n------------------\n${parsedAddrNotice}`;
+                    } else if (!sentAddressRequests.has(nick) || alwaysRequestAddress) { 
+                        let parsedSurveyNotice = String(surveyNotice || '방송마다 1회 하단의 주문서(배송지입력) 필수!!').replace(/\\n/g, '\n').replace(/^"|"$/g, ''); 
+                        msg += `${parsedSurveyNotice}`; 
+                    }
+
+                    dataList.push({ nick, activeItems, grandTotal, depositTotal, balance, statusStr, msgTextExcel: msg, msgTextCopy: msg, currentShipping });
                 });
                 return dataList.sort((a, b) => String(a.nick || '').localeCompare(String(b.nick || '')));
             };
 
-            const handleExportUnpaid = () => {
-                const dataList = getUnpaidDataList();
-                if (dataList.length === 0) { openModal("안내할 내역(미납/과납)이 없습니다.", "alert"); return; }
+            const handleExportNotifications = () => {
+                const dataList = getAllNotificationDataList();
+                if (dataList.length === 0) { openModal("안내할 내역이 없습니다.", "alert"); return; }
                 const data = [];
                 
                 dataList.forEach(d => {
@@ -1921,14 +1971,14 @@
                         const rowText = `${item.product}${item.quantity > 1 ? ` (${item.quantity}개)` : ''} ${unitPrice.toLocaleString()}원`;
                         
                         if(idx === 0) {
-                            data.push({ '닉네임': d.nick, '주문내역': rowText, '총금액': d.grandTotal.toLocaleString() + '원', '입금액': d.depositTotal.toLocaleString() + '원', '미납/과납액': d.isOverpaid ? `과납 ${d.absBalance.toLocaleString()}원` : `미입금 ${d.balance.toLocaleString()}원`, '카톡안내메시지': d.msgTextExcel });
+                            data.push({ '닉네임': d.nick, '주문내역': rowText, '총금액': d.grandTotal.toLocaleString() + '원', '입금액': d.depositTotal.toLocaleString() + '원', '상태': d.statusStr, '카톡안내메시지': d.msgTextExcel });
                         } else {
-                            data.push({ '닉네임': d.nick, '주문내역': rowText, '총금액': '', '입금액': '', '미납/과납액': '', '카톡안내메시지': '' });
+                            data.push({ '닉네임': d.nick, '주문내역': rowText, '총금액': '', '입금액': '', '상태': '', '카톡안내메시지': '' });
                         }
                     });
 
                     if (d.currentShipping > 0) {
-                        data.push({ '닉네임': d.nick, '주문내역': `배송비 ${d.currentShipping.toLocaleString()}원`, '총금액': '', '입금액': '', '미납/과납액': '', '카톡안내메시지': '' });
+                        data.push({ '닉네임': d.nick, '주문내역': `배송비 ${d.currentShipping.toLocaleString()}원`, '총금액': '', '입금액': '', '상태': '', '카톡안내메시지': '' });
                     }
                 });
                 
@@ -1947,15 +1997,15 @@
                 ws['!cols'] = [{wch: 15}, {wch: 40}, {wch: 15}, {wch: 15}, {wch: 15}, {wch: 60}];
                 const wb = XLSX.utils.book_new();
                 XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
-                XLSX.writeFile(wb, `미납_과납_상세리스트_${new Date().toLocaleDateString()}.xlsx`);
+                XLSX.writeFile(wb, `전체고객_카톡안내리스트_${new Date().toLocaleDateString()}.xlsx`);
             };
 
-            const handleCopyUnpaidText = () => {
-                const dataList = getUnpaidDataList();
-                if (dataList.length === 0) { openModal("안내할 내역(미납/과납)이 없습니다.", "alert"); return; }
+            const handleCopyNotificationsText = () => {
+                const dataList = getAllNotificationDataList();
+                if (dataList.length === 0) { openModal("안내할 내역이 없습니다.", "alert"); return; }
                 const textToCopy = dataList.map(d => d.msgTextCopy).join('\n\n============================\n\n');
                 const textArea = document.createElement("textarea"); textArea.value = textToCopy; document.body.appendChild(textArea); textArea.select();
-                try { document.execCommand('copy'); openModal('카톡 안내 메시지가 모두 복사되었습니다!\n(카톡 대화창에 바로 붙여넣기 하세요)', 'alert'); } catch (err) { openModal('복사 실패', 'alert'); } document.body.removeChild(textArea);
+                try { document.execCommand('copy'); openModal('모든 고객의 안내 메시지가 복사되었습니다!\n(카톡 대화창 등에 붙여넣기 하세요)', 'alert'); } catch (err) { openModal('복사 실패', 'alert'); } document.body.removeChild(textArea);
             };
 
             const findAddress = (nick) => { if (addressMapping[nick]) return addresses.find(a => normalizeString(a.nickname) === normalizeString(addressMapping[nick])); return addresses.find(a => normalizeString(a.nickname) === normalizeString(nick)); };
@@ -2083,12 +2133,12 @@
                             <p className="text-slate-500 dark:text-slate-400 mb-4 text-xs">완납 상단 / 카드 중간 / 노쇼 하단 자동 정렬</p>
                             <button onClick={handleExportCustomers} className="w-full bg-slate-700 text-white font-bold py-3 rounded-lg transition-transform hover:scale-105 shadow-md flex items-center justify-center gap-2 hover:bg-slate-800"><Icon name="download-simple" weight="bold"/> 엑셀 다운로드</button>
                         </div>
-                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-lg border dark:border-slate-700 text-center ring-2 ring-red-100 dark:ring-red-900/30">
-                            <h2 className="text-lg font-bold mb-2 text-red-600 dark:text-red-400 flex items-center justify-center gap-2"><Icon name="warning-circle" weight="fill"/> 안내 필요(미납/과납) 리스트</h2>
-                            <p className="text-slate-500 dark:text-slate-400 mb-4 text-xs">안내가 필요한 노쇼/과납 고객 목록</p>
+                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-lg border dark:border-slate-700 text-center ring-2 ring-blue-100 dark:ring-blue-900/30">
+                            <h2 className="text-lg font-bold mb-2 text-blue-600 dark:text-blue-400 flex items-center justify-center gap-2"><Icon name="chat-circle-dots" weight="fill"/> 전체 카톡전송 리스트</h2>
+                            <p className="text-slate-500 dark:text-slate-400 mb-4 text-xs">모든 고객 대상 카톡 안내 멘트 모음</p>
                             <div className="flex gap-2">
-                                <button onClick={handleExportUnpaid} className="flex-1 bg-red-500 text-white font-bold py-3 rounded-lg transition-transform hover:scale-105 shadow-md flex items-center justify-center gap-1 hover:bg-red-600 text-sm"><Icon name="file-xls" weight="bold"/> 엑셀 다운로드</button>
-                                <button onClick={handleCopyUnpaidText} className="flex-1 bg-slate-700 text-white font-bold py-3 rounded-lg transition-transform hover:scale-105 shadow-md flex items-center justify-center gap-1 hover:bg-slate-800 text-sm"><Icon name="copy" weight="bold"/> 전체 텍스트 복사</button>
+                                <button onClick={handleExportNotifications} className="flex-1 bg-blue-500 text-white font-bold py-3 rounded-lg transition-transform hover:scale-105 shadow-md flex items-center justify-center gap-1 hover:bg-blue-600 text-sm"><Icon name="file-xls" weight="bold"/> 엑셀 다운로드</button>
+                                <button onClick={handleCopyNotificationsText} className="flex-1 bg-slate-700 text-white font-bold py-3 rounded-lg transition-transform hover:scale-105 shadow-md flex items-center justify-center gap-1 hover:bg-slate-800 text-sm"><Icon name="copy" weight="bold"/> 전체 텍스트 복사</button>
                             </div>
                         </div>
                         <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-lg border dark:border-slate-700 text-center ring-2 ring-slate-200 dark:ring-slate-900/30">
@@ -2160,7 +2210,7 @@
             const [isVipModalOpen, setIsVipModalOpen] = useState(false);
             const [googleScriptUrl, setGoogleScriptUrl] = useLocalStorage('googleScriptUrl', DEFAULT_GOOGLE_SCRIPT_URL);
             const [customerSheetId, setCustomerSheetId] = useLocalStorage('customerSheetId', DEFAULT_CUSTOMER_SHEET_ID);
-            const [addressScriptUrl, setAddressScriptUrl] = useLocalStorage('addressScriptUrl', '');
+            const [addressScriptUrl, setAddressScriptUrl] = useLocalStorage('addressScriptUrl', 'https://script.google.com/macros/s/AKfycbxTqaqE7I83dog6EoYA1JF6-1p1n83yz7RgmVIDoaBFuz7ZrenGi_z4KaStWzTSdt80PA/exec');
             const [inventoryScriptUrl, setInventoryScriptUrl] = useLocalStorage('inventoryScriptUrl', 'https://script.google.com/macros/s/AKfycbyA7HUf-OCVY9hPZiu_YXvl4OUFvLyNU26vFj1dOi3URd3Tet9DrLVCz5nnk7UI2ZA/exec');
             const [modalConfig, setModalConfig] = useState({ isOpen: false, type: 'alert', message: '', onConfirm: null, initialValue: '' });
 
