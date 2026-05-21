@@ -704,11 +704,11 @@
                             </div>
                             <div className="flex flex-col items-start gap-1 text-xs mt-1 w-full overflow-hidden">
                                 {addr ? (
-                                    <div onClick={(e) => { if (addressMapping[nick]) { e.stopPropagation(); handleAddressUnmapping(nick); } }} className={`text-[11px] flex items-center gap-1.5 w-full overflow-hidden mt-1 py-1 rounded transition-colors ${addressMapping[nick] ? 'cursor-pointer hover:bg-red-50 dark:hover:bg-red-900/20 px-1' : ''}`} title={addressMapping[nick] ? "클릭하여 주소 연결 해제" : "자동 연동된 주소"}>
+                                    <div onClick={(e) => { e.stopPropagation(); handleAddressUnmapping(nick); }} className={`group text-[11px] flex items-center gap-1.5 w-full overflow-hidden mt-1 py-1 rounded transition-colors cursor-pointer hover:bg-red-50 dark:hover:bg-red-900/20 px-1`} title="클릭하여 주소 연결 해제">
                                         <span className="text-green-700 dark:text-green-500 shrink-0 flex items-center gap-0.5"><Icon name="house-line" weight="fill" /> <span className="font-bold">{addr.realname}</span></span>
                                         <span className="text-slate-500 dark:text-slate-400 shrink-0 font-medium">{addr.phone}</span>
                                         <span className="text-slate-700 dark:text-slate-300 truncate flex-1 ml-1" title={`${addr.address} ${addr.memo}`}>{addr.address}{addr.memo && <span className="text-red-500 font-bold ml-1.5">[{addr.memo}]</span>}</span>
-                                        {addressMapping[nick] && <Icon name="link-break" className="shrink-0 text-red-400 ml-1" weight="bold"/>}
+                                        <Icon name="link-break" className="shrink-0 text-red-400 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" weight="bold"/>
                                     </div>
                                 ) : (
                                     <div className="flex items-center gap-1 flex-wrap mt-0.5">
@@ -935,37 +935,17 @@
 
             const addressLookup = useMemo(() => {
                 const exactNickMap = {};
-                const koBaseMap = {};
-                const realNameMap = {}; // 수령인(실명) 맵 추가
 
                 addresses.forEach(a => {
                     const cleanNick = normalizeString(a.nickname);
                     if (!exactNickMap[cleanNick]) exactNickMap[cleanNick] = []; 
                     exactNickMap[cleanNick].push(a);
-                    
-                    const cleanReal = normalizeString(a.realname);
-                    if (cleanReal) {
-                        if (!realNameMap[cleanReal]) realNameMap[cleanReal] = [];
-                        realNameMap[cleanReal].push(a);
-                    }
-
-                    const ko = extractKo(a.nickname);
-                    if (ko && ko.length >= 2) {
-                        if (!koBaseMap[ko]) koBaseMap[ko] = [];
-                        koBaseMap[ko].push(a);
-                    }
 
                     if (a.linkedNicks && Array.isArray(a.linkedNicks)) { 
                         a.linkedNicks.forEach(ln => { 
                             const cleanLn = normalizeString(ln); 
                             if (!exactNickMap[cleanLn]) exactNickMap[cleanLn] = []; 
                             exactNickMap[cleanLn].push(a); 
-
-                            const koLn = extractKo(ln);
-                            if (koLn && koLn.length >= 2) {
-                                if (!koBaseMap[koLn]) koBaseMap[koLn] = [];
-                                koBaseMap[koLn].push(a);
-                            }
                         }); 
                     }
                 });
@@ -974,39 +954,21 @@
                     get: (nick) => {
                         if (!nick) return { data: null, type: 'none' };
                         const mappedTarget = addressMapping[nick];
+                        
+                        // 수동으로 매칭 해제한 경우
+                        if (mappedTarget === '__UNMAPPED__') return { data: null, type: 'unmapped' };
+                        
+                        // 수동으로 매칭한 경우
                         if (mappedTarget) { 
                             const mappedAddrs = exactNickMap[normalizeString(mappedTarget)]; 
                             if (mappedAddrs && mappedAddrs.length > 0) return { data: mappedAddrs[0], type: 'mapped' }; 
                         }
                         
+                        // 자동 매칭: 닉네임 100% 완벽 일치만 허용
                         const cleanNick = normalizeString(nick); 
-                        // 1. 닉네임으로 먼저 찾고, 없으면 2. 실명(수령인)으로 찾음
-                        const exactMatches = exactNickMap[cleanNick] || realNameMap[cleanNick];
+                        const exactMatches = exactNickMap[cleanNick];
                         if (exactMatches && exactMatches.length === 1) return { data: exactMatches[0], type: 'single' };
                         if (exactMatches && exactMatches.length > 1) return { data: null, type: 'multiple' };
-
-                        const koNick = extractKo(nick);
-                        if (koNick && koNick.length >= 2) {
-                            const koMatches = koBaseMap[koNick];
-                            if (koMatches && koMatches.length === 1) {
-                                return { data: koMatches[0], type: 'single_smart' };
-                            } else if (koMatches && koMatches.length > 1) {
-                                return { data: null, type: 'multiple' };
-                            }
-                        }
-
-                        const substringMatches = addresses.filter(a => {
-                             const aClean = normalizeString(a.nickname);
-                             const rClean = normalizeString(a.realname);
-                             return ((aClean.includes(cleanNick) || cleanNick.includes(aClean)) && aClean.length >= 2 && cleanNick.length >= 2) || 
-                                    (rClean && (rClean.includes(cleanNick) || cleanNick.includes(rClean)) && rClean.length >= 2 && cleanNick.length >= 2);
-                        });
-                        
-                        if (substringMatches.length === 1) {
-                             return { data: substringMatches[0], type: 'single_smart' };
-                        } else if (substringMatches.length > 1) {
-                             return { data: null, type: 'multiple' };
-                        }
 
                         return { data: null, type: 'none' };
                     }
@@ -1039,24 +1001,28 @@
                 const cleanNick = normalizeString(nick); 
                 const koNick = extractKo(nick);
                 if (cleanNick.length < 2 && koNick.length < 2) return []; 
+                
+                const currentAddrNick = addressLookup.get(nick)?.data?.nickname;
                 const results = [];
+                
                 for (let i = 0; i < addresses.length; i++) {
                     const a = addresses[i]; 
+                    if (a.nickname === currentAddrNick) continue; // 현재 적용된 주소는 제안에서 제외
+
                     const cleanAddrNick = normalizeString(a.nickname);
                     const koAddrNick = extractKo(a.nickname);
                     const cleanReal = normalizeString(a.realname);
                     
-                    if (cleanAddrNick !== cleanNick) {
-                        if ( (cleanAddrNick.includes(cleanNick) || cleanNick.includes(cleanAddrNick)) || 
-                             (koNick.length >= 2 && koNick === koAddrNick) ||
-                             (cleanReal && (cleanReal.includes(cleanNick) || cleanNick.includes(cleanReal))) ) {
-                            if (!results.includes(a.nickname)) results.push(a.nickname); 
-                            if (results.length >= 3) break; 
-                        }
+                    if ( (cleanAddrNick === cleanNick) || // 수동으로 해제했던 완벽 일치
+                         (cleanAddrNick.includes(cleanNick) || cleanNick.includes(cleanAddrNick)) || 
+                         (koNick.length >= 2 && koNick === koAddrNick) ||
+                         (cleanReal && (cleanReal.includes(cleanNick) || cleanNick.includes(cleanReal))) ) {
+                        if (!results.includes(a.nickname)) results.push(a.nickname); 
+                        if (results.length >= 5) break; 
                     }
                 }
                 return results;
-            }, [addresses]);
+            }, [addresses, addressLookup]);
 
             const formatTimeOnly = useCallback((val) => { 
                 if (!val) return ''; const strVal = String(val); const dt = new Date(strVal.replace(/-/g, '/'));
@@ -1465,7 +1431,7 @@
             const handleShippingChange = useCallback((nick, val) => { setShippingOverrides(prev => ({ ...prev, [nick]: val === '' ? 0 : Number(val) })); }, [setShippingOverrides]);
             const handleOrderCheckToggle = useCallback((nick) => setCheckedOrders(prev => { const next = new Set(prev); if (next.has(nick)) next.delete(nick); else next.add(nick); return next; }), [setCheckedOrders]);
             const handleAddressMapping = useCallback((orderNick, addressNick) => { openModal(`'${orderNick}' 주문자에게 '${addressNick}' 님의 주소를 연결하시겠습니까?\n(이후 이 주문자에게 해당 주소가 자동으로 표시됩니다)`, 'confirm', () => { setAddressMapping(prev => ({ ...prev, [orderNick]: addressNick })); }); }, [openModal, setAddressMapping]);
-            const handleAddressUnmapping = useCallback((orderNick) => { openModal(`주소 연결을 해제하시겠습니까?`, 'confirm', () => setAddressMapping(prev => { const next = { ...prev }; delete next[orderNick]; return next; })); }, [openModal, setAddressMapping]);
+            const handleAddressUnmapping = useCallback((orderNick) => { openModal(`주소 연결을 해제하시겠습니까?`, 'confirm', () => setAddressMapping(prev => ({ ...prev, [orderNick]: '__UNMAPPED__' }))); }, [openModal, setAddressMapping]);
 
             const handleProductChange = useCallback((id, field, value) => { 
                 if (field === 'product') setCurrentSearchTerm(value);
@@ -1695,7 +1661,18 @@
                 return [...unmatched, ...matched];
             }, [filteredDeposits, depositSearch, matchedDeposits, selectedNick, addressLookup, depositorNames]);
 
-            const usedAddressNicks = useMemo(() => { const set = new Set(); orders.forEach(o => { if (!o.isCancelled) { const mappedTarget = addressMapping[o.customer]; if (mappedTarget) set.add(normalizeString(mappedTarget)); else set.add(normalizeString(o.customer)); } }); return set; }, [orders, addressMapping]);
+            const usedAddressNicks = useMemo(() => { 
+                const set = new Set(); 
+                orders.forEach(o => { 
+                    if (!o.isCancelled) { 
+                        const lookup = addressLookup.get(o.customer);
+                        if (lookup && lookup.data && lookup.data.nickname) {
+                            set.add(normalizeString(lookup.data.nickname));
+                        }
+                    } 
+                }); 
+                return set; 
+            }, [orders, addressLookup]);
 
             const visibleAddresses = useMemo(() => {
                 let res = [...addresses];
@@ -2059,7 +2036,11 @@
 
         const OrderManagementTab = ({ orders, shippingOverrides, quickShipping, freeShippingThreshold, workspaceName, addresses, handleExportBackup, handleImportBackup, addressMapping, cardPayments, specialCustomers, openModal }) => {
             
-            const findAddressForManagement = (nick) => { if (addressMapping[nick]) return addresses.find(a => normalizeString(a.nickname) === normalizeString(addressMapping[nick])); return addresses.find(a => normalizeString(a.nickname) === normalizeString(nick)); };
+            const findAddressForManagement = (nick) => { 
+                if (addressMapping[nick] === '__UNMAPPED__') return undefined;
+                if (addressMapping[nick]) return addresses.find(a => normalizeString(a.nickname) === normalizeString(addressMapping[nick])); 
+                return addresses.find(a => normalizeString(a.nickname) === normalizeString(nick)); 
+            };
             const getCalculatedShippingForManagement = (nick, productTotal = 0) => { 
                 if (shippingOverrides && shippingOverrides[nick] !== undefined) return Number(shippingOverrides[nick]); 
                 const nickNorm = normalizeString(nick); const specialKey = Object.keys(specialCustomers || {}).find(k => normalizeString(k) === nickNorm); 
@@ -2092,8 +2073,7 @@
                     const balance = grandTotal - depositTotal;
                     const isCard = cardPayments && cardPayments[nick];
                     
-                    const mappedNick = addressMapping[nick] || nick;
-                    const addrData = addresses.find(a => normalizeString(a.nickname) === normalizeString(mappedNick));
+                    const addrData = findAddressForManagement(nick);
                     
                     const { emoji, paidMsg, unpaidPrefix, overpaidMsg, addrNotice, surveyNotice, alwaysRequestAddress } = templateConfig;
                     
@@ -2242,7 +2222,7 @@
 
                 let excelRows = []; entries.forEach(({ nick, items, isPaid, isCard }) => { 
                     if(items.length === 0) return; 
-                    const addrInfo = addresses.find(a => normalizeString(a.nickname) === normalizeString(nick)) || {}; 
+                    const addrInfo = findAddressForManagement(nick) || {}; 
                     const fullAddress = addrInfo.zipcode ? `(${addrInfo.zipcode}) ${addrInfo.address || ''}` : (addrInfo.address || ''); 
                     const statusColumn = isCard ? "카드결제" : (isPaid ? "" : "미입금");
                     const createRow = (productValue) => ({ '날짜시간': new Date().toLocaleString(), '공란1': '', '입금상태': statusColumn, '닉네임': nick, '주문제품(수량)': productValue, '이름': addrInfo.realname || '', '핸드폰번호': addrInfo.phone || '', '주소': fullAddress, '배송메모': addrInfo.memo || '' }); 
