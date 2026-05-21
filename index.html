@@ -1342,13 +1342,17 @@
                 const timer = setTimeout(() => {
                     if (allDeposits.length === 0 || orders.length === 0) return;
                     let updatedOrders = [...orders]; let newMatchedIds = new Set(matchedDeposits); let hasChanges = false; const customerBalances = {};
+                    
                     updatedOrders.forEach(o => {
                         if (o.isCancelled) return;
                         if (!customerBalances[o.customer]) { const currentShipping = getCalculatedShipping(o.customer); customerBalances[o.customer] = { productTotal: 0, depositTotal: 0, shipping: currentShipping, activeItemsCount: 0, isCloud: false }; }
                         customerBalances[o.customer].productTotal += Number(o.price); customerBalances[o.customer].depositTotal += (o.deposit || 0); customerBalances[o.customer].activeItemsCount += 1;
                         if (o.loadedFromCloud) customerBalances[o.customer].isCloud = true;
                     });
-                    const matchLookup = {};
+
+                    // 🌟 개선된 매칭 룩업 테이블 (1순위용 exact, 2순위용 koOnly 분리)
+                    const matchLookup = { exact: {}, koOnly: {} };
+                    
                     Object.keys(customerBalances).forEach(nick => {
                         const cb = customerBalances[nick]; cb.grandTotal = cb.productTotal + (cb.activeItemsCount > 0 ? cb.shipping : 0); cb.balance = cb.grandTotal - cb.depositTotal;
                         const savedRealName = depositorNames[nick] ? strictClean(depositorNames[nick]) : ''; 
@@ -1357,8 +1361,18 @@
                         const nickClean = strictClean(nick);
                         const koNick = extractKo(nick);
                         
-                        const possibleNames = new Set([savedRealName, addressRealName, nickClean, koNick].filter(k => k && k.length > 0));
-                        possibleNames.forEach(pName => { if (!matchLookup[pName]) matchLookup[pName] = []; matchLookup[pName].push(nick); });
+                        // 1순위 탐색용 (전체 텍스트 완전 일치)
+                        const exactNames = new Set([savedRealName, addressRealName, nickClean].filter(k => k && k.length > 0));
+                        exactNames.forEach(pName => { 
+                            if (!matchLookup.exact[pName]) matchLookup.exact[pName] = []; 
+                            matchLookup.exact[pName].push(nick); 
+                        });
+
+                        // 2순위 탐색용 (한글 닉네임만 추출)
+                        if (koNick && koNick.length >= 2) {
+                            if (!matchLookup.koOnly[koNick]) matchLookup.koOnly[koNick] = [];
+                            matchLookup.koOnly[koNick].push(nick);
+                        }
                     });
                     
                     allDeposits.forEach(deposit => {
@@ -1368,8 +1382,8 @@
                         let matchedCustomer = null; 
                         const depositAmount = Number(deposit.amount);
                         
-                        // 1. 완벽 일치 우선 탐색
-                        let exactMatches = matchLookup[depositNameClean] || []; 
+                        // 1순위: 닉네임(영문/숫자 포함) 또는 실명 완벽 일치 탐색
+                        let exactMatches = matchLookup.exact[depositNameClean] || []; 
                         exactMatches = [...new Set(exactMatches)]; 
                         
                         if (exactMatches.length === 1) { 
@@ -1379,25 +1393,22 @@
                             if (amountMatches.length === 1) matchedCustomer = amountMatches[0]; 
                         }
 
-                        // 2. 완벽 일치가 없으면, 스마트 부분 일치 추론 (ex: '로즈마리노미희'에 '로즈마리'가 포함되는지)
-                        if (!matchedCustomer && depositNameClean.length >= 2) {
-                            let partialMatches = [];
-                            Object.keys(matchLookup).forEach(pName => {
-                                if (pName.length >= 2 && (depositNameClean.includes(pName) || pName.includes(depositNameClean))) {
-                                    partialMatches.push(...matchLookup[pName]);
-                                }
-                            });
-                            partialMatches = [...new Set(partialMatches)];
+                        // 2순위: 1순위 실패 시, 닉네임의 한글(koNick)과 입금자명이 완벽 일치하는 경우 탐색
+                        if (!matchedCustomer) {
+                            let koMatches = matchLookup.koOnly[depositNameClean] || [];
+                            koMatches = [...new Set(koMatches)];
                             
-                            if (partialMatches.length === 1) {
-                                matchedCustomer = partialMatches[0];
-                            } else if (partialMatches.length > 1) {
-                                const amountMatches = partialMatches.filter(n => customerBalances[n].balance === depositAmount);
+                            // 한글 닉네임이 유일한 사람 1명일 때만 안전하게 매칭
+                            if (koMatches.length === 1) {
+                                matchedCustomer = koMatches[0];
+                            } else if (koMatches.length > 1) {
+                                // 유일하지 않다면 금액까지 일치하는 사람 찾기
+                                const amountMatches = koMatches.filter(n => customerBalances[n].balance === depositAmount);
                                 if (amountMatches.length === 1) matchedCustomer = amountMatches[0];
                             }
                         }
                         
-                        // 3. 매칭 적용
+                        // 3. 찾은 고객에게 입금 매칭 적용
                         if (matchedCustomer) {
                             const cb = customerBalances[matchedCustomer];
                             if (cb.balance <= 0) { newMatchedIds.add(deposit.id); hasChanges = true; } else {
