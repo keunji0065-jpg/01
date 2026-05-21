@@ -52,7 +52,7 @@
         const DEFAULT_GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyvKtCHXSz47oGqNire1eREUJyjMVX_zBcodtGrwyIfYCrtrkzr1X6Q_mKJMzoo5Ev2ug/exec";
         const FIXED_BANK_ACCOUNT = "카카오뱅크 김선정\n7942 18 01611";
         const DEFAULT_CUSTOMER_SHEET_ID = "1ywl4gRvswQpvIYtPVbSROzz7a5elbLieYhqMZmt191U";
-        const EMOJI_LIST = Array.from("💙💖💛💚💜🤍❤️🖤🤎💕💞⭐🌟✨🔥💥💯🎠🐎🐴🦢🐆🐍🐊🐢🦓🦄🦋💎💍👑💄💅🧴🎀🎁🛍️🛒🏷️📦👜👝👛🎒💼👠👡👢👟🩰👞👗🥻🧥👕👖👔🧣🧤🧦🧢👒🎩⌚🕶️👓🐶🐩🐱🐈🐰🐇🐻🧸🐼🐨🦊🐯🦁🐮🐷 편집을 위해 너무 길어서 줄임"); // 축약됨
+        const EMOJI_LIST = Array.from("💙💖💛💚💜🤍❤️🖤🤎💕💞⭐🌟✨🔥💥💯🎠🐎🐴🦢🐆🐍🐊🐢🦓🦄🦋💎💍👑💄💅🧴🎀🎁🛍️🛒🏷️📦👜👝👛🎒💼👠👡👢👟🩰👞👗🥻🧥👕👖👔🧣🧤🧦🧢👒🎩⌚🕶️👓🐶🐩🐱🐈🐰🐇🐻🧸🐼🐨🦊🐯🦁🐮🐷");
 
         const Icon = ({ name, className="", weight="regular", size }) => <i className={`ph ph-${name} ${className}`} data-phosphor-icon-weight={weight} style={{fontSize: size}}></i>;
         
@@ -406,24 +406,28 @@
 
         const SettingsModalContent = ({ 
             googleScriptUrl, setGoogleScriptUrl, inventoryScriptUrl, setInventoryScriptUrl, addressScriptUrl, setAddressScriptUrl,
-            customerSheetId, setCustomerSheetId, quickShipping, setQuickShipping, templateConfig, setTemplateConfig, bankAccount, setBankAccount,
-            quickMessages, setQuickMessages, setIsSettingsOpen, addressCutoffDate, setAddressCutoffDate
+            customerSheetId, setCustomerSheetId, quickShipping, setQuickShipping, freeShippingThreshold, setFreeShippingThreshold, templateConfig, setTemplateConfig, bankAccount, setBankAccount,
+            quickMessages, setQuickMessages, setIsSettingsOpen, addressCutoffDate, setAddressCutoffDate, workspaceName, setWorkspaceName
         }) => {
             return (
                 <div className="absolute top-12 right-4 bg-white dark:bg-slate-800 shadow-xl border dark:border-slate-700 rounded-lg p-4 w-[420px] z-50 animate-pop max-h-[85vh] overflow-y-auto">
                     <h3 className="font-bold mb-4 flex items-center gap-2 border-b dark:border-slate-700 pb-2"><Icon name="gear" weight="fill" className="text-gray-500"/> 환경설정</h3>
                     <div className="mb-4 space-y-4">
+                        <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                            <SettingsField label="💡 작업 공간 이름 (예: 5월20일 신발창고)" value={workspaceName} onChange={setWorkspaceName} placeholder="클라우드 동기화 시 식별용 꼬리표로 사용됩니다." />
+                        </div>
                         <SettingsField label="메인 구글 앱스 스크립트 URL" value={googleScriptUrl} onChange={setGoogleScriptUrl} />
                         <SettingsField label="고객용 상품 스크립트 URL (선택/자동저장용)" value={inventoryScriptUrl} onChange={setInventoryScriptUrl} placeholder="고객용 시트에서 배포한 앱스 스크립트 주소 입력" />
                         <SettingsField label="주소록 전용 앱스 스크립트 URL (선택)" value={addressScriptUrl} onChange={setAddressScriptUrl} placeholder="입력 시, 주소록은 이곳에서만 동기화됩니다." />
                         <SettingsField label="고객 주소록 시트 ID" value={customerSheetId} onChange={setCustomerSheetId} />
                         
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-2 gap-2 mb-2">
                             <SettingsField label="기본 배송비" type="number" value={quickShipping} onChange={(v) => setQuickShipping(Number(v))} />
-                            <div>
-                                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">주소록 수집 시작일</label>
-                                <input type="date" value={addressCutoffDate} onChange={e => setAddressCutoffDate(e.target.value)} className="w-full border dark:border-slate-600 rounded px-2 py-1.5 text-xs bg-slate-50 dark:bg-slate-900 dark:text-white focus:ring-1 focus:ring-slate-400 outline-none" />
-                            </div>
+                            <SettingsField label="무료배송 기준 금액" type="number" value={freeShippingThreshold} onChange={(v) => setFreeShippingThreshold(v)} placeholder="예: 50000 (빈칸시 미적용)" />
+                        </div>
+                        <div className="mb-2">
+                            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">주소록 수집 시작일</label>
+                            <input type="date" value={addressCutoffDate} onChange={e => setAddressCutoffDate(e.target.value)} className="w-full border dark:border-slate-600 rounded px-2 py-1.5 text-xs bg-slate-50 dark:bg-slate-900 dark:text-white focus:ring-1 focus:ring-slate-400 outline-none" />
                         </div>
                         
                         <div className="border-t dark:border-slate-700 pt-4">
@@ -648,7 +652,7 @@
                             <input id={`qty-input-${item.id}`} type="number" value={localQty} onChange={(e) => setLocalQty(e.target.value)} onClick={(e) => e.stopPropagation()} onFocus={(e) => { e.target.select(); setIsQtyFocused(true); setSelectedNick(nick); }} onBlur={() => { setIsQtyFocused(false); const q = localQty === '' || isNaN(parseInt(localQty)) ? '' : parseInt(localQty); if (q !== item.quantity) handleQuantityUpdate(item.id, q); }} onKeyDown={(e) => { if(e.key==='Enter') { e.preventDefault(); document.getElementById(`price-input-${item.id}`)?.focus(); } }} className={`w-12 text-right pr-4 font-bold outline-none rounded py-0.5 transition-colors ${item.isCancelled ? 'text-[11px] bg-transparent line-through text-slate-400 dark:text-slate-500 cursor-not-allowed' : `${Number(localQty) >= 2 ? 'text-[12px] text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30' : 'text-[11px] text-slate-800 dark:text-slate-200 bg-transparent'} hover:bg-slate-200 dark:hover:bg-slate-600 focus:bg-white dark:focus:bg-slate-800 focus:ring-1 focus:ring-slate-400`}`} disabled={item.isCancelled} />
                             <span className={`absolute right-1 pointer-events-none ${Number(localQty) >= 2 && !item.isCancelled ? 'text-[10px] text-red-600 dark:text-red-400 font-bold' : 'text-[10px] text-slate-500 dark:text-slate-400'}`}>개</span>
                         </div>
-                        <input id={`price-input-${item.id}`} type="text" value={localPrice} onChange={(e) => { const val = e.target.value.replace(/,/g, ''); if (!isNaN(val) && val !== '') setLocalPrice(Number(val).toLocaleString()); else if (val === '') setLocalPrice(''); }} onClick={(e) => e.stopPropagation()} onFocus={(e) => { e.target.select(); setIsPriceFocused(true); setSelectedNick(nick); }} onBlur={() => { setIsPriceFocused(false); const val = String(localPrice).replace(/,/g, ''); if (!isNaN(val) && Number(val) !== Number(item.price)) { handleProductChange(item.id, 'price', val); } }} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const val = String(localPrice).replace(/,/g, ''); if (!isNaN(val) && Number(val) !== Number(item.price)) { handleProductChange(item.id, 'price', val); } if (!isLast && nextItemId) { document.getElementById(`prod-input-${nextItemId}`)?.focus(); } else { addOrderLogic(nick, '', 1, true, item.id); } } }} className={`w-16 text-right bg-transparent outline-none px-1 rounded transition-colors font-bold ${item.isCancelled ? 'line-through text-slate-400 dark:text-slate-500 cursor-not-allowed' : (item.isUnmodified ? 'text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700/50' : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 focus:bg-white dark:focus:bg-slate-800 focus:ring-1 focus:ring-slate-400 focus:text-slate-800 dark:focus:text-slate-100')} ${Number(item.price) === 0 && !item.isCancelled ? 'bg-red-50 dark:bg-red-900/10 border-b border-red-300 dark:border-red-900' : ''}`} disabled={item.isCancelled} />
+                        <input id={`price-input-${item.id}`} type="text" value={localPrice} onChange={(e) => { const val = e.target.value.replace(/,/g, ''); if (!isNaN(val) && val !== '') setLocalPrice(Number(val).toLocaleString()); else if (val === '') setLocalPrice(''); }} onClick={(e) => e.stopPropagation()} onFocus={(e) => { e.target.select(); setIsPriceFocused(true); setSelectedNick(nick); }} onBlur={() => { setIsPriceFocused(false); const val = String(localPrice).replace(/,/g, ''); if (!isNaN(val) && Number(val) !== Number(item.price)) { handleProductChange(item.id, 'price', val); } }} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const val = String(localPrice).replace(/,/g, ''); if (!isNaN(val) && Number(val) !== Number(item.price)) { handleProductChange(item.id, 'price', val); } if (!isLast && nextItemId) { document.getElementById(`prod-input-${nextItemId}`)?.focus(); } else { addOrderLogic(nick, '', 1, true, item.id, null, false, false, true); } } }} className={`w-16 text-right bg-transparent outline-none px-1 rounded transition-colors font-bold ${item.isCancelled ? 'line-through text-slate-400 dark:text-slate-500 cursor-not-allowed' : (item.isUnmodified ? 'text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700/50' : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 focus:bg-white dark:focus:bg-slate-800 focus:ring-1 focus:ring-slate-400 focus:text-slate-800 dark:focus:text-slate-100')} ${Number(item.price) === 0 && !item.isCancelled ? 'bg-red-50 dark:bg-red-900/10 border-b border-red-300 dark:border-red-900' : ''}`} disabled={item.isCancelled} />
                         <button onClick={(e)=>{e.stopPropagation(); handleOrderCancel(item.id); setSelectedNick(nick);}} className={`ml-1 ${item.isCancelled ? "text-slate-500 hover:text-slate-700" : "text-slate-300 dark:text-slate-600 hover:text-red-500"}`} title={item.isCancelled ? "취소 철회" : "주문 취소"}><Icon name={item.isCancelled ? "arrow-u-up-left" : "prohibit"} weight="bold"/></button>
                         <button onClick={(e)=>{e.stopPropagation(); handleOrderDelete(item.id); setSelectedNick(nick);}} className="text-slate-300 dark:text-slate-600 hover:text-red-500 ml-1"><Icon name="trash" weight="bold"/></button>
                     </div>
@@ -681,7 +685,7 @@
                             <div className="flex items-center gap-1 flex-wrap mb-0.5">
                                 <span onClick={(e) => { e.stopPropagation(); const textArea = document.createElement("textarea"); textArea.value = nick; document.body.appendChild(textArea); textArea.select(); try { document.execCommand('copy'); const el = e.currentTarget; el.classList.add('text-green-500', 'dark:text-green-400'); setTimeout(() => el.classList.remove('text-green-500', 'dark:text-green-400'), 500); } catch (err) {} document.body.removeChild(textArea); }} className={`font-bold text-[12px] text-slate-900 dark:text-slate-100 truncate cursor-pointer hover:text-slate-600 dark:hover:text-slate-400 transition-colors`} title="클릭하여 닉네임 복사">{nick}</span>
                                 {isVip && (<span onClick={(e) => e.stopPropagation()} className="ml-1 text-[10px] px-1.5 py-0.5 rounded border bg-slate-800 dark:bg-slate-200 border-slate-900 dark:border-slate-100 text-amber-400 dark:text-amber-600 font-bold shadow-sm shrink-0 flex items-center gap-0.5 cursor-default" title="우측 상단 VIP 관리대장에서 관리 가능"><Icon name="crown" weight="fill"/> VIP</span>)}
-                                <button onClick={(e) => { e.stopPropagation(); addOrderLogic(nick, '', 1); }} className="bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold hover:bg-slate-300 dark:hover:bg-slate-600 shrink-0" title="빈 상품줄 추가">+</button>
+                                <button onClick={(e) => { e.stopPropagation(); addOrderLogic(nick, '', 1, false, null, null, false, false, true); }} className="bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold hover:bg-slate-300 dark:hover:bg-slate-600 shrink-0" title="빈 상품줄 추가">+</button>
                                 <button onClick={(e)=>{e.stopPropagation(); handleNicknameEdit(nick);}} className="text-slate-400 dark:text-slate-500 hover:text-slate-700 shrink-0" title="닉네임 수정"><Icon name="pencil-simple" weight="bold" size={12}/></button>
                                 <button onClick={(e) => { e.stopPropagation(); toggleCardPayment(nick); }} className={`ml-1 text-[10px] px-1.5 py-0.5 rounded border transition-colors shrink-0 ${isCard ? 'bg-slate-700 dark:bg-slate-300 border-slate-800 dark:border-slate-200 text-white dark:text-slate-900 font-bold' : 'bg-white dark:bg-slate-700 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-600'}`}>카드</button>
                                 
@@ -752,7 +756,7 @@
         // ============================================
         // 컴포넌트: 탭 (LiveTab)
         // ============================================
-        const LiveTab = ({ orders, setOrders, productHistory, setProductHistory, quickShipping, shippingOverrides, setShippingOverrides, bankAccount, googleScriptUrl, addressScriptUrl, inventoryScriptUrl, addresses, setAddresses, cardPayments, setCardPayments, matchedDeposits, setMatchedDeposits, depositorNames, setDepositorNames, clickedChats, setClickedChats, openModal, keywords, setKeywords, sentAddressRequests, setSentAddressRequests, deletedDepositIds, setDeletedDepositIds, checkedOrders, setCheckedOrders, addressMapping, setAddressMapping, templateConfig, specialCustomers, setSpecialCustomers, inventory, setInventory, quickMessages, customerSheetId, handleResetAllData, addressCutoffDate }) => {
+        const LiveTab = ({ orders, setOrders, productHistory, setProductHistory, quickShipping, freeShippingThreshold, shippingOverrides, setShippingOverrides, bankAccount, googleScriptUrl, addressScriptUrl, inventoryScriptUrl, addresses, setAddresses, cardPayments, setCardPayments, matchedDeposits, setMatchedDeposits, depositorNames, setDepositorNames, clickedChats, setClickedChats, openModal, keywords, setKeywords, sentAddressRequests, setSentAddressRequests, deletedDepositIds, setDeletedDepositIds, checkedOrders, setCheckedOrders, addressMapping, setAddressMapping, templateConfig, specialCustomers, setSpecialCustomers, inventory, setInventory, quickMessages, customerSheetId, handleResetAllData, addressCutoffDate, workspaceName, setWorkspaceName, isSyncResolved }) => {
             const [chats, setChats] = useState([]);
             const [serverDeposits, setServerDeposits] = useState([]);
             const [manualDeposits, setManualDeposits] = useState([]);
@@ -796,6 +800,69 @@
             const sortOrderCache = useRef([]);
             const orderListRef = useRef(null);
             const [hiddenChatIds, setHiddenChatIds] = useLocalStorage('hiddenChatIds', []);
+
+            // 실시간 시트 변경 감지를 위한 상태 참조
+            const ordersRef = useRef(orders); useEffect(() => { ordersRef.current = orders; }, [orders]);
+            const cardPaymentsRef = useRef(cardPayments); useEffect(() => { cardPaymentsRef.current = cardPayments; }, [cardPayments]);
+            const lastCloudDataStr = useRef('');
+            const isConflictAlertOpen = useRef(false);
+
+            const getComparableDataStr = useCallback((orderList, cardPayMap) => {
+                const cleanList = orderList.filter(o => !o.isCancelled && o.customer !== '___WORKSPACE_META___').map(o => ({
+                    c: o.customer, p: o.product, q: Number(o.quantity)||0, pr: Number(o.price)||0, d: Number(o.deposit)||0, ic: cardPayMap[o.customer] ? 1 : 0
+                })).sort((a,b) => a.c.localeCompare(b.c) || a.p.localeCompare(b.p));
+                return JSON.stringify(cleanList);
+            }, []);
+
+            useEffect(() => {
+                if (isSyncResolved && !lastCloudDataStr.current) {
+                    lastCloudDataStr.current = getComparableDataStr(ordersRef.current, cardPaymentsRef.current);
+                }
+            }, [isSyncResolved, getComparableDataStr]);
+
+            // 주기적으로 시트 변경을 감지하는 백그라운드 워커 (45초 주기)
+            useEffect(() => {
+                if (!isSyncResolved || !googleScriptUrl) return;
+                const checkInterval = setInterval(async () => {
+                    if (isSaving || isConflictAlertOpen.current) return;
+                    try {
+                        const actualSheetId = getCleanSheetId(customerSheetId);
+                        const res = await fetch(`${googleScriptUrl}?action=get_orders&t=${Date.now()}&sheet_id=${actualSheetId}`);
+                        const text = await res.text();
+                        if (text.trim().startsWith("<!DOCTYPE")) return;
+                        const data = JSON.parse(text);
+                        if (data.error) return;
+
+                        let fetchedOrders = [];
+                        if (data && Array.isArray(data.orders)) fetchedOrders = data.orders; else if (data && Array.isArray(data.data)) fetchedOrders = data.data; else if (data && Array.isArray(data.orderList)) fetchedOrders = data.orderList; else if (Array.isArray(data)) fetchedOrders = data;
+                        
+                        if (fetchedOrders.length > 0) {
+                            if (Array.isArray(fetchedOrders[0])) { const headers = fetchedOrders[0]; fetchedOrders = fetchedOrders.slice(1).map(row => { const obj = {}; headers.forEach((h, i) => { obj[h] = row[i]; }); return obj; }); }
+                            const loadedOrders = fetchedOrders.map((o, idx) => mapCloudOrderToLocal(o, idx)).filter(o => o.customer || o.product);
+                            const actualFetched = loadedOrders.filter(o => o.customer !== '___WORKSPACE_META___');
+                            
+                            const tempCardMap = {};
+                            actualFetched.forEach(o => { if (o._isCard) tempCardMap[o.customer] = true; });
+                            const fetchedHash = getComparableDataStr(actualFetched, tempCardMap);
+
+                            if (lastCloudDataStr.current && fetchedHash !== lastCloudDataStr.current) {
+                                isConflictAlertOpen.current = true;
+                                openModal("🚨 직원(외부)이 구글 시트를 수정한 내역이 감지되었습니다!\n\n최신 시트 내역을 이 화면으로 불러오시겠습니까?\n\n※ 확인: 직원 수정분 불러오기\n※ 취소: 내 화면 유지 (다음 60초 자동저장 때 직원이 수정한 내용이 날아가고 덮어씌워집니다)", "confirm", () => {
+                                    actualFetched.forEach(o => delete o._isCard);
+                                    setOrders(actualFetched); setCardPayments(prev => ({ ...prev, ...tempCardMap }));
+                                    lastCloudDataStr.current = fetchedHash;
+                                    isConflictAlertOpen.current = false;
+                                    setTimeout(() => openModal("직원이 수정한 데이터를 안전하게 불러왔습니다.", "alert"), 300);
+                                }, () => {
+                                    lastCloudDataStr.current = getComparableDataStr(ordersRef.current, cardPaymentsRef.current);
+                                    isConflictAlertOpen.current = false;
+                                });
+                            }
+                        }
+                    } catch(e) {}
+                }, 45000); 
+                return () => clearInterval(checkInterval);
+            }, [isSyncResolved, googleScriptUrl, customerSheetId, isSaving, getComparableDataStr, openModal]);
 
             // 설정된 날짜 이전의 주소록 데이터를 즉시 필터링(제외)하는 로직 추가
             useEffect(() => {
@@ -974,13 +1041,18 @@
                 });
             }, [setSpecialCustomers]);
 
-            const getCalculatedShipping = useCallback((nick) => {
+            const getCalculatedShipping = useCallback((nick, productTotal = 0) => {
                 if (shippingOverrides[nick] !== undefined) return Number(shippingOverrides[nick]);
                 const nickNorm = normalizeString(nick); const specialKey = Object.keys(specialCustomers || {}).find(k => normalizeString(k) === nickNorm);
                 if (specialKey && specialCustomers[specialKey].type === 'vip') return 0; 
-                const addrRes = addressLookup.get(nick); if (addrRes && addrRes.data && addrRes.data.address && addrRes.data.address.includes('제주')) return 8000;
+                const addrRes = addressLookup.get(nick); 
+                if (addrRes && addrRes.data && addrRes.data.address && addrRes.data.address.includes('제주')) return 8000;
+                
+                const threshold = Number(freeShippingThreshold);
+                if (threshold > 0 && productTotal >= threshold) return 0;
+                
                 return Number(quickShipping);
-            }, [shippingOverrides, specialCustomers, addressLookup, quickShipping]);
+            }, [shippingOverrides, specialCustomers, addressLookup, quickShipping, freeShippingThreshold]);
 
             const findAddressSuggestions = useCallback((nick) => {
                 if (!nick) return []; 
@@ -1073,26 +1145,36 @@
             }, [allDeposits, depositSearch, selectedNick, deletedDepositIds, matchedDeposits, depositorNames, addressLookup]);
             
             const dashboardStats = useMemo(() => {
-                let totalSales = 0, totalDeposit = 0, totalUnpaid = 0, totalCardExpected = 0, missingAddressCount = 0;
+                let totalSales = 0, paidCount = 0, unpaidCount = 0, overpaidCount = 0, cardCount = 0, noAddressCount = 0, noKakaoCount = 0;
                 const groups = {}; orders.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); });
                 Object.entries(groups).forEach(([nick, items]) => {
-                    const activeItems = items.filter(i => !i.isCancelled); const depositTotal = items.reduce((sum, i) => sum + (i.deposit || 0), 0); totalDeposit += depositTotal;
+                    const activeItems = items.filter(i => !i.isCancelled); const depositTotal = items.reduce((sum, i) => sum + (i.deposit || 0), 0);
                     if (activeItems.length === 0) return; 
-                    const addr = addressLookup.get(nick); if (!addr || !addr.data || !addr.data.address) missingAddressCount++;
-                    const isCard = cardPayments[nick]; const shipping = getCalculatedShipping(nick);
-                    const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0); const baseGrandTotal = productTotal + shipping; const baseBalance = baseGrandTotal - depositTotal;
+                    
+                    const isCard = cardPayments[nick]; const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0); 
+                    const shipping = getCalculatedShipping(nick, productTotal);
+                    const baseGrandTotal = productTotal + shipping; const baseBalance = baseGrandTotal - depositTotal;
                     const cardFee = (isCard && baseBalance > 0) ? baseBalance * 0.1 : 0; const finalGrandTotal = baseGrandTotal + cardFee; const finalBalance = baseBalance + cardFee;
+                    
                     totalSales += finalGrandTotal; 
-                    if (finalBalance > 0) { if (isCard) totalCardExpected += finalBalance; else totalUnpaid += finalBalance; }
+                    
+                    if (isCard) cardCount++;
+                    else if (finalBalance === 0 && productTotal > 0) paidCount++;
+                    else if (finalBalance > 0) unpaidCount++;
+                    else if (finalBalance < 0) overpaidCount++;
+
+                    const addr = addressLookup.get(nick); if (!addr || !addr.data || !addr.data.address) noAddressCount++;
+                    if (!checkedOrders.has(nick)) noKakaoCount++;
                 });
-                return { totalSales, totalDeposit, totalUnpaid, totalCardExpected, missingAddressCount };
-            }, [orders, cardPayments, getCalculatedShipping, addressLookup]);
+                return { totalSales, paidCount, unpaidCount, overpaidCount, cardCount, noAddressCount, noKakaoCount };
+            }, [orders, cardPayments, getCalculatedShipping, addressLookup, checkedOrders]);
 
             const customerPaidStatus = useMemo(() => {
                 const status = {}; const groups = {}; orders.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); });
                 Object.entries(groups).forEach(([nick, items]) => {
                     const activeItems = items.filter(i => !i.isCancelled); if (activeItems.length === 0) { status[nick] = true; return; }
-                    const isCard = cardPayments[nick]; const shipping = getCalculatedShipping(nick); const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0);
+                    const isCard = cardPayments[nick]; const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0);
+                    const shipping = getCalculatedShipping(nick, productTotal); 
                     const baseGrandTotal = productTotal + shipping; const depositTotal = items.reduce((sum, i) => sum + (i.deposit || 0), 0); const baseBalance = baseGrandTotal - depositTotal;
                     status[nick] = isCard || (baseBalance <= 0);
                 });
@@ -1103,7 +1185,25 @@
                 const groups = {}; orders.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); });
                 Object.entries(groups).forEach(([nick, items]) => { if (selectedNick === nick) { items.sort((a, b) => a.id - b.id); } else { items.sort((a, b) => String(a.product || '').localeCompare(String(b.product || ''), 'ko', { numeric: true })); } });
                 let entries = Object.entries(groups).filter(([nick, items]) => {
-                    if (filterStatus === 'no-address') { return !(addressLookup.get(nick)?.data?.address); }
+                    let passFilter = true;
+                    if (filterStatus !== 'all') {
+                        const activeItems = items.filter(i => !i.isCancelled); 
+                        const activeProd = activeItems.reduce((s,i) => s + Number(i.price), 0); 
+                        const currentDep = items.reduce((s,i) => s + (i.deposit || 0), 0);
+                        const currentShip = getCalculatedShipping(nick, activeProd); 
+                        const baseBal = activeProd + (activeItems.length > 0 ? currentShip : 0) - currentDep; 
+                        const isCard = cardPayments[nick]; 
+                        const finalBal = baseBal + (isCard && baseBal > 0 ? baseBal * 0.1 : 0);
+                        
+                        if (filterStatus === 'no-address') passFilter = !(addressLookup.get(nick)?.data?.address);
+                        else if (filterStatus === 'no-kakao') passFilter = !checkedOrders.has(nick);
+                        else if (filterStatus === 'card') passFilter = isCard;
+                        else if (filterStatus === 'paid') passFilter = !isCard && finalBal === 0 && activeProd > 0;
+                        else if (filterStatus === 'unpaid') passFilter = !isCard && finalBal > 0 && activeProd > 0;
+                        else if (filterStatus === 'overpaid') passFilter = !isCard && finalBal < 0;
+                    }
+                    if (!passFilter) return false;
+
                     if (deferredOrderSearch) {
                         const term = deferredOrderSearch.toLowerCase().replace(/\s/g, ''); const isChosung = /^[ㄱ-ㅎa-zA-Z0-9]+$/.test(term);
                         const addrInfo = addressLookup.get(nick)?.data; const realName = addrInfo ? addrInfo.realname : (depositorNames[nick] || ''); const phone = addrInfo ? addrInfo.phone : '';
@@ -1111,11 +1211,7 @@
                         if (nickClean.includes(term) || (isChosung && getChosung(nickClean).includes(term)) || (realNameClean && (realNameClean.includes(term) || (isChosung && getChosung(realNameClean).includes(term)))) || (phoneClean && phoneClean.includes(term))) return true;
                         return items.some(i => i.product && (i.product.toLowerCase().replace(/\s/g, '').includes(term) || (isChosung && getChosung(i.product.toLowerCase().replace(/\s/g, '')).includes(term))));
                     }
-                    if (filterStatus === 'card') return cardPayments[nick];
-                    const activeItems = items.filter(i => !i.isCancelled); const activeProd = activeItems.reduce((s,i) => s + Number(i.price), 0); const currentDep = items.reduce((s,i) => s + (i.deposit || 0), 0);
-                    const currentShip = getCalculatedShipping(nick); const baseBal = activeProd + (activeItems.length > 0 ? currentShip : 0) - currentDep; const isCard = cardPayments[nick]; const finalBal = baseBal + (isCard && baseBal > 0 ? baseBal * 0.1 : 0);
-                    if (filterStatus === 'unpaid') return !isCard && finalBal > 0 && activeProd > 0;
-                    if (filterStatus === 'paid') return !isCard && finalBal <= 0 && activeProd > 0; return true;
+                    return true;
                 });
 
                 entries.sort((a, b) => {
@@ -1337,10 +1433,22 @@
             }, [allDeposits, orders, matchedDeposits, depositorNames, deletedDepositIds, getCalculatedShipping, ignoredAutoMatch, addressLookup]);
 
             const autoSaveToGoogleSheet = useCallback(async () => { 
+                if (!isSyncResolved || isConflictAlertOpen.current) return; // 🌟 동기화 팝업이나 충돌 알림이 떠있을 때는 절대 덮어쓰기 금지
                 if (!googleScriptUrl || Object.keys(orders).length === 0) return; setIsSaving(true); 
-                const saveList = orders.filter(o=>!o.isCancelled).map(o => { let addrRes = addressLookup.get(o.customer); let addr = addrRes.data || {}; const currentShipping = getCalculatedShipping(o.customer); const isCard = cardPayments[o.customer] ? true : false; return { nickname: o.customer, product: o.product, qty: o.quantity, price: o.price, deposit: o.deposit, shipping: currentShipping, grandTotal: 0, address: addr.address || '', zipcode: addr.zipcode || '', phone: addr.phone || '', realname: addr.realname || '', memo: addr.memo || '', isCard: isCard }; }); 
-                try { const actualSheetId = getCleanSheetId(customerSheetId); await fetch(googleScriptUrl, { method: 'POST', body: JSON.stringify({ action: 'save_orders', sheet_id: actualSheetId, data: saveList }), mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' } }); } catch(e) { } finally { setIsSaving(false); } 
-            }, [orders, cardPayments, getCalculatedShipping, googleScriptUrl, addressLookup, customerSheetId]);
+                
+                const currentHash = getComparableDataStr(orders, cardPayments);
+                const customerTotals = {};
+                orders.filter(o => !o.isCancelled).forEach(o => { customerTotals[o.customer] = (customerTotals[o.customer] || 0) + Number(o.price); });
+
+                const saveList = orders.filter(o=>!o.isCancelled).map(o => { let addrRes = addressLookup.get(o.customer); let addr = addrRes.data || {}; const currentShipping = getCalculatedShipping(o.customer, customerTotals[o.customer] || 0); const isCard = cardPayments[o.customer] ? true : false; return { nickname: o.customer, product: o.product, qty: o.quantity, price: o.price, deposit: o.deposit, shipping: currentShipping, grandTotal: 0, address: addr.address || '', zipcode: addr.zipcode || '', phone: addr.phone || '', realname: addr.realname || '', memo: addr.memo || '', isCard: isCard }; }); 
+                
+                // 설정된 작업 공간 이름(메타데이터)을 숨겨진 첫 번째 주문 데이터로 몰래 삽입하여 클라우드에 전송
+                if (workspaceName) {
+                    saveList.unshift({ nickname: '___WORKSPACE_META___', product: workspaceName, qty: 0, price: 0, deposit: 0, shipping: 0, grandTotal: 0, address: '', zipcode: '', phone: '', realname: '', memo: '', isCard: false });
+                }
+
+                try { const actualSheetId = getCleanSheetId(customerSheetId); await fetch(googleScriptUrl, { method: 'POST', body: JSON.stringify({ action: 'save_orders', sheet_id: actualSheetId, data: saveList }), mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' } }); lastCloudDataStr.current = currentHash; } catch(e) { } finally { setIsSaving(false); } 
+            }, [orders, cardPayments, getCalculatedShipping, googleScriptUrl, addressLookup, customerSheetId, isSyncResolved, workspaceName, getComparableDataStr]);
 
             const autoSaveRef = useRef(); useEffect(() => { autoSaveRef.current = autoSaveToGoogleSheet; }, [autoSaveToGoogleSheet]);
             useEffect(() => { const saveInterval = setInterval(() => { if (autoSaveRef.current) autoSaveRef.current(); }, 60000); return () => clearInterval(saveInterval); }, []); 
@@ -1414,11 +1522,14 @@
             const handleOrderDelete = useCallback((id) => openModal("주문 삭제하시겠습니까?", 'confirm', () => setOrders(prev => prev.filter(o => o.id !== id))), [openModal, setOrders]);
 
             const copyOrderSheet = useCallback((nick, items, grandTotal, depositTotal, balance, isCard, addrData) => {
-                const activeItems = items.filter(i => !i.isCancelled); const addr = addrData || addressLookup.get(nick)?.data || {};
+                const activeItems = items.filter(i => !i.isCancelled); 
+                const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0);
+                const addr = addrData || addressLookup.get(nick)?.data || {};
                 const itemListText = activeItems.map(i => `${i.product}${i.quantity > 1 ? ` (${i.quantity}개)` : ''} ${Number(i.price).toLocaleString()}원`).join('\n');
-                const currentShipping = getCalculatedShipping(nick); const { emoji, paidMsg, unpaidPrefix, overpaidMsg, addrNotice, surveyNotice, alwaysRequestAddress } = templateConfig;
+                const currentShipping = getCalculatedShipping(nick, productTotal); const { emoji, paidMsg, unpaidPrefix, overpaidMsg, addrNotice, surveyNotice, alwaysRequestAddress } = templateConfig;
                 
-                let msg = `${emoji || '💙'} ${nick} 님 ${emoji || '💙'}\n\n[주문내역]\n${itemListText}\n배송비 ${currentShipping.toLocaleString()}원\n\n총 주문금액: ${grandTotal.toLocaleString()}원\n`;
+                const headerTitle = workspaceName ? `[${workspaceName}]` : '[주문내역]';
+                let msg = `${emoji || '💙'} ${nick} 님 ${emoji || '💙'}\n\n${headerTitle}\n${itemListText}\n배송비 ${currentShipping.toLocaleString()}원\n\n총 주문금액: ${grandTotal.toLocaleString()}원\n`;
                 
                 if (isCard) { 
                     const cardBase = Math.max(0, balance); if (depositTotal > 0) msg += `[입금확인]\n${depositTotal.toLocaleString()}원\n------------------\n`; 
@@ -1468,7 +1579,7 @@
                 if (missing.length > 0) { const text = "⚠️ 채널톡 안주신분 ⚠️\n" + missing.join('\n') + "\n\n👉 카톡채널 연락주세요!"; const t = document.createElement("textarea"); t.value = text; document.body.appendChild(t); t.select(); document.execCommand('copy'); document.body.removeChild(t); openModal(`미입력자 명단 복사 완료!`, 'alert'); }
             }, [orders, addressLookup, openModal]);
 
-            const addOrderLogic = useCallback((nick, content, qty = 1, force = false, afterId = null, customPrice = null, markAsModified = false, isAuto = false) => {
+            const addOrderLogic = useCallback((nick, content, qty = 1, force = false, afterId = null, customPrice = null, markAsModified = false, isAuto = false, preserveUI = false) => {
                 const cNick = String(nick).replace(/@/g, '').trim(); const cContent = String(content || '').trim();
                 const inv = inventoryRef.current; const hist = productHistoryRef.current; const invItem = Array.isArray(inv) ? inv.find(i => String(i.name).trim() === cContent) : null;
                 let price = 0; const isCustomPriceValid = customPrice !== null && customPrice !== '';
@@ -1480,7 +1591,14 @@
                     if (priceToSave > 0) setProductHistory(h => ({ ...h, [cContent]: priceToSave }));
                 }
 
-                if (!isAuto) { setCheckedOrders(prev => { const n = new Set(prev); n.delete(cNick); return n; }); setSelectedNick(cNick); setOrderSearch(''); bringToTopAndScroll(cNick); }
+                if (!isAuto) { 
+                    setCheckedOrders(prev => { const n = new Set(prev); n.delete(cNick); return n; }); 
+                    setSelectedNick(cNick); 
+                    if (!preserveUI) {
+                        setOrderSearch(''); 
+                        bringToTopAndScroll(cNick); 
+                    }
+                }
                 const newOrder = { id: Date.now() + Math.random(), customer: cNick, product: cContent, quantity: qty, price: Number(price) * qty, deposit: 0, isCancelled: false, isUnmodified: !markAsModified };
                 setOrders(prev => {
                     if (!afterId && !force && cContent !== '') { const existIdx = prev.findIndex(o => o.customer === cNick && o.product === cContent && !o.isCancelled); if (existIdx !== -1) { const next = [...prev]; next[existIdx] = { ...next[existIdx], quantity: next[existIdx].quantity + qty, price: (next[existIdx].quantity + qty) * price, isUnmodified: !markAsModified }; return next; } }
@@ -1502,8 +1620,20 @@
                         if (fetchedOrders && fetchedOrders.length > 0) {
                             if (Array.isArray(fetchedOrders[0])) { const headers = fetchedOrders[0]; fetchedOrders = fetchedOrders.slice(1).map(row => { const obj = {}; headers.forEach((h, i) => { obj[h] = row[i]; }); return obj; }); }
                             const loadedOrders = fetchedOrders.map((o, idx) => mapCloudOrderToLocal(o, idx)).filter(o => o.customer || o.product);
-                            const newCardPayments = {}; loadedOrders.forEach(o => { if (o.customer && o._isCard) newCardPayments[o.customer] = true; delete o._isCard; });
-                            setOrders(loadedOrders); setCardPayments(prev => ({ ...prev, ...newCardPayments })); setTimeout(() => openModal("성공적으로 불러왔습니다!", 'alert'), 300);
+                            
+                            // 몰래 심어둔 작업 공간 이름(메타데이터) 필터링 및 분리
+                            const metaOrder = loadedOrders.find(o => o.customer === '___WORKSPACE_META___');
+                            const actualOrders = loadedOrders.filter(o => o.customer !== '___WORKSPACE_META___');
+                            const cloudWorkspaceName = metaOrder ? metaOrder.product : '';
+
+                            const newCardPayments = {}; actualOrders.forEach(o => { if (o.customer && o._isCard) newCardPayments[o.customer] = true; delete o._isCard; });
+                            setOrders(actualOrders); setCardPayments(prev => ({ ...prev, ...newCardPayments })); 
+                            lastCloudDataStr.current = getComparableDataStr(actualOrders, newCardPayments);
+                            
+                            // 불러온 클라우드 데이터의 꼬리표를 내 로컬 환경설정에도 적용
+                            if (cloudWorkspaceName) setWorkspaceName(cloudWorkspaceName);
+                            
+                            setTimeout(() => openModal(`성공적으로 불러왔습니다!${cloudWorkspaceName ? `\n(작업공간: ${cloudWorkspaceName})` : ''}`, 'alert'), 300);
                         } else { setTimeout(() => openModal("저장된 데이터가 없거나 형식이 잘못되었습니다.", 'alert'), 300); }
                     } catch(e) { setTimeout(() => openModal(`로드 실패. 네트워크 오류입니다: ${e.message}`, 'alert'), 300); }
                 });
@@ -1689,9 +1819,21 @@
                     </div>
 
                     <div className="w-[34%] bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg flex flex-col overflow-hidden shadow-sm min-w-[340px]">
-                        <div className="grid grid-cols-5 gap-1 p-2 bg-slate-100 dark:bg-slate-800 border-b dark:border-slate-700 text-center text-[10px]">
-                            {[{id:'all', label:'총매출', val:dashboardStats.totalSales}, {id:'paid', label:'입금액', val:dashboardStats.totalDeposit}, {id:'unpaid', label:'미수금', val:dashboardStats.totalUnpaid}, {id:'card', label:'카드예정', val:dashboardStats.totalCardExpected}, {id:'no-address', label:'주소미입력', val:dashboardStats.missingAddressCount, onClick:handleNoAddressClick}].map(s => (
-                                <div key={s.id} onClick={s.onClick || (()=>setFilterStatus(s.id))} className={`bg-white dark:bg-slate-800 p-1 rounded border-2 cursor-pointer shadow-sm transition-colors ${filterStatus===s.id ? 'border-slate-600 dark:border-slate-400' : 'border-transparent hover:border-slate-300 dark:hover:border-slate-600'}`}><div>{s.label}</div><div className={`font-bold text-[12px] ${s.id==='paid'?'text-green-600':s.id==='unpaid'?'text-red-500':s.id==='card'?'text-slate-600 dark:text-slate-400':s.id==='no-address'?'text-orange-500':'text-slate-800 dark:text-slate-200'}`}>{s.val.toLocaleString()}{s.id==='no-address'?'명':''}</div></div>
+                        <div className="grid grid-cols-4 gap-1 p-2 bg-slate-100 dark:bg-slate-800 border-b dark:border-slate-700 text-center text-[10px]">
+                            {[{id:'all', label:'총매출', val:dashboardStats.totalSales, isCurrency:true, colSpan:2}, 
+                              {id:'paid', label:'완납', val:dashboardStats.paidCount, isCurrency:false}, 
+                              {id:'unpaid', label:'미납', val:dashboardStats.unpaidCount, isCurrency:false}, 
+                              {id:'overpaid', label:'과납', val:dashboardStats.overpaidCount, isCurrency:false}, 
+                              {id:'card', label:'카드', val:dashboardStats.cardCount, isCurrency:false}, 
+                              {id:'no-address', label:'주소없음', val:dashboardStats.noAddressCount, isCurrency:false, onClick:handleNoAddressClick},
+                              {id:'no-kakao', label:'카톡없음', val:dashboardStats.noKakaoCount, isCurrency:false}
+                            ].map(s => (
+                                <div key={s.id} onClick={s.onClick || (()=>setFilterStatus(s.id))} className={`bg-white dark:bg-slate-800 p-1 rounded border-2 cursor-pointer shadow-sm transition-colors flex flex-col justify-center ${s.colSpan === 2 ? 'col-span-2' : ''} ${filterStatus===s.id ? 'border-slate-600 dark:border-slate-400' : 'border-transparent hover:border-slate-300 dark:hover:border-slate-600'}`}>
+                                    <div className="text-[9px] text-slate-500">{s.label}</div>
+                                    <div className={`font-bold ${s.colSpan ? 'text-[13px]' : 'text-[11px]'} ${s.id==='paid'?'text-green-600 dark:text-green-400':s.id==='unpaid'?'text-red-500 dark:text-red-400':s.id==='overpaid'?'text-orange-500 dark:text-orange-400':s.id==='card'?'text-purple-600 dark:text-purple-400':s.id==='no-address'?'text-amber-600 dark:text-amber-400':'text-slate-800 dark:text-slate-200'}`}>
+                                        {s.val.toLocaleString()}{s.isCurrency?'원':'명'}
+                                    </div>
+                                </div>
                             ))}
                         </div>
                         <div className="p-2 flex flex-col gap-2 bg-white dark:bg-slate-800 border-b dark:border-slate-700 z-20 shadow-sm">
@@ -1726,9 +1868,9 @@
                         </div>
                         <div ref={orderListRef} className="flex-1 overflow-y-auto p-1.5 bg-slate-50 dark:bg-slate-900 relative z-0" onScroll={handleOrderScroll}>
                             {displayedOrders.map(([nick, items]) => {
-                                const ship = getCalculatedShipping(nick);
                                 const activeItems = items.filter(i => !i.isCancelled);
                                 const prodSum = activeItems.reduce((s, i) => s + Number(i.price), 0);
+                                const ship = getCalculatedShipping(nick, prodSum);
                                 const depSum = items.reduce((s, i) => s + (i.deposit || 0), 0);
                                 const baseGrand = prodSum + (activeItems.length > 0 ? ship : 0);
                                 const baseBal = baseGrand - depSum;
@@ -1753,15 +1895,27 @@
                                 <button type="submit" className="bg-slate-700 text-white text-[10px] font-bold py-1 rounded hover:bg-slate-800 transition-colors shadow-sm">추가</button>
                             </form>
                             <div className="relative"><Icon name="magnifying-glass" className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-400 text-[10px]"/><input type="text" placeholder="검색" value={depositSearch} onChange={e => setDepositSearch(e.target.value)} className="w-full text-[10px] pl-6 pr-6 py-1.5 border dark:border-slate-600 rounded focus:ring-1 focus:ring-slate-500 outline-none bg-white dark:bg-slate-900" />{depositSearch && <button onClick={()=>setDepositSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><Icon name="x-circle" weight="fill" size={12}/></button>}</div>
-                            {selectedNick && <div className="text-[10px] text-slate-700 dark:text-slate-300 bg-slate-200 dark:bg-slate-700 p-1 rounded text-center font-bold animate-pulse border dark:border-slate-600 truncate">👇 '{selectedNick}' 대기</div>}
+                            {selectedNick && <div className="text-[10px] text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/40 p-1 rounded text-center font-bold animate-pulse border border-blue-200 dark:border-blue-800 truncate mt-1">👇 '{selectedNick}' 매칭 확인 중</div>}
                         </div>
                         <div className="flex-1 overflow-y-auto p-1 space-y-1 bg-slate-50 dark:bg-slate-900">
                             {visibleDeposits.map(d => {
                                 const isUsed = matchedDeposits?.has(d.id);
+                                
+                                const sNick = selectedNick ? strictClean(selectedNick) : '';
+                                const dName = strictClean(d.name);
+                                const sReal = selectedNick && addressLookup.get(selectedNick)?.data ? strictClean(addressLookup.get(selectedNick).data.realname) : '';
+                                const sMan = selectedNick ? strictClean(depositorNames[selectedNick]) : '';
+                                const isTarget = selectedNick && dName && (dName === sNick || dName === sReal || dName === sMan);
+                                const isPartial = selectedNick && dName && !isTarget && ((sNick && dName.includes(sNick)) || (sReal && dName.includes(sReal)));
+                                
+                                let depositBgClass = isUsed ? 'opacity-70 bg-slate-100 dark:bg-slate-800/80 border-transparent' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm';
+                                if (!isUsed && isTarget) depositBgClass = 'bg-blue-50 dark:bg-blue-900/30 border-blue-400 dark:border-blue-600 ring-1 ring-blue-400 shadow-md';
+                                else if (!isUsed && isPartial) depositBgClass = 'bg-slate-50 dark:bg-slate-800 border-blue-200 dark:border-blue-800 border-dashed';
+
                                 return (
-                                    <div key={d.id} onClick={() => handleDepositClick(d)} className={`relative flex items-center justify-between py-1.5 px-1.5 border rounded cursor-pointer transition-all group ${isUsed ? 'opacity-70 bg-slate-100 dark:bg-slate-800/80 border-transparent' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm'}`}>
+                                    <div key={d.id} onClick={() => handleDepositClick(d)} className={`relative flex items-center justify-between py-1.5 px-1.5 border rounded cursor-pointer transition-all group ${depositBgClass}`}>
                                         <div className="flex items-center gap-1 overflow-hidden min-w-0">
-                                            <span className={`text-[12px] truncate font-bold ${isUsed ? 'text-slate-400 dark:text-slate-500 line-through' : 'text-slate-800 dark:text-slate-100'}`}>{d.name}</span>
+                                            <span className={`text-[12px] truncate font-bold ${isUsed ? 'text-slate-400 dark:text-slate-500 line-through' : (isTarget ? 'text-blue-700 dark:text-blue-400' : 'text-slate-800 dark:text-slate-100')}`}>{d.name}</span>
                                             {d.source === 'manual' && <span className="text-[8px] text-slate-400 dark:text-slate-500 bg-slate-200 dark:bg-slate-700 px-0.5 rounded shrink-0">수동</span>}
                                         </div>
                                         <div className="flex items-center gap-1.5 shrink-0 ml-1">
@@ -1787,14 +1941,30 @@
                             </div>
                             <div className="text-[9px] text-slate-600 dark:text-slate-400 bg-slate-200 dark:bg-slate-700 p-1 rounded border dark:border-slate-600 text-center flex items-center justify-center gap-1"><Icon name="arrows-clockwise" className="animate-spin" /> 외부 폼 실시간 동기화 중</div>
                             <div className="relative"><Icon name="magnifying-glass" className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-400 text-[10px]"/><input type="text" placeholder="이름/연락처 검색" value={addressSearch} onChange={e => setAddressSearch(e.target.value)} className="w-full text-[10px] pl-6 pr-6 py-1.5 border dark:border-slate-600 rounded focus:ring-1 focus:ring-slate-500 outline-none bg-white dark:bg-slate-900" />{addressSearch && <button onClick={()=>setAddressSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><Icon name="x-circle" weight="fill" size={12}/></button>}</div>
+                            {selectedNick && <div className="text-[10px] text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/40 p-1 rounded text-center font-bold animate-pulse border border-blue-200 dark:border-blue-800 truncate mt-1">👇 '{selectedNick}' 매칭 확인 중</div>}
                         </div>
                         <div className="flex-1 overflow-y-auto p-1 space-y-1 bg-slate-50 dark:bg-slate-900">
                             {visibleAddresses.map((addr, idx) => {
                                 const isUsed = usedAddressNicks.has(normalizeString(addr.nickname)) || (addr.linkedNicks && addr.linkedNicks.some(ln => usedAddressNicks.has(normalizeString(ln))));
+                                
+                                const sNick = selectedNick ? strictClean(selectedNick) : '';
+                                const aNick = strictClean(addr.nickname);
+                                const aReal = strictClean(addr.realname);
+                                const aLinked = (addr.linkedNicks || []).map(ln => strictClean(ln));
+                                
+                                const isExplicitMapped = selectedNick && addressMapping[selectedNick] === addr.nickname;
+                                const isTarget = selectedNick && !isExplicitMapped && (aNick === sNick || aReal === sNick || aLinked.includes(sNick));
+                                const isPartial = selectedNick && !isExplicitMapped && !isTarget && (aNick.includes(sNick) || aReal.includes(sNick));
+                                
+                                let addrBgClass = isUsed ? 'opacity-60 bg-slate-100 dark:bg-slate-800/80 border-transparent' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm';
+                                if (isExplicitMapped) addrBgClass = 'bg-green-50 dark:bg-green-900/20 border-green-400 dark:border-green-600 ring-2 ring-green-400 shadow-md';
+                                else if (!isUsed && isTarget) addrBgClass = 'bg-blue-50 dark:bg-blue-900/30 border-blue-400 dark:border-blue-600 ring-1 ring-blue-400 shadow-md';
+                                else if (!isUsed && isPartial) addrBgClass = 'bg-slate-50 dark:bg-slate-800 border-blue-200 dark:border-blue-800 border-dashed';
+
                                 return (
-                                    <div key={`${addr.phone}-${idx}`} onClick={() => handleAddressClick(addr)} className={`relative flex flex-col p-1.5 border rounded cursor-pointer transition-all ${isUsed ? 'opacity-60 bg-slate-100 dark:bg-slate-800/80 border-transparent' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm'}`}>
+                                    <div key={`${addr.phone}-${idx}`} onClick={() => handleAddressClick(addr)} className={`relative flex flex-col p-1.5 border rounded cursor-pointer transition-all ${addrBgClass}`}>
                                         <div className="flex justify-between items-center gap-1">
-                                            <span className={`text-[12px] font-bold truncate ${isUsed ? 'text-slate-500 dark:text-slate-400' : 'text-slate-800 dark:text-slate-200'}`} title={addr.nickname}>
+                                            <span className={`text-[12px] font-bold truncate ${isUsed ? 'text-slate-500 dark:text-slate-400' : (isTarget || isExplicitMapped ? 'text-blue-700 dark:text-blue-400' : 'text-slate-800 dark:text-slate-200')}`} title={addr.nickname}>
                                                 {addr.nickname}
                                                 {addr.linkedNicks && addr.linkedNicks.length > 0 && <span className="text-slate-400 dark:text-slate-500 font-normal ml-1">({addr.linkedNicks.join(', ')})</span>}
                                             </span>
@@ -1870,8 +2040,22 @@
             );
         };
 
-        const OrderManagementTab = ({ orders, shippingOverrides, quickShipping, addresses, handleExportBackup, handleImportBackup, addressMapping, cardPayments, specialCustomers, openModal }) => {
+        const OrderManagementTab = ({ orders, shippingOverrides, quickShipping, freeShippingThreshold, workspaceName, addresses, handleExportBackup, handleImportBackup, addressMapping, cardPayments, specialCustomers, openModal }) => {
             
+            const findAddressForManagement = (nick) => { if (addressMapping[nick]) return addresses.find(a => normalizeString(a.nickname) === normalizeString(addressMapping[nick])); return addresses.find(a => normalizeString(a.nickname) === normalizeString(nick)); };
+            const getCalculatedShippingForManagement = (nick, productTotal = 0) => { 
+                if (shippingOverrides && shippingOverrides[nick] !== undefined) return Number(shippingOverrides[nick]); 
+                const nickNorm = normalizeString(nick); const specialKey = Object.keys(specialCustomers || {}).find(k => normalizeString(k) === nickNorm); 
+                if (specialKey && specialCustomers[specialKey].type === 'vip') return 0; 
+                const addr = findAddressForManagement(nick); 
+                if (addr && addr.address && addr.address.includes('제주')) return 8000; 
+                
+                const threshold = Number(freeShippingThreshold);
+                if (threshold > 0 && productTotal >= threshold) return 0;
+                
+                return Number(quickShipping); 
+            };
+
             const getAllNotificationDataList = () => {
                 const groups = {}; orders.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); });
                 const dataList = [];
@@ -1884,27 +2068,15 @@
                 Object.entries(groups).forEach(([nick, items]) => {
                     const activeItems = items.filter(i => !i.isCancelled); if (activeItems.length === 0) return;
                     
-                    let currentShipping = Number(quickShipping);
-                    if (shippingOverrides && shippingOverrides[nick] !== undefined) currentShipping = Number(shippingOverrides[nick]);
-                    const nickNorm = normalizeString(nick); const specialKey = Object.keys(specialCustomers || {}).find(k => normalizeString(k) === nickNorm);
-                    
-                    let addrData = null;
-                    if (specialKey && specialCustomers[specialKey].type === 'vip') {
-                        currentShipping = 0;
-                    } 
-                    
-                    const mappedNick = addressMapping[nick] || nick;
-                    addrData = addresses.find(a => normalizeString(a.nickname) === normalizeString(mappedNick));
-                    
-                    if (!specialKey && addrData && addrData.address && addrData.address.includes('제주')) {
-                        currentShipping = 8000;
-                    }
-                    
                     const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0); 
+                    const currentShipping = getCalculatedShippingForManagement(nick, productTotal);
                     const grandTotal = productTotal + (activeItems.length > 0 ? currentShipping : 0);
                     const depositTotal = items.reduce((sum, i) => sum + (i.deposit || 0), 0); 
                     const balance = grandTotal - depositTotal;
                     const isCard = cardPayments && cardPayments[nick];
+                    
+                    const mappedNick = addressMapping[nick] || nick;
+                    const addrData = addresses.find(a => normalizeString(a.nickname) === normalizeString(mappedNick));
                     
                     const { emoji, paidMsg, unpaidPrefix, overpaidMsg, addrNotice, surveyNotice, alwaysRequestAddress } = templateConfig;
                     
@@ -1913,7 +2085,8 @@
                         return `${item.product}${item.quantity > 1 ? ` (${item.quantity}개)` : ''} ${unitPrice.toLocaleString()}원`;
                     }).join('\n');
                     
-                    let msg = `${emoji || '💙'} ${nick} 님 ${emoji || '💙'}\n\n[주문내역]\n${itemListTextForCopy}\n배송비 ${currentShipping.toLocaleString()}원\n\n총 주문금액: ${grandTotal.toLocaleString()}원\n`;
+                    const headerTitle = workspaceName ? `[${workspaceName}]` : '[주문내역]';
+                    let msg = `${emoji || '💙'} ${nick} 님 ${emoji || '💙'}\n\n${headerTitle}\n${itemListTextForCopy}\n배송비 ${currentShipping.toLocaleString()}원\n\n총 주문금액: ${grandTotal.toLocaleString()}원\n`;
                     let statusStr = "";
                     
                     if (isCard) { 
@@ -2011,9 +2184,6 @@
                 try { document.execCommand('copy'); openModal('모든 고객의 안내 메시지가 복사되었습니다!\n(카톡 대화창 등에 붙여넣기 하세요)', 'alert'); } catch (err) { openModal('복사 실패', 'alert'); } document.body.removeChild(textArea);
             };
 
-            const findAddress = (nick) => { if (addressMapping[nick]) return addresses.find(a => normalizeString(a.nickname) === normalizeString(addressMapping[nick])); return addresses.find(a => normalizeString(a.nickname) === normalizeString(nick)); };
-            const getCalculatedShipping = (nick) => { if (shippingOverrides && shippingOverrides[nick] !== undefined) return Number(shippingOverrides[nick]); const nickNorm = normalizeString(nick); const specialKey = Object.keys(specialCustomers || {}).find(k => normalizeString(k) === nickNorm); if (specialKey && specialCustomers[specialKey].type === 'vip') return 0; const addr = findAddress(nick); if (addr && addr.address && addr.address.includes('제주')) return 8000; return Number(quickShipping); };
-
             const handleExportProducts = () => { 
                 const summary = {}; const unpaidSummary = {}; const paidSummary = {}; const customerPaidStatus = {}; const customerGroups = {};
                 orders.forEach(o => { if(!customerGroups[o.customer]) customerGroups[o.customer] = []; customerGroups[o.customer].push(o); });
@@ -2021,8 +2191,9 @@
                 Object.entries(customerGroups).forEach(([nick, items]) => {
                     const activeItems = items.filter(i => !i.isCancelled); if(activeItems.length === 0) { customerPaidStatus[nick] = false; return; }
                     const isCard = savedCardPayments[nick]; 
-                    const shipping = getCalculatedShipping(nick);
-                    const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0); const depositTotal = items.reduce((sum, i) => sum + (i.deposit || 0), 0);
+                    const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0);
+                    const shipping = getCalculatedShippingForManagement(nick, productTotal);
+                    const depositTotal = items.reduce((sum, i) => sum + (i.deposit || 0), 0);
                     const grandTotal = productTotal + (activeItems.length > 0 ? shipping : 0); 
                     customerPaidStatus[nick] = (depositTotal >= grandTotal) || isCard;
                 });
@@ -2041,8 +2212,9 @@
                 const groups = {}; orders.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); }); 
                 let entries = Object.entries(groups).map(([nick, items]) => {
                     const activeItems = items.filter(i => !i.isCancelled); const isCard = cardPayments[nick]; 
-                    const currentShipping = getCalculatedShipping(nick);
-                    const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0); const depositTotal = items.reduce((sum, i) => sum + (i.deposit || 0), 0); 
+                    const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0);
+                    const currentShipping = getCalculatedShippingForManagement(nick, productTotal);
+                    const depositTotal = items.reduce((sum, i) => sum + (i.deposit || 0), 0); 
                     const grandTotal = productTotal + (activeItems.length > 0 ? currentShipping : 0); 
                     const isPaid = (depositTotal >= grandTotal) || isCard;
                     return { nick, items: activeItems, isPaid, isCard, depositTotal, grandTotal };
@@ -2172,6 +2344,7 @@
             const [orders, setOrders] = useLocalStorage('youtubeOrders', []);
             const [activeTab, setActiveTab] = useState('live');
             const [quickShipping, setQuickShipping] = useLocalStorage('quickShipping', 4000); 
+            const [freeShippingThreshold, setFreeShippingThreshold] = useLocalStorage('freeShippingThreshold', '');
             const [bankAccount, setBankAccount] = useLocalStorage('bankAccount', FIXED_BANK_ACCOUNT);
             const [productHistory, setProductHistory] = useLocalStorage('productHistory', {});
             const [shippingOverrides, setShippingOverrides] = useLocalStorage('shippingOverrides', {});
@@ -2209,6 +2382,9 @@
             const [templateConfig, setTemplateConfig] = useLocalStorage('templateConfig', { emoji: '💙', paidMsg: '😍 완납 확인! 감사합니다 😍', unpaidPrefix: '[미입금]\n총 입금하실 금액\n👉', overpaidMsg: '과납금액이 있습니다!\n환불받으실 계좌를 남겨주시거나, 적립금으로 처리 원하시면 말씀해주세요.', addrNotice: '※ 배송지 변경 시 채팅으로 변경할 주소를 남겨주세요!', surveyNotice: '방송마다 1회 하단의 주문서(배송지입력) 필수!!', alwaysRequestAddress: false });
             const [quickMessages, setQuickMessages] = useLocalStorage('quickMessages', ["안녕하세요! 주문은 하단 링크 클릭💙", "⚠️ 주소 미입력시 배송 보류!", "문의는 카톡 채널로🙏", "확인 중입니다🥰"]);
             const [addressCutoffDate, setAddressCutoffDate] = useLocalStorage('addressCutoffDate', '2026-05-20');
+            const [workspaceName, setWorkspaceName] = useLocalStorage('workspaceName', ''); // 작업공간 이름 상태 추가
+            const [isSyncResolved, setIsSyncResolved] = useState(false); // 클라우드 동기화 팝업 해결 여부 상태
+            
             const [isSettingsOpen, setIsSettingsOpen] = useState(false);
             const [isVipModalOpen, setIsVipModalOpen] = useState(false);
             const [googleScriptUrl, setGoogleScriptUrl] = useLocalStorage('googleScriptUrl', DEFAULT_GOOGLE_SCRIPT_URL);
@@ -2251,6 +2427,7 @@
                             if(d.templateConfig) setTemplateConfig(()=>d.templateConfig); 
                             if(d.keywords) setKeywords(()=>d.keywords);
                         }
+                        setIsSyncResolved(true); // 복구 시 덮어쓰기 락 해제
                         openModal("복구 완료", "alert"); 
                     } catch(err) { openModal("파일 오류", "alert"); } 
                 }; 
@@ -2258,35 +2435,65 @@
                 e.target.value = ''; 
             };
 
-            const hasP = useRef(false);
+            const hasCheckedSync = useRef(false);
             useEffect(() => {
-                if (hasP.current) return; hasP.current = true;
-                if (orders.length === 0 && googleScriptUrl) {
-                    setTimeout(() => { 
-                        openModal("🚨 주문 내역을 클라우드에서 복구하시겠습니까?", 'confirm', async () => { 
-                            try { 
-                                const actualSheetId = getCleanSheetId(customerSheetId); 
-                                const res = await fetch(`${googleScriptUrl}?action=get_orders&t=${Date.now()}&sheet_id=${actualSheetId}`); 
-                                const text = await res.text();
-                                if (text.trim().startsWith("<!DOCTYPE")) { setTimeout(() => openModal(`서버 거부: 스크립 권한을 확인해주세요.`, 'alert'), 300); return; }
-                                const data = JSON.parse(text); 
-                                let fs = data.orders || data.data || data; 
-                                if (fs && fs.length > 0) { 
-                                    if (Array.isArray(fs[0])) { 
-                                        const h = fs[0]; 
-                                        fs = fs.slice(1).map(r => { const o = {}; h.forEach((k, i) => o[k] = r[i]); return o; }); 
-                                    } 
-                                    const loadedOrders = fs.map((o, idx) => mapCloudOrderToLocal(o, idx)).filter(o => o.customer || o.product);
-                                    const newCardPayments = {}; 
-                                    loadedOrders.forEach(o => { if (o.customer && o._isCard) newCardPayments[o.customer] = true; delete o._isCard; });
-                                    setOrders(loadedOrders); 
-                                    setCardPayments(prev => ({ ...prev, ...newCardPayments })); 
-                                } 
-                            } catch(e) {} 
-                        }); 
-                    }, 1500);
-                }
-            }, []); 
+                if (hasCheckedSync.current) return; 
+                hasCheckedSync.current = true;
+                
+                // 앱 최초 접속 시 자동저장을 멈추고 클라우드에 최신 데이터가 있는지 스마트하게 확인
+                const checkCloud = async () => {
+                    if (!googleScriptUrl) {
+                        setIsSyncResolved(true);
+                        return;
+                    }
+                    try {
+                        const actualSheetId = getCleanSheetId(customerSheetId);
+                        const res = await fetch(`${googleScriptUrl}?action=get_orders&t=${Date.now()}&sheet_id=${actualSheetId}`);
+                        const text = await res.text();
+                        if (text.trim().startsWith("<!DOCTYPE")) { setIsSyncResolved(true); return; }
+                        const data = JSON.parse(text);
+
+                        let fetchedOrders = [];
+                        if (data && Array.isArray(data.orders)) fetchedOrders = data.orders; else if (data && Array.isArray(data.data)) fetchedOrders = data.data; else if (data && Array.isArray(data.orderList)) fetchedOrders = data.orderList; else if (Array.isArray(data)) fetchedOrders = data;
+
+                        if (fetchedOrders.length > 0) {
+                            if (Array.isArray(fetchedOrders[0])) { const headers = fetchedOrders[0]; fetchedOrders = fetchedOrders.slice(1).map(row => { const obj = {}; headers.forEach((h, i) => { obj[h] = row[i]; }); return obj; }); }
+                            const loadedOrders = fetchedOrders.map((o, idx) => mapCloudOrderToLocal(o, idx)).filter(o => o.customer || o.product);
+                            
+                            // 클라우드에 심어져있는 메타데이터(작업공간 이름) 확인
+                            const metaOrder = loadedOrders.find(o => o.customer === '___WORKSPACE_META___');
+                            const actualOrders = loadedOrders.filter(o => o.customer !== '___WORKSPACE_META___');
+                            const cloudWorkspaceName = metaOrder ? metaOrder.product : '';
+
+                            if (actualOrders.length > 0) {
+                                const nameDisplay = cloudWorkspaceName ? `[ ${cloudWorkspaceName} ]` : '이전';
+                                openModal(`클라우드에 ${nameDisplay} 작업 내역이 있습니다.\n(총 ${actualOrders.length}건)\n\n이 내역을 불러와서 작업을 이어나가시겠습니까?\n\n※ 확인: 클라우드 내용 불러오기\n※ 취소: 현재 내 PC 내용 유지 (자동저장 시 클라우드 덮어쓰기 됨)`, 'confirm', () => {
+                                    // 확인: 안전하게 클라우드 데이터를 불러오고 락(Lock) 해제
+                                    const newCardPayments = {};
+                                    actualOrders.forEach(o => { if (o.customer && o._isCard) newCardPayments[o.customer] = true; delete o._isCard; });
+                                    setOrders(actualOrders);
+                                    setCardPayments(prev => ({ ...prev, ...newCardPayments }));
+                                    if (cloudWorkspaceName) setWorkspaceName(cloudWorkspaceName);
+                                    setIsSyncResolved(true); 
+                                    setTimeout(() => openModal("성공적으로 불러왔습니다!", "alert"), 300);
+                                }, () => {
+                                    // 취소: 내 PC 데이터를 유지하고 락(Lock) 해제
+                                    setIsSyncResolved(true);
+                                });
+                            } else {
+                                setIsSyncResolved(true);
+                            }
+                        } else {
+                            setIsSyncResolved(true);
+                        }
+                    } catch (e) {
+                        setIsSyncResolved(true);
+                    }
+                };
+
+                // UI 렌더링 후 약간의 딜레이를 두고 체크 시작
+                setTimeout(checkCloud, 1000);
+            }, []);
 
             useEffect(() => { if (isDarkMode) document.documentElement.classList.add('dark'); else document.documentElement.classList.remove('dark'); }, [isDarkMode]);
 
@@ -2316,17 +2523,19 @@
                             addressScriptUrl={addressScriptUrl} setAddressScriptUrl={setAddressScriptUrl}
                             customerSheetId={customerSheetId} setCustomerSheetId={setCustomerSheetId}
                             quickShipping={quickShipping} setQuickShipping={setQuickShipping}
+                            freeShippingThreshold={freeShippingThreshold} setFreeShippingThreshold={setFreeShippingThreshold}
                             templateConfig={templateConfig} setTemplateConfig={setTemplateConfig}
                             bankAccount={bankAccount} setBankAccount={setBankAccount}
                             quickMessages={quickMessages} setQuickMessages={setQuickMessages}
                             setIsSettingsOpen={setIsSettingsOpen}
                             addressCutoffDate={addressCutoffDate} setAddressCutoffDate={setAddressCutoffDate}
+                            workspaceName={workspaceName} setWorkspaceName={setWorkspaceName}
                         />
                     )}
                     
                     <main className="flex-1 overflow-hidden bg-slate-200 dark:bg-slate-950 p-2 relative">
-                        {activeTab === 'live' && <LiveTab {...{ orders, setOrders, productHistory, setProductHistory, quickShipping, shippingOverrides, setShippingOverrides, bankAccount, googleScriptUrl, addressScriptUrl, inventoryScriptUrl, addresses, setAddresses, cardPayments, setCardPayments, matchedDeposits, setMatchedDeposits, depositorNames, setDepositorNames, clickedChats, setClickedChats, openModal, keywords, setKeywords, sentAddressRequests, setSentAddressRequests, deletedDepositIds, setDeletedDepositIds, checkedOrders, setCheckedOrders, addressMapping, setAddressMapping, templateConfig, specialCustomers, setSpecialCustomers, inventory, setInventory, quickMessages, customerSheetId, handleResetAllData, addressCutoffDate }} />}
-                        {activeTab === 'manage' && <OrderManagementTab {...{ orders, shippingOverrides, quickShipping, addresses, handleExportBackup, handleImportBackup, addressMapping, cardPayments, specialCustomers, openModal }} />}
+                        {activeTab === 'live' && <LiveTab {...{ orders, setOrders, productHistory, setProductHistory, quickShipping, freeShippingThreshold, shippingOverrides, setShippingOverrides, bankAccount, googleScriptUrl, addressScriptUrl, inventoryScriptUrl, addresses, setAddresses, cardPayments, setCardPayments, matchedDeposits, setMatchedDeposits, depositorNames, setDepositorNames, clickedChats, setClickedChats, openModal, keywords, setKeywords, sentAddressRequests, setSentAddressRequests, deletedDepositIds, setDeletedDepositIds, checkedOrders, setCheckedOrders, addressMapping, setAddressMapping, templateConfig, specialCustomers, setSpecialCustomers, inventory, setInventory, quickMessages, customerSheetId, handleResetAllData, addressCutoffDate, workspaceName, setWorkspaceName, isSyncResolved }} />}
+                        {activeTab === 'manage' && <OrderManagementTab {...{ orders, shippingOverrides, quickShipping, freeShippingThreshold, workspaceName, addresses, handleExportBackup, handleImportBackup, addressMapping, cardPayments, specialCustomers, openModal }} />}
                     </main>
                 </div>
             );
