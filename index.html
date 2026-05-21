@@ -756,7 +756,7 @@
         // ============================================
         // 컴포넌트: 탭 (LiveTab)
         // ============================================
-        const LiveTab = ({ orders, setOrders, productHistory, setProductHistory, quickShipping, freeShippingThreshold, shippingOverrides, setShippingOverrides, bankAccount, googleScriptUrl, addressScriptUrl, inventoryScriptUrl, addresses, setAddresses, cardPayments, setCardPayments, matchedDeposits, setMatchedDeposits, depositorNames, setDepositorNames, clickedChats, setClickedChats, openModal, keywords, setKeywords, sentAddressRequests, setSentAddressRequests, deletedDepositIds, setDeletedDepositIds, checkedOrders, setCheckedOrders, addressMapping, setAddressMapping, templateConfig, specialCustomers, setSpecialCustomers, inventory, setInventory, quickMessages, customerSheetId, handleResetAllData, addressCutoffDate, workspaceName, setWorkspaceName, isSyncResolved }) => {
+        const LiveTab = ({ orders, setOrders, productHistory, setProductHistory, quickShipping, freeShippingThreshold, shippingOverrides, setShippingOverrides, bankAccount, googleScriptUrl, addressScriptUrl, inventoryScriptUrl, addresses, setAddresses, cardPayments, setCardPayments, matchedDeposits, setMatchedDeposits, depositorNames, setDepositorNames, clickedChats, setClickedChats, openModal, keywords, setKeywords, sentAddressRequests, setSentAddressRequests, deletedDepositIds, setDeletedDepositIds, checkedOrders, setCheckedOrders, addressMapping, setAddressMapping, templateConfig, specialCustomers, setSpecialCustomers, inventory, setInventory, quickMessages, customerSheetId, handleResetAllData, addressCutoffDate, workspaceName, setWorkspaceName }) => {
             const [chats, setChats] = useState([]);
             const [serverDeposits, setServerDeposits] = useState([]);
             const [manualDeposits, setManualDeposits] = useState([]);
@@ -801,68 +801,48 @@
             const orderListRef = useRef(null);
             const [hiddenChatIds, setHiddenChatIds] = useLocalStorage('hiddenChatIds', []);
 
-            // 실시간 시트 변경 감지를 위한 상태 참조
-            const ordersRef = useRef(orders); useEffect(() => { ordersRef.current = orders; }, [orders]);
-            const cardPaymentsRef = useRef(cardPayments); useEffect(() => { cardPaymentsRef.current = cardPayments; }, [cardPayments]);
-            const lastCloudDataStr = useRef('');
-            const isConflictAlertOpen = useRef(false);
-
-            const getComparableDataStr = useCallback((orderList, cardPayMap) => {
-                const cleanList = orderList.filter(o => !o.isCancelled && o.customer !== '___WORKSPACE_META___').map(o => ({
-                    c: o.customer, p: o.product, q: Number(o.quantity)||0, pr: Number(o.price)||0, d: Number(o.deposit)||0, ic: cardPayMap[o.customer] ? 1 : 0
-                })).sort((a,b) => a.c.localeCompare(b.c) || a.p.localeCompare(b.p));
-                return JSON.stringify(cleanList);
-            }, []);
-
+            // 앱 실행 시 최초 1회 클라우드 데이터 확인 및 불러오기 팝업 (내 작업물 이어하기)
+            const hasCheckedInitialSync = useRef(false);
             useEffect(() => {
-                if (isSyncResolved && !lastCloudDataStr.current) {
-                    lastCloudDataStr.current = getComparableDataStr(ordersRef.current, cardPaymentsRef.current);
-                }
-            }, [isSyncResolved, getComparableDataStr]);
-
-            // 주기적으로 시트 변경을 감지하는 백그라운드 워커 (45초 주기)
-            useEffect(() => {
-                if (!isSyncResolved || !googleScriptUrl) return;
-                const checkInterval = setInterval(async () => {
-                    if (isSaving || isConflictAlertOpen.current) return;
+                if (hasCheckedInitialSync.current) return;
+                hasCheckedInitialSync.current = true;
+                
+                const checkInitialCloudData = async () => {
+                    if (!googleScriptUrl || !customerSheetId) return;
                     try {
                         const actualSheetId = getCleanSheetId(customerSheetId);
                         const res = await fetch(`${googleScriptUrl}?action=get_orders&t=${Date.now()}&sheet_id=${actualSheetId}`);
                         const text = await res.text();
                         if (text.trim().startsWith("<!DOCTYPE")) return;
                         const data = JSON.parse(text);
-                        if (data.error) return;
-
                         let fetchedOrders = [];
                         if (data && Array.isArray(data.orders)) fetchedOrders = data.orders; else if (data && Array.isArray(data.data)) fetchedOrders = data.data; else if (data && Array.isArray(data.orderList)) fetchedOrders = data.orderList; else if (Array.isArray(data)) fetchedOrders = data;
                         
                         if (fetchedOrders.length > 0) {
                             if (Array.isArray(fetchedOrders[0])) { const headers = fetchedOrders[0]; fetchedOrders = fetchedOrders.slice(1).map(row => { const obj = {}; headers.forEach((h, i) => { obj[h] = row[i]; }); return obj; }); }
                             const loadedOrders = fetchedOrders.map((o, idx) => mapCloudOrderToLocal(o, idx)).filter(o => o.customer || o.product);
-                            const actualFetched = loadedOrders.filter(o => o.customer !== '___WORKSPACE_META___');
+                            const actualOrders = loadedOrders.filter(o => o.customer !== '___WORKSPACE_META___');
                             
-                            const tempCardMap = {};
-                            actualFetched.forEach(o => { if (o._isCard) tempCardMap[o.customer] = true; });
-                            const fetchedHash = getComparableDataStr(actualFetched, tempCardMap);
-
-                            if (lastCloudDataStr.current && fetchedHash !== lastCloudDataStr.current) {
-                                isConflictAlertOpen.current = true;
-                                openModal("🚨 직원(외부)이 구글 시트를 수정한 내역이 감지되었습니다!\n\n최신 시트 내역을 이 화면으로 불러오시겠습니까?\n\n※ 확인: 직원 수정분 불러오기\n※ 취소: 내 화면 유지 (다음 60초 자동저장 때 직원이 수정한 내용이 날아가고 덮어씌워집니다)", "confirm", () => {
-                                    actualFetched.forEach(o => delete o._isCard);
-                                    setOrders(actualFetched); setCardPayments(prev => ({ ...prev, ...tempCardMap }));
-                                    lastCloudDataStr.current = fetchedHash;
-                                    isConflictAlertOpen.current = false;
-                                    setTimeout(() => openModal("직원이 수정한 데이터를 안전하게 불러왔습니다.", "alert"), 300);
-                                }, () => {
-                                    lastCloudDataStr.current = getComparableDataStr(ordersRef.current, cardPaymentsRef.current);
-                                    isConflictAlertOpen.current = false;
+                            // 현재 데이터와 클라우드 데이터 비교용 해시
+                            const getHash = (list) => JSON.stringify(list.map(o => ({c: o.customer, p: o.product, q: o.quantity, pr: o.price, d: o.deposit})));
+                            
+                            // 클라우드에 데이터가 존재하고, 현재 내 화면의 데이터와 다를 때만 팝업 표시
+                            if (actualOrders.length > 0 && getHash(actualOrders) !== getHash(orders)) {
+                                openModal(`클라우드(구글 시트)에 이전에 작업한 내역이 있습니다.\n\n해당 내역을 불러와서 작업을 이어나가시겠습니까?\n\n※ 확인: 클라우드에서 불러오기\n※ 취소: 현재 화면 유지`, 'confirm', () => {
+                                    const newCardPayments = {}; actualOrders.forEach(o => { if (o.customer && o._isCard) newCardPayments[o.customer] = true; delete o._isCard; });
+                                    setOrders(actualOrders); setCardPayments(prev => ({ ...prev, ...newCardPayments }));
+                                    const metaOrder = loadedOrders.find(o => o.customer === '___WORKSPACE_META___');
+                                    if (metaOrder && metaOrder.product) setWorkspaceName(metaOrder.product);
+                                    setTimeout(() => openModal("클라우드 데이터를 불러왔습니다.", "alert"), 300);
                                 });
                             }
                         }
-                    } catch(e) {}
-                }, 45000); 
-                return () => clearInterval(checkInterval);
-            }, [isSyncResolved, googleScriptUrl, customerSheetId, isSaving, getComparableDataStr, openModal]);
+                    } catch (e) {}
+                };
+                
+                // 페이지 로딩 후 1초 뒤에 딱 한 번만 부드럽게 체크
+                setTimeout(checkInitialCloudData, 1000);
+            }, [googleScriptUrl, customerSheetId, orders, openModal, setOrders, setCardPayments, setWorkspaceName]);
 
             // 설정된 날짜 이전의 주소록 데이터를 즉시 필터링(제외)하는 로직 추가
             useEffect(() => {
@@ -1145,7 +1125,7 @@
             }, [allDeposits, depositSearch, selectedNick, deletedDepositIds, matchedDeposits, depositorNames, addressLookup]);
             
             const dashboardStats = useMemo(() => {
-                let totalSales = 0, paidCount = 0, unpaidCount = 0, overpaidCount = 0, cardCount = 0, noAddressCount = 0, noKakaoCount = 0;
+                let totalSales = 0, paidAmount = 0, unpaidAmount = 0, overpaidAmount = 0, cardAmount = 0, noAddressCount = 0, noKakaoCount = 0;
                 const groups = {}; orders.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); });
                 Object.entries(groups).forEach(([nick, items]) => {
                     const activeItems = items.filter(i => !i.isCancelled); const depositTotal = items.reduce((sum, i) => sum + (i.deposit || 0), 0);
@@ -1158,15 +1138,15 @@
                     
                     totalSales += finalGrandTotal; 
                     
-                    if (isCard) cardCount++;
-                    else if (finalBalance === 0 && productTotal > 0) paidCount++;
-                    else if (finalBalance > 0) unpaidCount++;
-                    else if (finalBalance < 0) overpaidCount++;
+                    if (isCard) cardAmount += Math.max(0, finalBalance);
+                    else if (finalBalance === 0 && productTotal > 0) paidAmount += finalGrandTotal;
+                    else if (finalBalance > 0) unpaidAmount += finalBalance;
+                    else if (finalBalance < 0) overpaidAmount += Math.abs(finalBalance);
 
                     const addr = addressLookup.get(nick); if (!addr || !addr.data || !addr.data.address) noAddressCount++;
                     if (!checkedOrders.has(nick)) noKakaoCount++;
                 });
-                return { totalSales, paidCount, unpaidCount, overpaidCount, cardCount, noAddressCount, noKakaoCount };
+                return { totalSales, paidAmount, unpaidAmount, overpaidAmount, cardAmount, noAddressCount, noKakaoCount };
             }, [orders, cardPayments, getCalculatedShipping, addressLookup, checkedOrders]);
 
             const customerPaidStatus = useMemo(() => {
@@ -1433,22 +1413,21 @@
             }, [allDeposits, orders, matchedDeposits, depositorNames, deletedDepositIds, getCalculatedShipping, ignoredAutoMatch, addressLookup]);
 
             const autoSaveToGoogleSheet = useCallback(async () => { 
-                if (!isSyncResolved || isConflictAlertOpen.current) return; // 🌟 동기화 팝업이나 충돌 알림이 떠있을 때는 절대 덮어쓰기 금지
-                if (!googleScriptUrl || Object.keys(orders).length === 0) return; setIsSaving(true); 
+                if (!googleScriptUrl || Object.keys(orders).length === 0) return; 
+                setIsSaving(true); 
                 
-                const currentHash = getComparableDataStr(orders, cardPayments);
                 const customerTotals = {};
                 orders.filter(o => !o.isCancelled).forEach(o => { customerTotals[o.customer] = (customerTotals[o.customer] || 0) + Number(o.price); });
 
-                const saveList = orders.filter(o=>!o.isCancelled).map(o => { let addrRes = addressLookup.get(o.customer); let addr = addrRes.data || {}; const currentShipping = getCalculatedShipping(o.customer, customerTotals[o.customer] || 0); const isCard = cardPayments[o.customer] ? true : false; return { nickname: o.customer, product: o.product, qty: o.quantity, price: o.price, deposit: o.deposit, shipping: currentShipping, grandTotal: 0, address: addr.address || '', zipcode: addr.zipcode || '', phone: addr.phone || '', realname: addr.realname || '', memo: addr.memo || '', isCard: isCard }; }); 
+                const saveList = orders.filter(o=>!o.isCancelled).map(o => { let addrRes = addressLookup.get(o.customer); let addr = addrRes.data || {}; const currentShipping = getCalculatedShipping(o.customer, customerTotals[o.customer] || 0); const isCard = cardPayments[o.customer] ? true : false; return { nickname: o.customer, product: o.product, qty: o.quantity, price: o.price, deposit: o.deposit, shipping: currentShipping, grandTotal: 0, address: addr.address || '', zipcode: addr.zipcode ? "'" + addr.zipcode : '', phone: addr.phone ? "'" + addr.phone : '', realname: addr.realname || '', memo: addr.memo || '', isCard: isCard }; }); 
                 
                 // 설정된 작업 공간 이름(메타데이터)을 숨겨진 첫 번째 주문 데이터로 몰래 삽입하여 클라우드에 전송
                 if (workspaceName) {
                     saveList.unshift({ nickname: '___WORKSPACE_META___', product: workspaceName, qty: 0, price: 0, deposit: 0, shipping: 0, grandTotal: 0, address: '', zipcode: '', phone: '', realname: '', memo: '', isCard: false });
                 }
 
-                try { const actualSheetId = getCleanSheetId(customerSheetId); await fetch(googleScriptUrl, { method: 'POST', body: JSON.stringify({ action: 'save_orders', sheet_id: actualSheetId, data: saveList }), mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' } }); lastCloudDataStr.current = currentHash; } catch(e) { } finally { setIsSaving(false); } 
-            }, [orders, cardPayments, getCalculatedShipping, googleScriptUrl, addressLookup, customerSheetId, isSyncResolved, workspaceName, getComparableDataStr]);
+                try { const actualSheetId = getCleanSheetId(customerSheetId); await fetch(googleScriptUrl, { method: 'POST', body: JSON.stringify({ action: 'save_orders', sheet_id: actualSheetId, data: saveList }), mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' } }); } catch(e) { } finally { setIsSaving(false); } 
+            }, [orders, cardPayments, getCalculatedShipping, googleScriptUrl, addressLookup, customerSheetId, workspaceName]);
 
             const autoSaveRef = useRef(); useEffect(() => { autoSaveRef.current = autoSaveToGoogleSheet; }, [autoSaveToGoogleSheet]);
             useEffect(() => { const saveInterval = setInterval(() => { if (autoSaveRef.current) autoSaveRef.current(); }, 60000); return () => clearInterval(saveInterval); }, []); 
@@ -1628,7 +1607,6 @@
 
                             const newCardPayments = {}; actualOrders.forEach(o => { if (o.customer && o._isCard) newCardPayments[o.customer] = true; delete o._isCard; });
                             setOrders(actualOrders); setCardPayments(prev => ({ ...prev, ...newCardPayments })); 
-                            lastCloudDataStr.current = getComparableDataStr(actualOrders, newCardPayments);
                             
                             // 불러온 클라우드 데이터의 꼬리표를 내 로컬 환경설정에도 적용
                             if (cloudWorkspaceName) setWorkspaceName(cloudWorkspaceName);
@@ -1821,16 +1799,16 @@
                     <div className="w-[34%] bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg flex flex-col overflow-hidden shadow-sm min-w-[340px]">
                         <div className="grid grid-cols-4 gap-1 p-2 bg-slate-100 dark:bg-slate-800 border-b dark:border-slate-700 text-center text-[10px]">
                             {[{id:'all', label:'총매출', val:dashboardStats.totalSales, isCurrency:true, colSpan:2}, 
-                              {id:'paid', label:'완납', val:dashboardStats.paidCount, isCurrency:false}, 
-                              {id:'unpaid', label:'미납', val:dashboardStats.unpaidCount, isCurrency:false}, 
-                              {id:'overpaid', label:'과납', val:dashboardStats.overpaidCount, isCurrency:false}, 
-                              {id:'card', label:'카드', val:dashboardStats.cardCount, isCurrency:false}, 
                               {id:'no-address', label:'주소없음', val:dashboardStats.noAddressCount, isCurrency:false, onClick:handleNoAddressClick},
-                              {id:'no-kakao', label:'카톡없음', val:dashboardStats.noKakaoCount, isCurrency:false}
+                              {id:'no-kakao', label:'카톡없음', val:dashboardStats.noKakaoCount, isCurrency:false},
+                              {id:'paid', label:'완납', val:dashboardStats.paidAmount, isCurrency:true}, 
+                              {id:'unpaid', label:'미납', val:dashboardStats.unpaidAmount, isCurrency:true}, 
+                              {id:'overpaid', label:'과납', val:dashboardStats.overpaidAmount, isCurrency:true}, 
+                              {id:'card', label:'카드', val:dashboardStats.cardAmount, isCurrency:true}
                             ].map(s => (
-                                <div key={s.id} onClick={s.onClick || (()=>setFilterStatus(s.id))} className={`bg-white dark:bg-slate-800 p-1 rounded border-2 cursor-pointer shadow-sm transition-colors flex flex-col justify-center ${s.colSpan === 2 ? 'col-span-2' : ''} ${filterStatus===s.id ? 'border-slate-600 dark:border-slate-400' : 'border-transparent hover:border-slate-300 dark:hover:border-slate-600'}`}>
+                                <div key={s.id} onClick={s.onClick || (()=>setFilterStatus(s.id))} className={`bg-white dark:bg-slate-800 p-1 rounded border-2 cursor-pointer shadow-sm transition-colors flex flex-col justify-center overflow-hidden ${s.colSpan === 2 ? 'col-span-2' : ''} ${filterStatus===s.id ? 'border-slate-600 dark:border-slate-400' : 'border-transparent hover:border-slate-300 dark:hover:border-slate-600'}`}>
                                     <div className="text-[9px] text-slate-500">{s.label}</div>
-                                    <div className={`font-bold ${s.colSpan ? 'text-[13px]' : 'text-[11px]'} ${s.id==='paid'?'text-green-600 dark:text-green-400':s.id==='unpaid'?'text-red-500 dark:text-red-400':s.id==='overpaid'?'text-orange-500 dark:text-orange-400':s.id==='card'?'text-purple-600 dark:text-purple-400':s.id==='no-address'?'text-amber-600 dark:text-amber-400':'text-slate-800 dark:text-slate-200'}`}>
+                                    <div className={`font-bold truncate ${s.colSpan ? 'text-[13px]' : 'text-[10px]'} ${s.id==='paid'?'text-green-600 dark:text-green-400':s.id==='unpaid'?'text-red-500 dark:text-red-400':s.id==='overpaid'?'text-orange-500 dark:text-orange-400':s.id==='card'?'text-purple-600 dark:text-purple-400':s.id==='no-address'?'text-amber-600 dark:text-amber-400':'text-slate-800 dark:text-slate-200'}`}>
                                         {s.val.toLocaleString()}{s.isCurrency?'원':'명'}
                                     </div>
                                 </div>
@@ -2383,7 +2361,6 @@
             const [quickMessages, setQuickMessages] = useLocalStorage('quickMessages', ["안녕하세요! 주문은 하단 링크 클릭💙", "⚠️ 주소 미입력시 배송 보류!", "문의는 카톡 채널로🙏", "확인 중입니다🥰"]);
             const [addressCutoffDate, setAddressCutoffDate] = useLocalStorage('addressCutoffDate', '2026-05-20');
             const [workspaceName, setWorkspaceName] = useLocalStorage('workspaceName', ''); // 작업공간 이름 상태 추가
-            const [isSyncResolved, setIsSyncResolved] = useState(false); // 클라우드 동기화 팝업 해결 여부 상태
             
             const [isSettingsOpen, setIsSettingsOpen] = useState(false);
             const [isVipModalOpen, setIsVipModalOpen] = useState(false);
@@ -2405,8 +2382,17 @@
                 });
             }, [openModal]);
 
-            const handleExportBackup = () => downloadExcel([{ orders, productHistory, shippingOverrides, cardPayments, matchedDeposits: [...matchedDeposits], clickedChats: [...clickedChats], addressMapping, specialCustomers, inventory, templateConfig, depositorNames, keywords: keywords }], "kallo_backup");
-            
+            const handleExportBackup = () => {
+                const backupData = {
+                    orders, addresses, inventory, templateConfig, keywords, timestamp: new Date().toISOString()
+                };
+                const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = `깔로주문서_백업_${new Date().toLocaleDateString()}.json`;
+                document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+            };
+
             const handleImportBackup = (e) => { 
                 const f = e.target.files[0]; 
                 if(!f) return; 
@@ -2427,7 +2413,6 @@
                             if(d.templateConfig) setTemplateConfig(()=>d.templateConfig); 
                             if(d.keywords) setKeywords(()=>d.keywords);
                         }
-                        setIsSyncResolved(true); // 복구 시 덮어쓰기 락 해제
                         openModal("복구 완료", "alert"); 
                     } catch(err) { openModal("파일 오류", "alert"); } 
                 }; 
@@ -2435,86 +2420,27 @@
                 e.target.value = ''; 
             };
 
-            const hasCheckedSync = useRef(false);
-            useEffect(() => {
-                if (hasCheckedSync.current) return; 
-                hasCheckedSync.current = true;
-                
-                // 앱 최초 접속 시 자동저장을 멈추고 클라우드에 최신 데이터가 있는지 스마트하게 확인
-                const checkCloud = async () => {
-                    if (!googleScriptUrl) {
-                        setIsSyncResolved(true);
-                        return;
-                    }
-                    try {
-                        const actualSheetId = getCleanSheetId(customerSheetId);
-                        const res = await fetch(`${googleScriptUrl}?action=get_orders&t=${Date.now()}&sheet_id=${actualSheetId}`);
-                        const text = await res.text();
-                        if (text.trim().startsWith("<!DOCTYPE")) { setIsSyncResolved(true); return; }
-                        const data = JSON.parse(text);
-
-                        let fetchedOrders = [];
-                        if (data && Array.isArray(data.orders)) fetchedOrders = data.orders; else if (data && Array.isArray(data.data)) fetchedOrders = data.data; else if (data && Array.isArray(data.orderList)) fetchedOrders = data.orderList; else if (Array.isArray(data)) fetchedOrders = data;
-
-                        if (fetchedOrders.length > 0) {
-                            if (Array.isArray(fetchedOrders[0])) { const headers = fetchedOrders[0]; fetchedOrders = fetchedOrders.slice(1).map(row => { const obj = {}; headers.forEach((h, i) => { obj[h] = row[i]; }); return obj; }); }
-                            const loadedOrders = fetchedOrders.map((o, idx) => mapCloudOrderToLocal(o, idx)).filter(o => o.customer || o.product);
-                            
-                            // 클라우드에 심어져있는 메타데이터(작업공간 이름) 확인
-                            const metaOrder = loadedOrders.find(o => o.customer === '___WORKSPACE_META___');
-                            const actualOrders = loadedOrders.filter(o => o.customer !== '___WORKSPACE_META___');
-                            const cloudWorkspaceName = metaOrder ? metaOrder.product : '';
-
-                            if (actualOrders.length > 0) {
-                                const nameDisplay = cloudWorkspaceName ? `[ ${cloudWorkspaceName} ]` : '이전';
-                                openModal(`클라우드에 ${nameDisplay} 작업 내역이 있습니다.\n(총 ${actualOrders.length}건)\n\n이 내역을 불러와서 작업을 이어나가시겠습니까?\n\n※ 확인: 클라우드 내용 불러오기\n※ 취소: 현재 내 PC 내용 유지 (자동저장 시 클라우드 덮어쓰기 됨)`, 'confirm', () => {
-                                    // 확인: 안전하게 클라우드 데이터를 불러오고 락(Lock) 해제
-                                    const newCardPayments = {};
-                                    actualOrders.forEach(o => { if (o.customer && o._isCard) newCardPayments[o.customer] = true; delete o._isCard; });
-                                    setOrders(actualOrders);
-                                    setCardPayments(prev => ({ ...prev, ...newCardPayments }));
-                                    if (cloudWorkspaceName) setWorkspaceName(cloudWorkspaceName);
-                                    setIsSyncResolved(true); 
-                                    setTimeout(() => openModal("성공적으로 불러왔습니다!", "alert"), 300);
-                                }, () => {
-                                    // 취소: 내 PC 데이터를 유지하고 락(Lock) 해제
-                                    setIsSyncResolved(true);
-                                });
-                            } else {
-                                setIsSyncResolved(true);
-                            }
-                        } else {
-                            setIsSyncResolved(true);
-                        }
-                    } catch (e) {
-                        setIsSyncResolved(true);
-                    }
-                };
-
-                // UI 렌더링 후 약간의 딜레이를 두고 체크 시작
-                setTimeout(checkCloud, 1000);
-            }, []);
-
             useEffect(() => { if (isDarkMode) document.documentElement.classList.add('dark'); else document.documentElement.classList.remove('dark'); }, [isDarkMode]);
 
             return (
-                <div className="flex flex-col h-screen overflow-hidden text-slate-800 dark:text-slate-200">
-                    <header className="h-12 bg-slate-900 dark:bg-slate-950 text-white flex items-center justify-between px-4 shrink-0 shadow-md z-50 border-b dark:border-slate-700">
-                        <div className="font-bold text-lg flex items-center gap-2 transition-transform hover:scale-105 duration-200 cursor-pointer text-slate-100"><Icon name="lightning" className="text-slate-400" weight="fill"/> 깔로 주문서 PRO <span className="text-[10px] font-normal border border-slate-600 rounded px-1.5 py-0.5 ml-1 bg-slate-800 text-slate-300">기업용 모노톤</span></div>
-                        <div className="flex items-center gap-2">
-                            <div className="flex bg-slate-800 dark:bg-slate-900 rounded p-1 gap-1">
-                                {[{ id: 'live', label: '라이브관제', icon: 'monitor-play' }, { id: 'manage', label: '주문관리', icon: 'file-xls' }].map(tab => (
-                                    <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`px-3 py-1.5 rounded text-sm font-bold flex items-center gap-1 transition-all ${activeTab === tab.id ? 'bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white shadow' : 'text-slate-400 hover:text-white'}`}><Icon name={tab.icon} weight="bold"/> {tab.label}</button>
-                                ))}
-                            </div>
-                            <button onClick={()=>setIsVipModalOpen(true)} className="p-2 hover:bg-slate-800 dark:bg-slate-800 rounded transition-colors text-amber-400 ml-1 border dark:border-slate-700" title="VIP 관리"><Icon name="crown" weight="fill" size={20}/></button>
-                            <button onClick={()=>setIsDarkMode(!isDarkMode)} className="p-2 hover:bg-slate-800 dark:bg-slate-800 rounded transition-colors border dark:border-slate-700" title="다크모드"><Icon name={isDarkMode ? 'sun' : 'moon'} weight="fill" size={20}/></button>
-                            <button onClick={()=>setIsSettingsOpen(!isSettingsOpen)} className="p-2 hover:bg-slate-800 dark:bg-slate-800 rounded transition-colors border dark:border-slate-700" title="환경설정"><Icon name="gear" weight="fill" size={20}/></button>
-                        </div>
-                    </header>
-                    
+                <div className="h-screen flex flex-col font-sans transition-colors duration-300">
                     <Modal isOpen={modalConfig.isOpen} type={modalConfig.type} message={modalConfig.message} onConfirm={modalConfig.onConfirm} onCancel={modalConfig.onCancel} initialValue={modalConfig.initialValue} />
                     <VIPManagementModal isOpen={isVipModalOpen} onClose={() => setIsVipModalOpen(false)} specialCustomers={specialCustomers} setSpecialCustomers={setSpecialCustomers} openModal={openModal} />
+                    
+                    <header className="flex justify-between items-center bg-slate-800 text-white p-2 shadow-md shrink-0 relative z-50">
+                        <div className="flex items-center gap-4">
+                            <h1 className="text-xl font-black tracking-tight flex items-center gap-1.5"><Icon name="shopping-cart" weight="fill" className="text-kakao"/> 깔로 주문서 <span className="text-xs bg-slate-600 px-1 py-0.5 rounded text-slate-300 font-bold ml-1">PRO</span></h1>
+                            <div className="flex bg-slate-700 rounded-lg p-0.5 shadow-inner">
+                                <button onClick={() => setActiveTab('live')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${activeTab === 'live' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-300 hover:text-white hover:bg-slate-600'}`}><Icon name="broadcast" weight={activeTab === 'live' ? 'fill' : 'regular'} className="inline-block mr-1 mb-0.5"/> 라이브 수집</button>
+                                <button onClick={() => setActiveTab('manage')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${activeTab === 'manage' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-300 hover:text-white hover:bg-slate-600'}`}><Icon name="file-text" weight={activeTab === 'manage' ? 'fill' : 'regular'} className="inline-block mr-1 mb-0.5"/> 주문 관리</button>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button onClick={() => setIsVipModalOpen(true)} className="flex items-center gap-1 bg-slate-700 hover:bg-amber-600/20 text-amber-400 border border-amber-500/30 px-3 py-1.5 rounded text-sm font-bold transition-colors shadow-sm"><Icon name="crown" weight="fill" /> VIP 관리</button>
+                            <button onClick={() => setIsDarkMode(!isDarkMode)} className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-700 text-slate-300 hover:text-white hover:bg-slate-600 transition-colors"><Icon name={isDarkMode ? 'sun' : 'moon'} weight="fill" size={16} /></button>
+                            <button onClick={() => setIsSettingsOpen(!isSettingsOpen)} className={`w-8 h-8 flex items-center justify-center rounded-full transition-colors ${isSettingsOpen ? 'bg-kakao text-slate-800' : 'bg-slate-700 text-slate-300 hover:text-white hover:bg-slate-600'}`}><Icon name="gear" weight="fill" size={16} /></button>
+                        </div>
+                    </header>
                     
                     {isSettingsOpen && (
                         <SettingsModalContent 
@@ -2534,7 +2460,7 @@
                     )}
                     
                     <main className="flex-1 overflow-hidden bg-slate-200 dark:bg-slate-950 p-2 relative">
-                        {activeTab === 'live' && <LiveTab {...{ orders, setOrders, productHistory, setProductHistory, quickShipping, freeShippingThreshold, shippingOverrides, setShippingOverrides, bankAccount, googleScriptUrl, addressScriptUrl, inventoryScriptUrl, addresses, setAddresses, cardPayments, setCardPayments, matchedDeposits, setMatchedDeposits, depositorNames, setDepositorNames, clickedChats, setClickedChats, openModal, keywords, setKeywords, sentAddressRequests, setSentAddressRequests, deletedDepositIds, setDeletedDepositIds, checkedOrders, setCheckedOrders, addressMapping, setAddressMapping, templateConfig, specialCustomers, setSpecialCustomers, inventory, setInventory, quickMessages, customerSheetId, handleResetAllData, addressCutoffDate, workspaceName, setWorkspaceName, isSyncResolved }} />}
+                        {activeTab === 'live' && <LiveTab {...{ orders, setOrders, productHistory, setProductHistory, quickShipping, freeShippingThreshold, shippingOverrides, setShippingOverrides, bankAccount, googleScriptUrl, addressScriptUrl, inventoryScriptUrl, addresses, setAddresses, cardPayments, setCardPayments, matchedDeposits, setMatchedDeposits, depositorNames, setDepositorNames, clickedChats, setClickedChats, openModal, keywords, setKeywords, sentAddressRequests, setSentAddressRequests, deletedDepositIds, setDeletedDepositIds, checkedOrders, setCheckedOrders, addressMapping, setAddressMapping, templateConfig, specialCustomers, setSpecialCustomers, inventory, setInventory, quickMessages, customerSheetId, handleResetAllData, addressCutoffDate, workspaceName, setWorkspaceName }} />}
                         {activeTab === 'manage' && <OrderManagementTab {...{ orders, shippingOverrides, quickShipping, freeShippingThreshold, workspaceName, addresses, handleExportBackup, handleImportBackup, addressMapping, cardPayments, specialCustomers, openModal }} />}
                     </main>
                 </div>
