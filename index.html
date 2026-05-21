@@ -1656,15 +1656,24 @@
                         const aName = strictClean(a.name);
                         const bName = strictClean(b.name);
 
-                        const scoreA = (aName && (aName === sNick || aName === sReal || aName === sMan)) ? 3 : (aName && (sNick && aName.includes(sNick) || sReal && aName.includes(sReal))) ? 2 : 0;
-                        const scoreB = (bName && (bName === sNick || bName === sReal || bName === sMan)) ? 3 : (bName && (sNick && bName.includes(sNick) || sReal && bName.includes(sReal))) ? 2 : 0;
-
-                        if (scoreA !== scoreB) return scoreB - scoreA;
+                        const aTarget = aName && (aName === sNick || aName === sReal || aName === sMan);
+                        const bTarget = bName && (bName === sNick || bName === sReal || bName === sMan);
+                        const aPartial = !aTarget && aName && ((sNick && aName.includes(sNick)) || (sReal && aName.includes(sReal)));
+                        const bPartial = !bTarget && bName && ((sNick && bName.includes(sNick)) || (sReal && bName.includes(sReal)));
                         
                         const aUsed = matchedDeposits?.has(a.id);
                         const bUsed = matchedDeposits?.has(b.id);
-                        if (aUsed !== bUsed) return aUsed ? 1 : -1;
 
+                        const getScore = (isT, isP, isU) => {
+                            if (isT) return isU ? 5 : 4;
+                            if (isP) return isU ? 3 : 2;
+                            return isU ? 0 : 1;
+                        };
+
+                        const scoreA = getScore(aTarget, aPartial, aUsed);
+                        const scoreB = getScore(bTarget, bPartial, bUsed);
+
+                        if (scoreA !== scoreB) return scoreB - scoreA;
                         return 0;
                     });
                     return res;
@@ -1691,13 +1700,27 @@
                         const aLinked = (a.linkedNicks || []).map(ln => strictClean(ln));
                         const bLinked = (b.linkedNicks || []).map(ln => strictClean(ln));
 
-                        const isAMatch = aNick === sNick || aReal === sNick || aLinked.includes(sNick);
-                        const isBMatch = bNick === sNick || bReal === sNick || bLinked.includes(sNick);
-                        const isAPartial = aNick.includes(sNick) || aReal.includes(sNick);
-                        const isBPartial = bNick.includes(sNick) || bReal.includes(sNick);
+                        const isAExplicit = addressMapping[selectedNick] === a.nickname;
+                        const isBExplicit = addressMapping[selectedNick] === b.nickname;
 
-                        const scoreA = isAMatch ? 3 : isAPartial ? 2 : 0;
-                        const scoreB = isBMatch ? 3 : isBPartial ? 2 : 0;
+                        const isAMatch = !isAExplicit && (aNick === sNick || aReal === sNick || aLinked.includes(sNick));
+                        const isBMatch = !isBExplicit && (bNick === sNick || bReal === sNick || bLinked.includes(sNick));
+                        
+                        const isAPartial = !isAExplicit && !isAMatch && (aNick.includes(sNick) || aReal.includes(sNick));
+                        const isBPartial = !isBExplicit && !isBMatch && (bNick.includes(sNick) || bReal.includes(sNick));
+
+                        const aUsed = usedAddressNicks.has(normalizeString(a.nickname)) || (a.linkedNicks && a.linkedNicks.some(ln => usedAddressNicks.has(normalizeString(ln))));
+                        const bUsed = usedAddressNicks.has(normalizeString(b.nickname)) || (b.linkedNicks && b.linkedNicks.some(ln => usedAddressNicks.has(normalizeString(ln))));
+
+                        const getScore = (isEx, isT, isP, isU) => {
+                            if (isEx) return 5;
+                            if (isT) return 4;
+                            if (isP) return 3;
+                            return isU ? 0 : 1;
+                        };
+
+                        const scoreA = getScore(isAExplicit, isAMatch, isAPartial, aUsed);
+                        const scoreB = getScore(isBExplicit, isBMatch, isBPartial, bUsed);
 
                         if (scoreA !== scoreB) return scoreB - scoreA;
                         const tA = new Date(a.timestamp || 0).getTime(); const tB = new Date(b.timestamp || 0).getTime(); return tB - tA;
@@ -1706,7 +1729,7 @@
                     res.sort((a, b) => { const tA = new Date(a.timestamp || 0).getTime(); const tB = new Date(b.timestamp || 0).getTime(); return tB - tA; });
                 }
                 return res;
-            }, [addresses, addressSearch, selectedNick]);
+            }, [addresses, addressSearch, selectedNick, addressMapping, usedAddressNicks]);
 
             const handleQuickAddProduct = (e) => {
                 e.preventDefault(); const cleanName = newInvName.trim(); if(!cleanName) return openModal("상품명을 입력해주세요.", "alert"); const priceNum = Number(newInvPrice.replace(/,/g, '')) || 0;
@@ -1886,19 +1909,24 @@
                                 const isTarget = selectedNick && dName && (dName === sNick || dName === sReal || dName === sMan);
                                 const isPartial = selectedNick && dName && !isTarget && ((sNick && dName.includes(sNick)) || (sReal && dName.includes(sReal)));
                                 
-                                let depositBgClass = isUsed ? 'opacity-70 bg-slate-100 dark:bg-slate-800/80 border-transparent' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm';
-                                if (!isUsed && isTarget) depositBgClass = 'bg-blue-50 dark:bg-blue-900/30 border-blue-400 dark:border-blue-600 ring-1 ring-blue-400 shadow-md';
+                                const isMatchedToSelected = selectedNick && isUsed && (isTarget || isPartial);
+                                
+                                let depositBgClass = '';
+                                if (isMatchedToSelected) depositBgClass = 'bg-green-50 dark:bg-green-900/30 border-green-400 dark:border-green-600 ring-2 ring-green-400 shadow-md z-10';
+                                else if (!isUsed && isTarget) depositBgClass = 'bg-blue-50 dark:bg-blue-900/30 border-blue-400 dark:border-blue-600 ring-2 ring-blue-400 shadow-md z-10';
                                 else if (!isUsed && isPartial) depositBgClass = 'bg-slate-50 dark:bg-slate-800 border-blue-200 dark:border-blue-800 border-dashed';
+                                else if (isUsed) depositBgClass = 'opacity-50 bg-slate-100 dark:bg-slate-800/50 border-transparent';
+                                else depositBgClass = 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm';
 
                                 return (
                                     <div key={d.id} onClick={() => handleDepositClick(d)} className={`relative flex items-center justify-between py-1.5 px-1.5 border rounded cursor-pointer transition-all group ${depositBgClass}`}>
                                         <div className="flex items-center gap-1 overflow-hidden min-w-0">
-                                            <span className={`text-[12px] truncate font-bold ${isUsed ? 'text-slate-400 dark:text-slate-500 line-through' : (isTarget ? 'text-blue-700 dark:text-blue-400' : 'text-slate-800 dark:text-slate-100')}`}>{d.name}</span>
+                                            <span className={`text-[12px] truncate font-bold ${isMatchedToSelected ? 'text-green-700 dark:text-green-400' : isUsed ? 'text-slate-400 dark:text-slate-500 line-through' : (isTarget ? 'text-blue-700 dark:text-blue-400' : 'text-slate-800 dark:text-slate-100')}`}>{d.name}</span>
                                             {d.source === 'manual' && <span className="text-[8px] text-slate-400 dark:text-slate-500 bg-slate-200 dark:bg-slate-700 px-0.5 rounded shrink-0">수동</span>}
                                         </div>
                                         <div className="flex items-center gap-1.5 shrink-0 ml-1">
-                                            {isUsed ? <span className="text-[8px] font-bold text-green-600 dark:text-green-400 whitespace-nowrap">완료</span> : <span className="text-[8px] text-slate-400 dark:text-slate-500 whitespace-nowrap">{formatTimeOnly(d.time || d.date)}</span>}
-                                            <span className={`font-bold text-[12px] ${isUsed ? 'text-slate-400 dark:text-slate-500' : 'text-slate-700 dark:text-slate-300'}`}>+{Number(d.amount).toLocaleString()}</span>
+                                            {isMatchedToSelected ? <span className="text-[8px] font-bold text-green-600 dark:text-green-400 whitespace-nowrap bg-green-100 dark:bg-green-900/40 px-1 py-0.5 rounded">현재매칭</span> : isUsed ? <span className="text-[8px] font-bold text-slate-500 dark:text-slate-400 whitespace-nowrap">타인매칭</span> : <span className="text-[8px] text-slate-400 dark:text-slate-500 whitespace-nowrap">{formatTimeOnly(d.time || d.date)}</span>}
+                                            <span className={`font-bold text-[12px] ${isMatchedToSelected ? 'text-green-700 dark:text-green-400' : isUsed ? 'text-slate-400 dark:text-slate-500' : 'text-slate-700 dark:text-slate-300'}`}>+{Number(d.amount).toLocaleString()}</span>
                                         </div>
                                         <button onClick={(e)=>{e.stopPropagation(); handleDeleteDepositItem(d.id);}} className="absolute -right-1 -top-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"><Icon name="trash" size={10} weight="bold"/></button>
                                     </div>
