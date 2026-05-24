@@ -915,6 +915,7 @@
                 }
             };
 
+            // 🚨 수정됨: 초기 로딩 시 get_orders를 통해 주문 데이터를 제대로 받아오도록 함
             useEffect(() => {
                 const checkInitialCloudData = async () => {
                     if (orders.length > 0 || !googleScriptUrl) return;
@@ -1286,10 +1287,12 @@
 
             const chatScrollRef = useRef(null); const lastFetchTextRef = useRef('');
 
+            // 🚨 수정됨: get_all 액션을 명확히 호출하고 데이터를 정확히 매핑 (간격 3.5초로 변경해 Lock 충돌 방지)
             const fetchData = async () => {
                 if (!googleScriptUrl) return;
                 try {
-                    const actualSheetId = getCleanSheetId(customerSheetId); const fetchUrl = `${googleScriptUrl}?t=${Date.now()}&sheet_id=${actualSheetId}`;
+                    const actualSheetId = getCleanSheetId(customerSheetId);
+                    const fetchUrl = `${googleScriptUrl}?action=get_all&t=${Date.now()}&sheet_id=${actualSheetId}`;
                     const res = await fetch(fetchUrl); 
                     if (!res.ok) throw new Error(); const text = await res.text();
                     if (text.trim().startsWith("<!DOCTYPE")) { setConnectionStatus({ code: 'error_auth', msg: '권한확인' }); return; }
@@ -1321,7 +1324,8 @@
                 } catch (e) { setConnectionStatus({ code: 'error_fetch', msg: '재연결중' }); }
             };
             
-            useEffect(() => { fetchData(); const interval = setInterval(fetchData, 2000); return () => clearInterval(interval); }, [googleScriptUrl, customerSheetId]);
+            // 🚨 수정됨: 2초 폭격 -> 3.5초(3500ms)로 안정화
+            useEffect(() => { fetchData(); const interval = setInterval(fetchData, 3500); return () => clearInterval(interval); }, [googleScriptUrl, customerSheetId]);
 
             const fetchAddresses = useCallback(async () => {
                 const targetUrl = addressScriptUrl || googleScriptUrl; if (!targetUrl) return;
@@ -1484,6 +1488,7 @@
                 return () => clearTimeout(timer);
             }, [allDeposits, orders, matchedDeposits, depositorNames, deletedDepositIds, getCalculatedShipping, ignoredAutoMatch, addressLookup]);
 
+            // 🚨 수정됨: mode: 'no-cors' 제거 및 명시적인 headers 설정으로 에러 무시 현상 완전 해결
             const autoSaveToGoogleSheet = useCallback(async () => { 
                 if (!googleScriptUrl || Object.keys(orders).length === 0) return; 
                 setIsSaving(true); 
@@ -1498,15 +1503,29 @@
                     saveList.unshift({ nickname: '___WORKSPACE_META___', product: workspaceName, qty: 0, price: 0, deposit: 0, shipping: 0, grandTotal: 0, address: '', zipcode: '', phone: '', realname: '', memo: '', isCard: false });
                 }
 
-                try { const actualSheetId = getCleanSheetId(customerSheetId); await fetch(googleScriptUrl, { method: 'POST', body: JSON.stringify({ action: 'save_orders', sheet_id: actualSheetId, data: saveList }), mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' } }); } catch(e) { } finally { setIsSaving(false); } 
+                try { 
+                    const actualSheetId = getCleanSheetId(customerSheetId); 
+                    const res = await fetch(googleScriptUrl, { 
+                        method: 'POST', 
+                        body: JSON.stringify({ action: 'save_orders', sheet_id: actualSheetId, data: saveList }), 
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' } 
+                    }); 
+                    await res.json();
+                } catch(e) { console.error("Save Orders Error", e); } finally { setIsSaving(false); } 
             }, [orders, cardPayments, getCalculatedShipping, googleScriptUrl, addressLookup, customerSheetId, workspaceName]);
 
             const autoSaveRef = useRef(); useEffect(() => { autoSaveRef.current = autoSaveToGoogleSheet; }, [autoSaveToGoogleSheet]);
             useEffect(() => { const saveInterval = setInterval(() => { if (autoSaveRef.current) autoSaveRef.current(); }, 60000); return () => clearInterval(saveInterval); }, []); 
 
+            // 🚨 수정됨: mode: 'no-cors' 제거
             useEffect(() => {
                 const targetUrl = inventoryScriptUrl || googleScriptUrl; if (!targetUrl || inventory.length === 0) return;
-                const timer = setTimeout(async () => { try { const payload = { action: 'save_inventory', data: inventory.map(i => ({ name: i.name, price: i.price })) }; await fetch(targetUrl, { method: 'POST', body: JSON.stringify(payload), mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' } }); } catch(e) {} }, 5000); 
+                const timer = setTimeout(async () => { 
+                    try { 
+                        const payload = { action: 'save_inventory', data: inventory.map(i => ({ name: i.name, price: i.price })) }; 
+                        await fetch(targetUrl, { method: 'POST', body: JSON.stringify(payload), headers: { 'Content-Type': 'text/plain;charset=utf-8' } }); 
+                    } catch(e) {} 
+                }, 5000); 
                 return () => clearTimeout(timer);
             }, [inventory, googleScriptUrl, inventoryScriptUrl]);
 
@@ -1978,7 +1997,7 @@
                             {/* 💡 자체 스마트 매칭 버튼 (알고리즘 교체) */}
                             <button onClick={handleSmartMatch} disabled={isSmartMatching} className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white text-[10px] font-bold py-1.5 rounded transition-colors shadow-sm flex items-center justify-center gap-1">
                                 {isSmartMatching ? <Icon name="spinner" className="animate-spin" /> : <Icon name="magic-wand" weight="fill" />}
-                                {isSmartMatching ? "분석 중..." : "스마트 정밀 매칭 (오타/금액 검증)"}
+                                {isSmartMatching ? "분석 중..." : "스마트 매칭 (오타/금액 검증)"}
                             </button>
 
                             <form onSubmit={handleAddManualDeposit} className="flex flex-col gap-1 bg-white dark:bg-slate-900 p-1 rounded border dark:border-slate-600">
@@ -2097,7 +2116,7 @@
                                         if (!targetUrl) return openModal("설정에서 구글 스크립트 URL을 먼저 등록해주세요.", "alert");
                                         try {
                                             const payload = { action: 'save_inventory', data: inventory.map(i => ({ name: i.name, price: i.price })) };
-                                            await fetch(targetUrl, { method: 'POST', body: JSON.stringify(payload), mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' } });
+                                            await fetch(targetUrl, { method: 'POST', body: JSON.stringify(payload), headers: { 'Content-Type': 'text/plain;charset=utf-8' } });
                                             openModal("고객용 시트로 즉시 전송 완료!", 'alert');
                                         } catch(err) { openModal("전송 실패: " + err.message, 'alert'); }
                                     }} className="bg-slate-600 hover:bg-slate-700 text-white text-[9px] px-1.5 py-0.5 rounded shadow-sm transition-colors flex items-center gap-0.5" title="시트에 즉시 저장"><Icon name="cloud-arrow-up" weight="bold"/></button>
@@ -2481,7 +2500,7 @@
             const [templateConfig, setTemplateConfig] = useLocalStorage('templateConfig', { emoji: '💙', paidMsg: '😍 완납 확인! 감사합니다 😍', unpaidPrefix: '[미입금]\n총 입금하실 금액\n👉', overpaidMsg: '과납금액이 있습니다!\n환불받으실 계좌를 남겨주시거나, 적립금으로 처리 원하시면 말씀해주세요.', addrNotice: '※ 배송지 변경 시 채팅으로 변경할 주소를 남겨주세요!', surveyNotice: '방송마다 1회 하단의 주문서(배송지입력) 필수!!', alwaysRequestAddress: false });
             const [quickMessages, setQuickMessages] = useLocalStorage('quickMessages', ["안녕하세요! 주문은 하단 링크 클릭💙", "⚠️ 주소 미입력시 배송 보류!", "문의는 카톡 채널로🙏", "확인 중입니다🥰"]);
             const [addressCutoffDate, setAddressCutoffDate] = useLocalStorage('addressCutoffDate', '2026-05-20');
-            const [workspaceName, setWorkspaceName] = useLocalStorage('workspaceName', ''); // 작업공간 이름 상태 추가
+            const [workspaceName, setWorkspaceName] = useLocalStorage('workspaceName', '');
             
             const [isSettingsOpen, setIsSettingsOpen] = useState(false);
             const [isVipModalOpen, setIsVipModalOpen] = useState(false);
