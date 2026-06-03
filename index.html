@@ -98,7 +98,6 @@
             return new Date(0);
         };
 
-        // 🚨 전화번호 0 보존 및 하이픈 완전 제거 로직
         const fixPhoneNumber = (numStr) => {
             if (!numStr) return '';
             let cleaned = String(numStr).replace(/[^0-9]/g, '');
@@ -163,7 +162,7 @@
                     if(!ws[cell_ref]) continue; if(!ws[cell_ref].s) ws[cell_ref].s = {};
                     ws[cell_ref].s.alignment = { wrapText: true, vertical: 'top' };
                     if(ws[cell_ref].v && String(ws[cell_ref].v).startsWith('010')) {
-                        ws[cell_ref].t = 's'; // 숫자가 아닌 문자로 강제 인식시켜서 0 보존
+                        ws[cell_ref].t = 's';
                     }
                 }
             }
@@ -393,7 +392,6 @@
 
             const isExpanded = expandedInventoryItem === item.name;
 
-            // 🚨 재고와 주문서 양방향 연동
             const handleSave = () => {
                 const newName = localName.trim();
                 const newPrice = Number(String(localPrice).replace(/,/g, ''));
@@ -529,7 +527,6 @@
             useEffect(() => { setLocalPrice(item.price === '' || item.price === 0 ? '' : Number(item.price).toLocaleString()); }, [item.price]);
             
             return (
-                // 🚨 미수정된 원본 댓글은 파란색 배경과 글씨로 눈에 띄게 강조! (isUnmodified === true 일 때)
                 <div className={`flex justify-between items-center text-xs px-1 py-0.5 rounded group transition-colors ${item.isCancelled ? 'bg-red-50/80 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30' : (item.isUnmodified ? 'bg-blue-100 dark:bg-blue-900/50 border-2 border-blue-400 dark:border-blue-600 shadow-sm my-0.5' : 'hover:bg-slate-100 dark:hover:bg-slate-700 border-2 border-transparent')}`}>
                     <div className="flex-1 flex gap-1 items-center">
                         {item.isCancelled && <span className="text-[9px] text-red-500 font-bold shrink-0">[취소]</span>}
@@ -622,7 +619,7 @@
                                 {addr ? (
                                     <div className="text-[11px] flex items-center gap-1.5 w-full overflow-hidden mt-1 py-1 rounded transition-colors group bg-slate-50 dark:bg-slate-700/30 px-1 border border-transparent hover:border-slate-200 dark:hover:border-slate-600">
                                         <span className="text-green-700 shrink-0 flex items-center gap-0.5"><Icon name="house-line" weight="fill" /> <span className="font-bold">{addr.realname}</span></span>
-                                        <span className="text-slate-500 shrink-0 font-medium">{addr.phone}</span>
+                                        <span className="text-slate-500 shrink-0 font-medium">{cleanPhoneDisplay}</span>
                                         <span className="text-slate-700 dark:text-slate-300 truncate flex-1 ml-1" title={`${addr.address} ${addr.memo}`}>{addr.address}{addr.memo && <span className="text-red-500 font-bold ml-1.5">[{addr.memo}]</span>}</span>
                                         <button onClick={(e) => { e.stopPropagation(); handleAddressUnmapping(nick); }} className="opacity-0 group-hover:opacity-100 text-[10px] bg-white dark:bg-slate-800 hover:bg-red-50 dark:hover:bg-red-900/30 text-slate-500 hover:text-red-600 px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-600 hover:border-red-300 flex items-center gap-0.5 shrink-0 shadow-sm transition-all ml-auto" title="주소 연결 해제"><Icon name="link-break" weight="bold" /> 해제</button>
                                     </div>
@@ -1680,7 +1677,6 @@
                 saveInventoryToServer(newInv);
             };
 
-            // 🚨 재고 내림차순 (판매량 순) 정렬 로직
             const sortedInventoryList = useMemo(() => {
                 const invArr = Array.isArray(inventory) ? inventory : [];
                 let filtered = invArr;
@@ -1936,7 +1932,7 @@
                                         <div className="text-[11px] text-slate-600 dark:text-slate-400 font-medium flex items-center gap-1 w-full overflow-hidden mt-0.5">
                                             <span className="shrink-0">{addr.realname}</span>
                                             <span className="text-slate-400 shrink-0">|</span>
-                                            <span className="shrink-0">{addr.phone}</span>
+                                            <span className="shrink-0">{fixPhoneNumber(addr.phone)}</span>
                                             <span className="text-slate-700 dark:text-slate-300 truncate flex-1 ml-1" title={`${addr.address} ${addr.memo}`}>{addr.address}{addr.memo && <span className="text-red-500 font-bold ml-1.5">[{addr.memo}]</span>}</span>
                                         </div>
                                     </div>
@@ -2006,7 +2002,8 @@
 
             const handleExportProducts = () => { 
                 const summary = {}; const unpaidSummary = {}; const paidSummary = {}; const customerPaidStatus = {}; const customerGroups = {};
-                orders.forEach(o => { if(!customerGroups[o.customer]) customerGroups[o.customer] = []; customerGroups[o.customer].push(o); });
+                const ordArr = Array.isArray(orders) ? orders : [];
+                ordArr.forEach(o => { if(!customerGroups[o.customer]) customerGroups[o.customer] = []; customerGroups[o.customer].push(o); });
                 const savedCardPayments = cardPayments || {};
                 Object.entries(customerGroups).forEach(([nick, items]) => {
                     const activeItems = items.filter(i => !i.isCancelled); if(activeItems.length === 0) { customerPaidStatus[nick] = false; return; }
@@ -2017,7 +2014,7 @@
                     const grandTotal = productTotal + (activeItems.length > 0 ? shipping : 0); 
                     customerPaidStatus[nick] = (depositTotal >= grandTotal) || isCard;
                 });
-                orders.forEach(o => { 
+                ordArr.forEach(o => { 
                     if(o.isCancelled) return; 
                     const name = o.product || '(상품명 없음)'; 
                     if (!summary[name]) summary[name] = 0; if (!paidSummary[name]) paidSummary[name] = 0; if (!unpaidSummary[name]) unpaidSummary[name] = 0;
@@ -2039,7 +2036,9 @@
             };
 
             const handleExportCustomers = () => { 
-                const groups = {}; orders.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); }); 
+                const groups = {}; 
+                const ordArr = Array.isArray(orders) ? orders : [];
+                ordArr.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); }); 
                 let entries = Object.entries(groups).map(([nick, items]) => {
                     const activeItems = items.filter(i => !i.isCancelled); const isCard = cardPayments[nick]; 
                     const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0);
@@ -2055,7 +2054,8 @@
 
                 let excelRows = []; entries.forEach(({ nick, items, isPaid, isCard }) => { 
                     if(items.length === 0) return; 
-                    const addrInfo = addresses.find(a => normalizeString(a.nickname) === normalizeString(nick)) || {}; 
+                    const addrArr = Array.isArray(addresses) ? addresses : [];
+                    const addrInfo = addrArr.find(a => normalizeString(a.nickname) === normalizeString(nick)) || {}; 
                     const fullAddress = addrInfo.zipcode ? `(${addrInfo.zipcode}) ${addrInfo.address || ''}` : (addrInfo.address || ''); 
                     const statusColumn = isCard ? "카드결제" : (isPaid ? "" : "미입금");
                     const createRow = (productValue) => ({ '날짜시간': new Date().toLocaleString(), '공란1': '', '입금상태': statusColumn, '닉네임': nick, '주문제품(수량)': productValue, '이름': addrInfo.realname || '', '핸드폰번호': fixPhoneNumber(addrInfo.phone) || '', '주소': fullAddress, '배송메모': addrInfo.memo || '' }); 
@@ -2066,7 +2066,8 @@
 
             const handleExportAllMessages = () => {
                 const groups = {}; 
-                orders.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); });
+                const ordArr = Array.isArray(orders) ? orders : [];
+                ordArr.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); });
                 
                 const templateConfigStr = window.localStorage.getItem(getLsKey('templateConfig'));
                 const templateConfigLocal = templateConfigStr ? JSON.parse(templateConfigStr) : { emoji: '💙', paidMsg: '😍 완납 확인! 감사합니다 😍', unpaidPrefix: '[미입금]\n총 입금하실 금액\n👉', overpaidMsg: '과납 금액이 있습니다.\n환불 또는 적립 여부를 알려주세요!', addrNotice: '※ 배송지 변경 시 채팅으로 변경할 주소를 남겨주세요!', surveyNotice: '방송마다 1회 하단의 주문서(배송지입력) 필수!!', alwaysRequestAddress: false };
@@ -2148,7 +2149,8 @@
 
             const handleExportCashReceipts = () => {
                 const groups = {}; 
-                orders.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); });
+                const ordArr = Array.isArray(orders) ? orders : [];
+                ordArr.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); });
                 
                 const data = []; 
                 Object.entries(groups).forEach(([nick, items]) => {
@@ -2176,7 +2178,8 @@
 
            const handlePrintPackingList = () => {
                const groups = {};
-               orders.forEach(o => {
+               const ordArr = Array.isArray(orders) ? orders : [];
+               ordArr.forEach(o => {
                    if (o.isCancelled) return;
                    if (!groups[o.customer]) groups[o.customer] = [];
                    groups[o.customer].push(o);
@@ -2236,7 +2239,8 @@
 
            const handleExportTopCustomers = () => {
                const groups = {};
-               orders.forEach(o => {
+               const ordArr = Array.isArray(orders) ? orders : [];
+               ordArr.forEach(o => {
                    if (o.isCancelled) return;
                    if (!groups[o.customer]) groups[o.customer] = [];
                    groups[o.customer].push(o);
