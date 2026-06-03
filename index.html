@@ -98,7 +98,7 @@
             return new Date(0);
         };
 
-        // 🚨 전화번호 0 보존 로직 (숫자만 추출해서 무조건 하이픈 제거)
+        // 🚨 전화번호 0 보존 및 하이픈 완전 제거 로직
         const fixPhoneNumber = (numStr) => {
             if (!numStr) return '';
             let cleaned = String(numStr).replace(/[^0-9]/g, '');
@@ -374,7 +374,11 @@
             useEffect(() => { setLocalName(item.name); }, [item.name]);
             useEffect(() => { setLocalPrice(item.price === 0 || item.price === '' ? '' : Number(item.price).toLocaleString()); }, [item.price]);
 
-            const activeOrders = useMemo(() => orders.filter(o => o.product === item.name && !o.isCancelled), [orders, item.name]);
+            const activeOrders = useMemo(() => {
+                const ordArr = Array.isArray(orders) ? orders : [];
+                return ordArr.filter(o => o.product === item.name && !o.isCancelled);
+            }, [orders, item.name]);
+            
             const orderedCount = activeOrders.reduce((sum, o) => sum + Number(o.quantity || 0), 0);
             
             const aggregatedOrders = useMemo(() => {
@@ -394,21 +398,24 @@
                 const newName = localName.trim();
                 const newPrice = Number(String(localPrice).replace(/,/g, ''));
                 if (!newName) { openModal('상품명을 입력해주세요.', 'alert'); return; }
-                if (newName !== item.name && inventory.some(i => i.name === newName && i.id !== item.id)) { openModal('이미 동일한 이름의 상품이 있습니다.', 'alert'); setLocalName(item.name); return; }
+                if (newName !== item.name && Array.isArray(inventory) && inventory.some(i => i.name === newName && i.id !== item.id)) { openModal('이미 동일한 이름의 상품이 있습니다.', 'alert'); setLocalName(item.name); return; }
 
                 const oldNameClean = cleanForMatch(item.name);
-
-                const newInv = inventory.map(i => i.id === item.id ? { ...i, name: newName, price: newPrice } : i);
+                const invArr = Array.isArray(inventory) ? inventory : [];
+                const newInv = invArr.map(i => i.id === item.id ? { ...i, name: newName, price: newPrice } : i);
                 setInventory(newInv);
                 saveInventoryToServer(newInv); 
                 
                 if (newName !== item.name || newPrice !== item.price) {
-                    setOrders(prev => prev.map(o => { 
-                        if (cleanForMatch(o.product) === oldNameClean) { 
-                            return { ...o, product: newName, price: (Number(o.quantity) || 0) * newPrice, isUnmodified: false }; 
-                        } 
-                        return o; 
-                    }));
+                    setOrders(prev => {
+                        const prevArr = Array.isArray(prev) ? prev : [];
+                        return prevArr.map(o => { 
+                            if (cleanForMatch(o.product) === oldNameClean) { 
+                                return { ...o, product: newName, price: (Number(o.quantity) || 0) * newPrice, isUnmodified: false }; 
+                            } 
+                            return o; 
+                        });
+                    });
                     setProductHistory(prev => { const next = {...prev}; if (newName !== item.name) { next[newName] = newPrice; } else { next[item.name] = newPrice; } return next; });
                 }
                 setIsEditing(false);
@@ -416,7 +423,8 @@
 
             const handleDelete = () => { 
                 openModal(`'${item.name}' 항목을 재고 목록에서 삭제하시겠습니까?\n(기존 주문 내역은 유지됩니다)`, 'confirm', () => { 
-                    const newInv = inventory.filter(i => i.id !== item.id);
+                    const invArr = Array.isArray(inventory) ? inventory : [];
+                    const newInv = invArr.filter(i => i.id !== item.id);
                     setInventory(newInv);
                     saveInventoryToServer(newInv); 
                 }); 
@@ -493,7 +501,12 @@
                                                 </span>
                                                 <button onClick={(e) => {
                                                     e.stopPropagation();
-                                                    openModal(`'${agg.customer}'님의 '${item.name}' 주문을 삭제하시겠습니까?`, 'confirm', () => { setOrders(prev => prev.filter(order => !agg.orderIds.includes(order.id))); });
+                                                    openModal(`'${agg.customer}'님의 '${item.name}' 주문을 삭제하시겠습니까?`, 'confirm', () => { 
+                                                        setOrders(prev => {
+                                                            const prevArr = Array.isArray(prev) ? prev : [];
+                                                            return prevArr.filter(order => !agg.orderIds.includes(order.id));
+                                                        }); 
+                                                    });
                                                 }} className="text-red-400 hover:text-red-600 bg-red-50 hover:bg-red-100 px-1.5 py-0.5 rounded font-bold shrink-0 ml-1 opacity-0 group-hover:opacity-100">삭제</button>
                                             </div>
                                         );
@@ -607,11 +620,11 @@
                             </div>
                             <div className="flex flex-col items-start gap-1 text-xs mt-1 w-full overflow-hidden">
                                 {addr ? (
-                                    <div onClick={(e) => { if (addressMapping[nick]) { e.stopPropagation(); handleAddressUnmapping(nick); } }} className={`text-[11px] flex items-center gap-1.5 w-full overflow-hidden mt-1 py-1 rounded transition-colors ${addressMapping[nick] ? 'cursor-pointer hover:bg-red-50 px-1' : ''}`} title={addressMapping[nick] ? "클릭하여 주소 연결 해제" : "자동 연동된 찐주소록"}>
+                                    <div className="text-[11px] flex items-center gap-1.5 w-full overflow-hidden mt-1 py-1 rounded transition-colors group bg-slate-50 dark:bg-slate-700/30 px-1 border border-transparent hover:border-slate-200 dark:hover:border-slate-600">
                                         <span className="text-green-700 shrink-0 flex items-center gap-0.5"><Icon name="house-line" weight="fill" /> <span className="font-bold">{addr.realname}</span></span>
-                                        <span className="text-slate-500 shrink-0 font-medium">{cleanPhoneDisplay}</span>
-                                        <span className="text-slate-700 truncate flex-1 ml-1" title={`${addr.address} ${addr.memo}`}>{addr.address}{addr.memo && <span className="text-red-500 font-bold ml-1.5">[{addr.memo}]</span>}</span>
-                                        {addressMapping[nick] && <Icon name="link-break" className="shrink-0 text-red-400 ml-1" weight="bold"/>}
+                                        <span className="text-slate-500 shrink-0 font-medium">{addr.phone}</span>
+                                        <span className="text-slate-700 dark:text-slate-300 truncate flex-1 ml-1" title={`${addr.address} ${addr.memo}`}>{addr.address}{addr.memo && <span className="text-red-500 font-bold ml-1.5">[{addr.memo}]</span>}</span>
+                                        <button onClick={(e) => { e.stopPropagation(); handleAddressUnmapping(nick); }} className="opacity-0 group-hover:opacity-100 text-[10px] bg-white dark:bg-slate-800 hover:bg-red-50 dark:hover:bg-red-900/30 text-slate-500 hover:text-red-600 px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-600 hover:border-red-300 flex items-center gap-0.5 shrink-0 shadow-sm transition-all ml-auto" title="주소 연결 해제"><Icon name="link-break" weight="bold" /> 해제</button>
                                     </div>
                                 ) : (
                                     <div className="flex items-center gap-1 flex-wrap mt-0.5">
@@ -649,9 +662,12 @@
             const pVip = prev.specialCustomers && prev.specialCustomers[normalizeString(prev.nick)]?.type === 'vip';
             const nVip = next.specialCustomers && next.specialCustomers[normalizeString(next.nick)]?.type === 'vip';
             if (pVip !== nVip) return false;
-            if (prev.items.length !== next.items.length) return false;
-            for (let i = 0; i < prev.items.length; i++) {
-                const pItem = prev.items[i], nItem = next.items[i];
+            
+            const pItems = Array.isArray(prev.items) ? prev.items : [];
+            const nItems = Array.isArray(next.items) ? next.items : [];
+            if (pItems.length !== nItems.length) return false;
+            for (let i = 0; i < pItems.length; i++) {
+                const pItem = pItems[i], nItem = nItems[i];
                 if (pItem.product !== nItem.product || pItem.quantity !== nItem.quantity || pItem.price !== nItem.price || pItem.isCancelled !== nItem.isCancelled || pItem.deposit !== nItem.deposit || pItem.isUnmodified !== nItem.isUnmodified) return false;
             }
             return true;
@@ -739,12 +755,13 @@
 
             const handleRematchAll = useCallback(() => {
                 openModal("모든 입금 매칭을 초기화하고 처음부터 다시 자동 매칭하시겠습니까?\n\n(수동으로 매칭/해제했던 내역과 현재 주문서에 강제로 입력된 입금액이 모두 0으로 초기화된 후, 현재 입금 리스트를 바탕으로 재계산됩니다.)", 'confirm', () => {
-                    setOrders(prev => prev.map(o => ({ ...o, deposit: 0, loadedFromCloud: false })));
+                    const ordArr = Array.isArray(orders) ? orders : [];
+                    setOrders(ordArr.map(o => ({ ...o, deposit: 0, loadedFromCloud: false })));
                     setMatchedDeposits(new Set()); 
                     setIgnoredAutoMatch(new Set());
                     openModal("입금 매칭이 초기화되었습니다!\n잠시 후 순차적으로 자동 재매칭됩니다.", 'alert');
                 });
-            }, [openModal, setOrders, setMatchedDeposits]);
+            }, [openModal, orders, setOrders, setMatchedDeposits]);
 
             const saveInventoryToServer = useCallback(async (newInvList) => {
                 if (googleScriptUrl && masterSheetId) {
@@ -759,7 +776,7 @@
                 const masterData = { ...addrData, phone: fixedPhone, _source: 'master' };
                 
                 setAddresses(prev => {
-                    const newAddrs = [...prev];
+                    const newAddrs = Array.isArray(prev) ? [...prev] : [];
                     const targetNickClean = normalizeString(masterData.nickname);
                     const existIdx = newAddrs.findIndex(a => normalizeString(a.nickname) === targetNickClean && a._source === 'master');
                     if (existIdx !== -1) { newAddrs[existIdx] = { ...newAddrs[existIdx], ...masterData }; } 
@@ -777,7 +794,8 @@
 
             const addressLookup = useMemo(() => {
                 const masterMap = {}; const rawMap = {}; const exactNickMap = {}; const koBaseMap = {}; const realNameMap = {};
-                addresses.forEach(a => {
+                const addrArr = Array.isArray(addresses) ? addresses : [];
+                addrArr.forEach(a => {
                     const cleanNick = normalizeString(a.nickname);
                     const ts = parseSafeDate(a.timestamp).getTime();
                     
@@ -869,8 +887,9 @@
             const findAddressSuggestions = useCallback((nick) => {
                 if (!nick) return []; const cleanNick = normalizeString(nick); if (cleanNick.length < 2) return []; 
                 const results = [];
-                for (let i = 0; i < addresses.length; i++) {
-                    const a = addresses[i]; const cleanAddrNick = normalizeString(a.nickname);
+                const addrArr = Array.isArray(addresses) ? addresses : [];
+                for (let i = 0; i < addrArr.length; i++) {
+                    const a = addrArr[i]; const cleanAddrNick = normalizeString(a.nickname);
                     if (cleanAddrNick !== cleanNick && (cleanAddrNick.includes(cleanNick) || cleanNick.includes(cleanAddrNick))) {
                         results.push(a.nickname); if (results.length >= 3) break; 
                     }
@@ -1066,7 +1085,8 @@
             const dashboardStats = useMemo(() => {
                 let totalSales = 0, totalDeposit = 0, totalUnpaid = 0, totalOverpaid = 0, totalCardExpected = 0, missingAddressCount = 0;
                 const groups = {};
-                orders.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); });
+                const ordArr = Array.isArray(orders) ? orders : [];
+                ordArr.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); });
                 Object.entries(groups).forEach(([nick, items]) => {
                     const activeItems = items.filter(i => !i.isCancelled);
                     const depositTotal = items.reduce((sum, i) => sum + (i.deposit || 0), 0);
@@ -1098,7 +1118,8 @@
             const customerPaidStatus = useMemo(() => {
                 const status = {};
                 const groups = {};
-                orders.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); });
+                const ordArr = Array.isArray(orders) ? orders : [];
+                ordArr.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); });
                 Object.entries(groups).forEach(([nick, items]) => {
                     const activeItems = items.filter(i => !i.isCancelled);
                     if (activeItems.length === 0) { status[nick] = true; return; }
@@ -1115,7 +1136,8 @@
 
             const filteredGroupedOrders = useMemo(() => {
                 const groups = {};
-                orders.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); });
+                const ordArr = Array.isArray(orders) ? orders : [];
+                ordArr.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); });
                 
                 Object.entries(groups).forEach(([nick, items]) => {
                     if (selectedNick === nick) { items.sort((a, b) => a.id - b.id); } 
@@ -1165,7 +1187,6 @@
                         if (aN.startsWith(term) && !bN.startsWith(term)) return -1; if (!aN.startsWith(term) && bN.startsWith(term)) return 1;
                     }
                     
-                    // 🚨 클릭된 주문서가 화면에 찰싹 달라붙도록 고정!
                     if (selectedNick === a[0]) return -1;
                     if (selectedNick === b[0]) return 1;
                     
@@ -1187,13 +1208,21 @@
 
             const totalItemsCount = useMemo(() => { let count = 0; filteredGroupedOrders.forEach(([_, items]) => { count += items.filter(i => !i.isCancelled).length; }); return count; }, [filteredGroupedOrders]);
             useEffect(() => { setDisplayLimit(30); }, [deferredOrderSearch, filterStatus, selectedNick]);
+            
             const handleOrderScroll = useCallback((e) => { const { scrollTop, clientHeight, scrollHeight } = e.target; if (scrollHeight - scrollTop <= clientHeight + 300) setDisplayLimit(prev => Math.min(prev + 30, filteredGroupedOrders.length)); }, [filteredGroupedOrders.length]);
+            
             const displayedOrders = useMemo(() => filteredGroupedOrders.slice(0, displayLimit), [filteredGroupedOrders, displayLimit]);
             
             const nicknameSuggestions = useMemo(() => {
                 if (!manualNick.trim()) return [];
                 const term = String(manualNick).toLowerCase().replace(/\s/g, ''); const isC = /^[ㄱ-ㅎa-zA-Z0-9]+$/.test(term);
-                const allN = new Set(); orders.forEach(o => allN.add(o.customer)); addresses.forEach(a => allN.add(a.nickname));
+                const allN = new Set(); 
+                const ordArr = Array.isArray(orders) ? orders : [];
+                ordArr.forEach(o => allN.add(o.customer)); 
+                
+                const addrArr = Array.isArray(addresses) ? addresses : [];
+                addrArr.forEach(a => allN.add(a.nickname));
+                
                 const res = []; 
                 for (const n of allN) {
                     const a = addressLookup.get(n)?.data; const rN = a ? a.realname : (depositorNames[n] || '');
@@ -1225,7 +1254,6 @@
                 return safeContent.split(pattern).map((part, i) => kwArray.includes(part) ? <span key={i} className="text-slate-700 dark:text-slate-300 font-bold bg-slate-200 dark:bg-slate-600 px-0.5 rounded">{part}</span> : part);
             }, []);
 
-            // 🚨 라이브 채팅 클릭 시 자동 0원 입력 및 파란색 강조 
             const handleChatClick = (chat) => { 
                 setClickedChats(prev => new Set(prev).add(chat.id)); 
                 const finalProduct = (isFixedProductMode && manualProduct.trim() !== '') ? manualProduct.trim() : String(chat.content || ''); 
@@ -1244,7 +1272,8 @@
 
             const handleNoAddressClick = useCallback(() => {
                 setFilterStatus('no-address');
-                const missing = Array.from(new Set(orders.filter(o => !o.isCancelled && !addressLookup.get(o.customer)?.data?.address).map(o => o.customer)));
+                const ordArr = Array.isArray(orders) ? orders : [];
+                const missing = Array.from(new Set(ordArr.filter(o => !o.isCancelled && !addressLookup.get(o.customer)?.data?.address).map(o => o.customer)));
                 if (missing.length > 0) {
                     const text = "⚠️ 채널톡 안주신분 ⚠️\n" + missing.join('\n') + "\n\n👉 카톡채널 연락주세요!";
                     const t = document.createElement("textarea"); t.value = text; document.body.appendChild(t); t.select(); document.execCommand('copy'); document.body.removeChild(t); openModal(`미입력자 명단 복사 완료!`, 'alert');
@@ -1253,8 +1282,9 @@
 
             useEffect(() => {
                 const timer = setTimeout(() => {
-                    if (allDeposits.length === 0 || orders.length === 0) return;
-                    let updatedOrders = [...orders]; let newMatchedIds = new Set(matchedDeposits); let hasChanges = false; const customerBalances = {};
+                    const ordArr = Array.isArray(orders) ? orders : [];
+                    if (allDeposits.length === 0 || ordArr.length === 0) return;
+                    let updatedOrders = [...ordArr]; let newMatchedIds = new Set(matchedDeposits); let hasChanges = false; const customerBalances = {};
                     
                     updatedOrders.forEach(o => {
                         if (o.isCancelled) return;
@@ -1310,12 +1340,13 @@
             }, [allDeposits, orders, matchedDeposits, depositorNames, deletedDepositIds, getCalculatedShipping, ignoredAutoMatch, addressLookup]);
 
             const autoSaveToGoogleSheet = useCallback(async () => { 
-                if (!googleScriptUrl || !masterSheetId || Object.keys(orders).length === 0) return; setIsSaving(true); 
+                const ordArr = Array.isArray(orders) ? orders : [];
+                if (!googleScriptUrl || !masterSheetId || Object.keys(ordArr).length === 0) return; setIsSaving(true); 
                 
                 const customerTotals = {};
-                orders.filter(o => !o.isCancelled).forEach(o => { customerTotals[o.customer] = (customerTotals[o.customer] || 0) + Number(o.price); });
+                ordArr.filter(o => !o.isCancelled).forEach(o => { customerTotals[o.customer] = (customerTotals[o.customer] || 0) + Number(o.price); });
 
-                const saveList = orders.filter(o=>!o.isCancelled).map(o => { 
+                const saveList = ordArr.filter(o=>!o.isCancelled).map(o => { 
                     let addrRes = addressLookup.get(o.customer); let addr = addrRes.data || {}; 
                     const currentShipping = getCalculatedShipping(o.customer, customerTotals[o.customer] || 0); 
                     const isCard = cardPayments[o.customer] ? true : false; 
@@ -1342,7 +1373,11 @@
             const handleNicknameEdit = useCallback((old) => {
                 openModal(`${old} 닉네임 변경`, 'prompt', (val) => {
                     if (val) {
-                        const newN = val.replace(/@/g, '').trim(); setOrders(prev => prev.map(o => o.customer === old ? { ...o, customer: newN } : o));
+                        const newN = val.replace(/@/g, '').trim(); 
+                        setOrders(prev => {
+                            const prevArr = Array.isArray(prev) ? prev : [];
+                            return prevArr.map(o => o.customer === old ? { ...o, customer: newN } : o);
+                        });
                         if (shippingOverrides[old]) { setShippingOverrides(prev => { const n = {...prev, [newN]: prev[old]}; delete n[old]; return n; }); }
                         if (cashReceipts[old]) { setCashReceipts(prev => { const n = {...prev, [newN]: prev[old]}; delete n[old]; return n; }); }
                         if (selectedNick === old) setSelectedNick(newN);
@@ -1358,7 +1393,8 @@
             const handleAddressMapping = useCallback((orderNick, addressNick) => { 
                 openModal(`'${orderNick}' 주문자에게 '${addressNick}' 님의 주소를 연결하시겠습니까?`, 'confirm', async () => {
                     setAddressMapping(prev => ({ ...prev, [orderNick]: addressNick })); 
-                    const addrData = addresses.find(a => normalizeString(a.nickname) === normalizeString(addressNick));
+                    const addrArr = Array.isArray(addresses) ? addresses : [];
+                    const addrData = addrArr.find(a => normalizeString(a.nickname) === normalizeString(addressNick));
                     if (addrData && googleScriptUrl && masterSheetId) {
                         const mappedData = { ...addrData, nickname: orderNick, phone: addrData.phone ? "'" + addrData.phone : '', _source: 'master' };
                         try { 
@@ -1372,18 +1408,18 @@
             
             const handleAddressUnmapping = useCallback((orderNick) => { openModal(`주소 연결을 해제하시겠습니까?`, 'confirm', () => setAddressMapping(prev => { const next = { ...prev }; delete next[orderNick]; return next; })); }, [openModal, setAddressMapping]);
 
-            // 🚨 재고와 주문서 완벽 동기화 로직
             const handleProductChange = useCallback((id, field, value) => { 
                 if (field === 'product') setCurrentSearchTerm(value);
                 
                 setOrders(prev => {
-                    let updatedOrders = [...prev];
+                    let updatedOrders = Array.isArray(prev) ? [...prev] : [];
                     const targetOrder = updatedOrders.find(o => o.id === id);
                     if (!targetOrder) return prev;
 
                     if (field === 'product') {
                         const cleanVal = String(value).trim();
-                        const invItem = inventoryRef.current.find(i => String(i.name).trim() === cleanVal);
+                        const invArr = Array.isArray(inventoryRef.current) ? inventoryRef.current : [];
+                        const invItem = invArr.find(i => String(i.name).trim() === cleanVal);
                         const uPrice = invItem ? Number(invItem.price) : (productHistoryRef.current[cleanVal] || 0);
                         targetOrder.product = value;
                         targetOrder.price = (Number(targetOrder.quantity) || 0) * uPrice;
@@ -1400,12 +1436,13 @@
 
                         if (cleanProd !== '' && uPrice > 0) {
                             setInventory(prevInv => {
-                                const exists = prevInv.find(i => String(i.name).trim() === cleanProd);
+                                const invArr = Array.isArray(prevInv) ? prevInv : [];
+                                const exists = invArr.find(i => String(i.name).trim() === cleanProd);
                                 let newInv;
                                 if (!exists) {
-                                    newInv = [{ id: `inv_${Date.now()}_${Math.random()}`, name: cleanProd, price: uPrice }, ...prevInv];
+                                    newInv = [{ id: `inv_${Date.now()}_${Math.random()}`, name: cleanProd, price: uPrice }, ...invArr];
                                 } else {
-                                    newInv = prevInv.map(i => String(i.name).trim() === cleanProd ? { ...i, price: uPrice } : i);
+                                    newInv = invArr.map(i => String(i.name).trim() === cleanProd ? { ...i, price: uPrice } : i);
                                 }
                                 saveInventoryToServer(newInv);
                                 return newInv;
@@ -1429,20 +1466,30 @@
             }, [setOrders, setInventory, setProductHistory, saveInventoryToServer]);
 
             const handleQuantityUpdate = useCallback((itemId, newQtyVal) => { 
-                setOrders(prev => prev.map(o => { 
-                    if (o.id === itemId) { 
-                        const cleanProd = String(o.product || '').trim(); const inv = inventoryRef.current; const hist = productHistoryRef.current;
-                        const invItem = Array.isArray(inv) ? inv.find(i => String(i.name).trim() === cleanProd) : null;
-                        const unitPrice = invItem ? Number(invItem.price) : (hist[cleanProd] || (o.quantity > 0 ? o.price/o.quantity : 0));
-                        const validQty = (newQtyVal === '' || isNaN(parseInt(newQtyVal))) ? '' : parseInt(newQtyVal);
-                        return { ...o, quantity: validQty, price: unitPrice * (Number(validQty) || 0), isUnmodified: false }; 
-                    } 
-                    return o; 
-                })); 
+                setOrders(prev => {
+                    const prevArr = Array.isArray(prev) ? prev : [];
+                    return prevArr.map(o => { 
+                        if (o.id === itemId) { 
+                            const cleanProd = String(o.product || '').trim(); const inv = inventoryRef.current; const hist = productHistoryRef.current;
+                            const invItem = Array.isArray(inv) ? inv.find(i => String(i.name).trim() === cleanProd) : null;
+                            const unitPrice = invItem ? Number(invItem.price) : (hist[cleanProd] || (o.quantity > 0 ? o.price/o.quantity : 0));
+                            const validQty = (newQtyVal === '' || isNaN(parseInt(newQtyVal))) ? '' : parseInt(newQtyVal);
+                            return { ...o, quantity: validQty, price: unitPrice * (Number(validQty) || 0), isUnmodified: false }; 
+                        } 
+                        return o; 
+                    });
+                }); 
             }, [setOrders]);
 
-            const handleOrderCancel = useCallback((id) => setOrders(prev => prev.map(o => o.id === id ? { ...o, isCancelled: !o.isCancelled } : o)), [setOrders]);
-            const handleOrderDelete = useCallback((id) => openModal("주문 삭제하시겠습니까?", 'confirm', () => setOrders(prev => prev.filter(o => o.id !== id))), [openModal, setOrders]);
+            const handleOrderCancel = useCallback((id) => setOrders(prev => {
+                const prevArr = Array.isArray(prev) ? prev : [];
+                return prevArr.map(o => o.id === id ? { ...o, isCancelled: !o.isCancelled } : o);
+            }), [setOrders]);
+            
+            const handleOrderDelete = useCallback((id) => openModal("주문 삭제하시겠습니까?", 'confirm', () => setOrders(prev => {
+                const prevArr = Array.isArray(prev) ? prev : [];
+                return prevArr.filter(o => o.id !== id);
+            })), [openModal, setOrders]);
 
             const copyOrderSheet = useCallback((nick, items, grandTotal, depositTotal, balance, isCard, addrData) => {
                 const activeItems = items.filter(i => !i.isCancelled);
@@ -1488,8 +1535,8 @@
             }, [addressLookup, getCalculatedShipping, templateConfig, bankAccount, sentAddressRequests, setSentAddressRequests, setCheckedOrders, openModal, broadcastName]);
 
             const handleFullDepositToggle = useCallback((nick, grandTotal, currentDeposit) => { 
-                if (currentDeposit >= grandTotal) { setOrders(prev => prev.map(o => o.customer === nick ? { ...o, deposit: 0 } : o)); } 
-                else { setOrders(prev => { let done = false; return prev.map(o => { if (o.customer === nick && !done) { done = true; return { ...o, deposit: grandTotal }; } return o; }); }); } 
+                if (currentDeposit >= grandTotal) { setOrders(prev => { const prevArr = Array.isArray(prev) ? prev : []; return prevArr.map(o => o.customer === nick ? { ...o, deposit: 0 } : o); }); } 
+                else { setOrders(prev => { let done = false; const prevArr = Array.isArray(prev) ? prev : []; return prevArr.map(o => { if (o.customer === nick && !done) { done = true; return { ...o, deposit: grandTotal }; } return o; }); }); } 
             }, [setOrders]);
 
             const addOrderLogic = useCallback((nick, content, qty = 1, force = false, afterId = null, customPrice = null, markAsModified = false, isAuto = false) => {
@@ -1524,12 +1571,15 @@
                     if (priceToSave > 0) setProductHistory(h => ({ ...h, [cContent]: priceToSave }));
                     
                     if (isCustomPriceValid) {
-                        setOrders(prev => prev.map(o => {
-                            if (String(o.product).trim() === cContent) {
-                                return { ...o, price: (Number(o.quantity) || 0) * priceToSave };
-                            }
-                            return o;
-                        }));
+                        setOrders(prev => {
+                            const prevArr = Array.isArray(prev) ? prev : [];
+                            return prevArr.map(o => {
+                                if (String(o.product).trim() === cContent) {
+                                    return { ...o, price: (Number(o.quantity) || 0) * priceToSave };
+                                }
+                                return o;
+                            });
+                        });
                     }
                 }
 
@@ -1537,12 +1587,13 @@
                 
                 const newOrder = { id: Date.now() + Math.random(), customer: cNick, product: cContent, quantity: qty, price: Number(price) * qty, deposit: 0, isCancelled: false, isUnmodified: !markAsModified, isSentToEmp: false };
                 setOrders(prev => {
+                    const prevArr = Array.isArray(prev) ? prev : [];
                     if (!afterId && !force && cContent !== '') {
-                        const existIdx = prev.findIndex(o => o.customer === cNick && o.product === cContent && !o.isCancelled);
-                        if (existIdx !== -1) { const next = [...prev]; next[existIdx] = { ...next[existIdx], quantity: next[existIdx].quantity + qty, price: (next[existIdx].quantity + qty) * price, isUnmodified: !markAsModified }; return next; }
+                        const existIdx = prevArr.findIndex(o => o.customer === cNick && o.product === cContent && !o.isCancelled);
+                        if (existIdx !== -1) { const next = [...prevArr]; next[existIdx] = { ...next[existIdx], quantity: next[existIdx].quantity + qty, price: (next[existIdx].quantity + qty) * price, isUnmodified: !markAsModified }; return next; }
                     }
-                    if (afterId) { const idx = prev.findIndex(o => o.id === afterId); if (idx !== -1) { const next = [...prev]; next.splice(idx + 1, 0, newOrder); return next; } }
-                    return [newOrder, ...prev];
+                    if (afterId) { const idx = prevArr.findIndex(o => o.id === afterId); if (idx !== -1) { const next = [...prevArr]; next.splice(idx + 1, 0, newOrder); return next; } }
+                    return [newOrder, ...prevArr];
                 });
             }, [setCheckedOrders, setOrders, setInventory, setProductHistory, saveInventoryToServer]);
 
@@ -1551,14 +1602,16 @@
                 const isUsed = matchedDeposits?.has(dep.id);
                 if (isUsed) {
                     openModal(`'${dep.name}' 님의 입금 매칭을 취소하시겠습니까?`, 'confirm', () => {
-                        const targetNick = orders.find(o => !o.isCancelled && cleanForMatch(o.customer) === cleanForMatch(dep.name))?.customer || selectedNick;
-                        if (targetNick) { setOrders(prev => { let done = false; return prev.map(o => { if (!done && o.customer === targetNick) { done = true; return { ...o, deposit: Math.max(0, (o.deposit || 0) - Number(dep.amount)) }; } return o; }); }); }
+                        const ordArr = Array.isArray(orders) ? orders : [];
+                        const targetNick = ordArr.find(o => !o.isCancelled && cleanForMatch(o.customer) === cleanForMatch(dep.name))?.customer || selectedNick;
+                        if (targetNick) { setOrders(prev => { let done = false; const prevArr = Array.isArray(prev) ? prev : []; return prevArr.map(o => { if (!done && o.customer === targetNick) { done = true; return { ...o, deposit: Math.max(0, (o.deposit || 0) - Number(dep.amount)) }; } return o; }); }); }
                         setMatchedDeposits(p => { const next = new Set(p); next.delete(dep.id); return next; }); setIgnoredAutoMatch(p => new Set(p).add(dep.id)); 
                     }); return;
                 }
-                const targetNick = selectedNick || orders.find(o => !o.isCancelled && cleanForMatch(o.customer) === cleanForMatch(dep.name))?.customer;
+                const ordArr = Array.isArray(orders) ? orders : [];
+                const targetNick = selectedNick || ordArr.find(o => !o.isCancelled && cleanForMatch(o.customer) === cleanForMatch(dep.name))?.customer;
                 if (!targetNick) return openModal("입금을 연결할 주문자(닉네임)를 먼저 클릭하여 노란색으로 선택해주세요.", "alert");
-                setOrders(prev => { let done = false; return prev.map(o => { if (!done && o.customer === targetNick) { done = true; return { ...o, deposit: (o.deposit || 0) + Number(dep.amount) }; } return o; }); });
+                setOrders(prev => { let done = false; const prevArr = Array.isArray(prev) ? prev : []; return prevArr.map(o => { if (!done && o.customer === targetNick) { done = true; return { ...o, deposit: (o.deposit || 0) + Number(dep.amount) }; } return o; }); });
                 setMatchedDeposits(p => new Set(p).add(dep.id)); setIgnoredAutoMatch(p => new Set(p).add(dep.id));
             };
             const handleAddressClick = (addr) => { if (!selectedNick) return openModal("주소를 수동 연결할 주문자(닉네임)를 먼저 중앙에서 클릭하여 노란색으로 선택해주세요.", "alert"); handleAddressMapping(selectedNick, addr.nickname); };
@@ -1574,13 +1627,15 @@
 
             const usedAddressNicks = useMemo(() => {
                 const set = new Set();
-                orders.forEach(o => { if (!o.isCancelled) { const mappedTarget = addressMapping[o.customer]; if (mappedTarget) set.add(normalizeString(mappedTarget)); else set.add(normalizeString(o.customer)); } });
+                const ordArr = Array.isArray(orders) ? orders : [];
+                ordArr.forEach(o => { if (!o.isCancelled) { const mappedTarget = addressMapping[o.customer]; if (mappedTarget) set.add(normalizeString(mappedTarget)); else set.add(normalizeString(o.customer)); } });
                 return set;
             }, [orders, addressMapping]);
 
             const visibleAddresses = useMemo(() => {
                 const latestMap = {};
-                addresses.forEach(a => {
+                const addrArr = Array.isArray(addresses) ? addresses : [];
+                addrArr.forEach(a => {
                     const cleanNick = normalizeString(a.nickname);
                     const ts = parseSafeDate(a.timestamp).getTime();
                     if (!latestMap[cleanNick] || ts > parseSafeDate(latestMap[cleanNick].timestamp).getTime()) {
@@ -1614,9 +1669,10 @@
                 if(!cleanName) return openModal("상품명을 입력해주세요.", "alert");
                 const priceNum = Number(String(newInvPrice).replace(/,/g, '')) || 0;
                 
-                if(inventory.some(i => i.name === cleanName)) return openModal("이미 등록된 상품명입니다.", "alert");
+                const invArr = Array.isArray(inventory) ? inventory : [];
+                if(invArr.some(i => i.name === cleanName)) return openModal("이미 등록된 상품명입니다.", "alert");
                 
-                const newInv = [{ id: `inv_${Date.now()}`, name: cleanName, price: priceNum }, ...inventory];
+                const newInv = [{ id: `inv_${Date.now()}`, name: cleanName, price: priceNum }, ...invArr];
                 setInventory(newInv);
                 if(priceNum > 0) setProductHistory(prev => ({...prev, [cleanName]: priceNum}));
                 setNewInvName(''); setNewInvPrice('');
@@ -1626,14 +1682,16 @@
 
             // 🚨 재고 내림차순 (판매량 순) 정렬 로직
             const sortedInventoryList = useMemo(() => {
-                let filtered = inventory;
+                const invArr = Array.isArray(inventory) ? inventory : [];
+                let filtered = invArr;
                 if (currentSearchTerm) {
                     const term = String(currentSearchTerm).toLowerCase();
-                    filtered = inventory.filter(i => String(i.name).toLowerCase().includes(term));
+                    filtered = invArr.filter(i => String(i.name).toLowerCase().includes(term));
                 }
 
                 const orderCounts = {};
-                orders.forEach(o => {
+                const ordArr = Array.isArray(orders) ? orders : [];
+                ordArr.forEach(o => {
                     if (!o.isCancelled && o.product) {
                         const prodName = String(o.product).trim();
                         orderCounts[prodName] = (orderCounts[prodName] || 0) + (Number(o.quantity) || 0);
@@ -1681,7 +1739,8 @@
                                         let combinations = [];
                                         if (list1.length > 0 && list2.length > 0) { list1.forEach(c => { list2.forEach(s => { combinations.push(`${baseName} ${c} ${s}`); }); }); } else if (list1.length > 0) { list1.forEach(c => combinations.push(`${baseName} ${c}`)); } else if (list2.length > 0) { list2.forEach(s => combinations.push(`${baseName} ${s}`)); } else { combinations.push(baseName); }
                                         let addedCount = 0;
-                                        let newInvList = [...inventory];
+                                        const invArr = Array.isArray(inventory) ? inventory : [];
+                                        let newInvList = [...invArr];
                                         combinations.reverse().forEach(opt => {
                                             if(!newInvList.some(i => i.name === opt)) {
                                                 newInvList.unshift({ id: `inv_${Date.now()}_${Math.random()}`, name: opt, price: priceNum });
@@ -1744,7 +1803,7 @@
                         <div className="grid grid-cols-4 gap-1 p-2 bg-slate-100 dark:bg-slate-800 border-b dark:border-slate-700 text-center text-[10px]">
                             {[{id:'all', label:'총매출', val:dashboardStats.totalSales, isCurrency:true, colSpan:2}, 
                               {id:'no-address', label:'주소없음', val:dashboardStats.missingAddressCount, isCurrency:false, onClick:handleNoAddressClick},
-                              {id:'no-kakao', label:'카톡없음', val:orders.filter(o=>!o.isCancelled && !checkedOrders.has(o.customer)).length, isCurrency:false},
+                              {id:'no-kakao', label:'카톡없음', val:Array.isArray(orders) ? orders.filter(o=>!o.isCancelled && !checkedOrders.has(o.customer)).length : 0, isCurrency:false},
                               {id:'paid', label:'완납', val:dashboardStats.totalDeposit, isCurrency:true}, 
                               {id:'unpaid', label:'미수금', val:dashboardStats.totalUnpaid, isCurrency:true}, 
                               {id:'overpaid', label:'과납', val:dashboardStats.totalOverpaid, isCurrency:true},
@@ -1892,7 +1951,7 @@
                             <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between">
                                 <span className="flex items-center gap-1"><Icon name="package" weight="fill"/> 실시간 재고</span>
                                 <div className="flex items-center gap-1.5">
-                                    <span className="text-xs text-slate-500 dark:text-slate-400">{inventory.length}종</span>
+                                    <span className="text-xs text-slate-500 dark:text-slate-400">{Array.isArray(inventory) ? inventory.length : 0}종</span>
                                     <button onClick={(e) => { e.stopPropagation(); setIsBatchModalOpen(true); }} className="bg-slate-600 hover:bg-slate-700 text-white text-[9px] px-1.5 py-0.5 rounded shadow-sm transition-colors flex items-center gap-0.5" title="옵션 일괄 생성"><Icon name="list-plus" weight="bold"/> 일괄옵션</button>
                                 </div>
                             </div>
@@ -1966,7 +2025,8 @@
                 }); 
                 const sortedKeys = Object.keys(summary).filter(product => summary[product] > 0).sort((a, b) => a.localeCompare(b, 'ko', { numeric: true }));
                 const data = sortedKeys.map(product => {
-                    const invItem = inventory && Array.isArray(inventory) ? inventory.find(i => String(i.name).trim() === String(product).trim()) : null;
+                    const invArr = Array.isArray(inventory) ? inventory : [];
+                    const invItem = invArr.find(i => String(i.name).trim() === String(product).trim());
                     const price = invItem ? Number(invItem.price) : (productHistory && productHistory[product] ? Number(productHistory[product]) : 0);
                     return { 
                         '상품명': product, 
@@ -1998,7 +2058,7 @@
                     const addrInfo = addresses.find(a => normalizeString(a.nickname) === normalizeString(nick)) || {}; 
                     const fullAddress = addrInfo.zipcode ? `(${addrInfo.zipcode}) ${addrInfo.address || ''}` : (addrInfo.address || ''); 
                     const statusColumn = isCard ? "카드결제" : (isPaid ? "" : "미입금");
-                    const createRow = (productValue) => ({ '날짜시간': new Date().toLocaleString(), '공란1': '', '입금상태': statusColumn, '닉네임': nick, '주문제품(수량)': productValue, '이름': addrInfo.realname || '', '핸드폰번호': addrInfo.phone || '', '주소': fullAddress, '배송메모': addrInfo.memo || '' }); 
+                    const createRow = (productValue) => ({ '날짜시간': new Date().toLocaleString(), '공란1': '', '입금상태': statusColumn, '닉네임': nick, '주문제품(수량)': productValue, '이름': addrInfo.realname || '', '핸드폰번호': fixPhoneNumber(addrInfo.phone) || '', '주소': fullAddress, '배송메모': addrInfo.memo || '' }); 
                     excelRows.push(createRow(`[ ${nick} ]`)); items.forEach(item => { const qtyPart = item.quantity > 1 ? ` ★${item.quantity}개` : ''; excelRows.push(createRow(`${item.product}${qtyPart}`)); }); 
                 }); 
                 downloadExcel(excelRows, '고객별_정산_배송리스트'); 
@@ -2036,6 +2096,7 @@
                     const itemListTextForExcel = activeItems.map(i => `${i.product}(${i.quantity}개)`).join(', '); 
                     
                     const addrInfo = findAddress(nick) || {};
+                    const dispPhone = fixPhoneNumber(addrInfo.phone);
                     
                     let msg = `${templateConfigLocal.emoji} ${nick} 님 ${templateConfigLocal.emoji}\n\n[${broadcastName} 주문목록]\n${itemListTextForMsg}\n배송비 ${currentShipping.toLocaleString()}원\n\n총 주문금액 ${baseGrandTotal.toLocaleString()}원\n------------------\n`;
                     let statusStr = '';
@@ -2065,7 +2126,6 @@
                     }
 
                     if (addrInfo && addrInfo.address && !templateConfigLocal.alwaysRequestAddress) {
-                        const dispPhone = fixPhoneNumber(addrInfo.phone);
                         msg += `\n[배송지 확인]\n\n${addrInfo.realname || nick}\n${dispPhone}\n${addrInfo.address} ${addrInfo.zipcode ? `(${addrInfo.zipcode})` : ''}\n${addrInfo.memo ? addrInfo.memo + '\n' : ''}\n------------------\n${templateConfigLocal.addrNotice}`;
                     } else if (!sentAddressRequestsLocal.has(nick) || templateConfigLocal.alwaysRequestAddress) { 
                         msg += `\n${templateConfigLocal.surveyNotice}`; 
@@ -2174,6 +2234,56 @@
                else { openModal("팝업 차단이 설정되어 있습니다. 브라우저 설정에서 팝업을 허용해 주세요.", "alert"); }
            };
 
+           const handleExportTopCustomers = () => {
+               const groups = {};
+               orders.forEach(o => {
+                   if (o.isCancelled) return;
+                   if (!groups[o.customer]) groups[o.customer] = [];
+                   groups[o.customer].push(o);
+               });
+
+               const customerTotals = [];
+               Object.entries(groups).forEach(([nick, items]) => {
+                   const isCard = cardPayments && cardPayments[nick];
+                   const productTotal = items.reduce((sum, i) => sum + Number(i.price), 0);
+                   const currentShipping = getCalculatedShipping(nick, productTotal);
+                   const baseGrandTotal = productTotal + (items.length > 0 ? currentShipping : 0);
+                   const depositTotal = items.reduce((sum, i) => sum + (i.deposit || 0), 0);
+                   
+                   const cardBase = Math.max(0, baseGrandTotal - depositTotal);
+                   const cardFee = (isCard && cardBase > 0) ? cardBase * 0.1 : 0;
+                   const grandTotal = baseGrandTotal + cardFee;
+
+                   const addrInfo = findAddress(nick) || {};
+
+                   customerTotals.push({
+                       nick,
+                       realname: addrInfo.realname || '',
+                       phone: fixPhoneNumber(addrInfo.phone) || '',
+                       grandTotal,
+                       depositTotal,
+                       isCard
+                   });
+               });
+
+               if (customerTotals.length === 0) { openModal("주문 내역이 없습니다.", "alert"); return; }
+
+               // 최종 금액 기준 내림차순 정렬 (높은 순 -> 낮은 순)
+               customerTotals.sort((a, b) => b.grandTotal - a.grandTotal);
+
+               const data = customerTotals.map((c, index) => ({
+                   '순위': index + 1,
+                   '닉네임': c.nick,
+                   '이름': c.realname,
+                   '연락처': c.phone,
+                   '총 주문금액': c.grandTotal,
+                   '입금액': c.depositTotal,
+                   '결제방식': c.isCard ? '카드결제' : '무통장/현금'
+               }));
+
+               downloadExcel(data, '매출상위_고객리스트');
+           };
+
            const fileInputRef = useRef(null); 
             return (
                 <div className="flex flex-col items-center justify-center h-full p-10 gap-6 overflow-y-auto dark:bg-slate-900">
@@ -2204,6 +2314,13 @@
                             <p className="text-slate-500 dark:text-slate-400 mb-4 text-xs">현영 체크된 고객의 (방송명/닉네임/금액/전화번호) 추출</p>
                             <button onClick={handleExportCashReceipts} className="w-full bg-indigo-500 text-white font-bold py-3 rounded-lg transition-transform hover:scale-105 shadow-md flex items-center justify-center gap-2 hover:bg-indigo-600"><Icon name="download-simple" weight="bold"/> 엑셀 다운로드</button>
                         </div>
+                        
+                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-lg border dark:border-slate-700 text-center ring-2 ring-emerald-100 dark:ring-emerald-900/30">
+                            <h2 className="text-lg font-bold mb-2 text-emerald-600 dark:text-emerald-400 flex items-center justify-center gap-2"><Icon name="trend-up" weight="fill"/> 매출 상위 고객 리스트</h2>
+                            <p className="text-slate-500 dark:text-slate-400 mb-4 text-xs">최종 주문금액이 가장 높은 고객순으로 정렬 (내림차순)</p>
+                            <button onClick={handleExportTopCustomers} className="w-full bg-emerald-500 text-white font-bold py-3 rounded-lg transition-transform hover:scale-105 shadow-md flex items-center justify-center gap-2 hover:bg-emerald-600"><Icon name="download-simple" weight="bold"/> 엑셀 다운로드</button>
+                        </div>
+
                         <div className="col-span-2 bg-slate-100 dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 flex flex-row items-center justify-between">
                             <div className="text-left">
                                 <h2 className="text-lg font-bold mb-2 text-slate-800 dark:text-slate-200 flex items-center gap-2"><Icon name="database" weight="fill"/> 전체 데이터 백업 / 복구</h2>
@@ -2282,14 +2399,9 @@
                 setModalConfig({ isOpen: true, type: t, message: m, onConfirm: (v) => { if (oc) oc(v); setModalConfig(p => ({ ...p, isOpen: false })); }, onCancel: () => { if (ocan) ocan(); setModalConfig(p => ({ ...p, isOpen: false })); }, initialValue: iv }); 
             }, []);
 
-            // 🚨 부드러운 화면 초기화 (새로고침 없이 안전하게 State와 LocalStorage 날리기)
             const handleResetAllData = useCallback(() => {
                 openModal("방송 데이터를 완전히 초기화하시겠습니까?\n(입금내역, 주문서, 재고 기록이 영구 삭제됩니다.\n※ 주소록 및 VIP 명단은 절대 지워지지 않습니다!)", 'confirm', () => {
-                    // Local Storage 비우기
-                    const keysToRemove = ['youtubeOrders', 'cardPayments', 'cashReceipts', 'shippingOverrides', 'matchedDeposits', 'sentAddressRequests', 'deletedDepositIds', 'checkedOrders', 'productInventory', 'productHistory', 'ignoredAutoMatch'].map(getLsKey);
-                    keysToRemove.forEach(k => window.localStorage.removeItem(k));
-                    
-                    // State 부드럽게 초기화 (새로고침 방지)
+                    const ordArr = Array.isArray(orders) ? orders : [];
                     setOrders([]);
                     setInventory([]);
                     setProductHistory({});
@@ -2301,10 +2413,9 @@
                     setDeletedDepositIds(new Set());
                     setCheckedOrders(new Set());
                     setClickedChats(new Set());
-                    
-                    openModal("화면의 모든 데이터가 안전하게 초기화되었습니다.", 'alert');
+                    openModal("화면 데이터가 안전하게 초기화되었습니다.", 'alert');
                 });
-            }, [openModal, setOrders, setInventory, setProductHistory, setShippingOverrides, setCardPayments, setCashReceipts, setMatchedDeposits, setSentAddressRequests, setDeletedDepositIds, setCheckedOrders, setClickedChats]);
+            }, [openModal]);
 
             const handleExportBackup = () => {
                 const backupData = [{ 
