@@ -6,14 +6,13 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>깔로 스마트 오더</title>
+    <title>주문서</title>
     
-    <!-- 로컬 파일 실행 시 보안(CORS) 에러가 나지 않도록 crossorigin 속성을 모두 제거했습니다 -->
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js" crossorigin="anonymous"></script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <script src="https://unpkg.com/@phosphor-icons/web" crossorigin="anonymous"></script>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <script src="https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
     
@@ -42,7 +41,7 @@
 <body class="transition-colors duration-300">
     <div id="root"></div>
     <script type="text/babel">
-        // 🔔 브라우저 내장 효과음 발생기
+        // 🔔 사운드 알림 모듈
         window.playAlertSound = (type) => {
             try {
                 const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -55,7 +54,6 @@
                 gainNode.connect(ctx.destination);
                 
                 if (type === 'match') {
-                    // "띠링~" (입금 매칭 성공)
                     osc.type = 'sine';
                     osc.frequency.setValueAtTime(880, ctx.currentTime);
                     osc.frequency.setValueAtTime(1318.51, ctx.currentTime + 0.1); 
@@ -64,7 +62,6 @@
                     osc.start();
                     osc.stop(ctx.currentTime + 0.4);
                 } else if (type === 'address') {
-                    // "뽁!" (새 주소 폼 접수)
                     osc.type = 'sine';
                     osc.frequency.setValueAtTime(600, ctx.currentTime);
                     osc.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.1);
@@ -133,6 +130,7 @@
             return new Date(0);
         };
 
+        // 전화번호의 0을 살려주는 마법의 함수
         const fixPhoneNumber = (numStr) => {
             if (!numStr) return '';
             let cleaned = String(numStr).replace(/[^0-9]/g, '');
@@ -196,6 +194,7 @@
                     const cell_address = {c:C, r:R}; const cell_ref = XLSX.utils.encode_cell(cell_address);
                     if(!ws[cell_ref]) continue; if(!ws[cell_ref].s) ws[cell_ref].s = {};
                     ws[cell_ref].s.alignment = { wrapText: true, vertical: 'top' };
+                    // 전화번호 열(010으로 시작)을 강제로 텍스트로 지정
                     if(ws[cell_ref].v && String(ws[cell_ref].v).startsWith('010')) {
                         ws[cell_ref].t = 's';
                     }
@@ -913,6 +912,9 @@
                     get: (nick) => {
                         if (!nick) return { data: null, conflict: null, type: 'none' };
                         const mappedTarget = addressMapping[nick];
+                        if (mappedTarget === 'UNMAPPED') {
+                            return { data: null, conflict: null, type: 'none' };
+                        }
                         if (mappedTarget) {
                             const mNick = normalizeString(mappedTarget);
                             const mAddr = masterMap[mNick] || rawMap[mNick];
@@ -1494,7 +1496,11 @@
                 }); 
             }, [openModal, setAddressMapping, addresses, googleScriptUrl, masterSheetId, setGlobalError]);
             
-            const handleAddressUnmapping = useCallback((orderNick) => { openModal(`주소 연결을 해제하시겠습니까?`, 'confirm', () => setAddressMapping(prev => { const next = { ...prev }; delete next[orderNick]; return next; })); }, [openModal, setAddressMapping]);
+            const handleAddressUnmapping = useCallback((orderNick) => { 
+                openModal(`주소 연결을 해제하시겠습니까?`, 'confirm', () => 
+                    setAddressMapping(prev => ({ ...prev, [orderNick]: 'UNMAPPED' }))
+                ); 
+            }, [openModal, setAddressMapping]);
 
             const handleProductChange = useCallback((id, field, value) => { 
                 if (field === 'product') setCurrentSearchTerm(value);
@@ -1707,7 +1713,16 @@
             const handleAddressClick = (addr) => { if (!selectedNick) return openModal("주소를 수동 연결할 주문자(닉네임)를 먼저 중앙에서 클릭하여 노란색으로 선택해주세요.", "alert"); handleAddressMapping(selectedNick, addr.nickname); };
             const handleCopyQuickMessage = (msg, idx) => { if (!msg || !msg.trim()) return; const textArea = document.createElement("textarea"); textArea.value = msg; document.body.appendChild(textArea); textArea.select(); try { document.execCommand('copy'); setQuickMsgCopyStatus(p => ({ ...p, [idx]: true })); setTimeout(() => setQuickMsgCopyStatus(p => ({ ...p, [idx]: false })), 1500); } catch (err) {} document.body.removeChild(textArea); };
             const handleDeleteDepositItem = (id) => { openModal("숨기시겠습니까?", 'confirm', () => { setManualDeposits(prev => prev.filter(d => d.id !== id)); setDeletedDepositIds(prev => new Set(prev).add(id)); setMatchedDeposits(prev => { const next = new Set(prev); next.delete(id); return next; }); }); };
-            const handleAddManualDeposit = (e) => { e.preventDefault(); if (!newDepositName.trim() || !newDepositAmount) return openModal("입금자명/금액 필수", 'alert'); const newDep = { id: `manual_${Date.now()}`, name: newDepositName, amount: newDepositAmount, source: 'manual' }; setManualDeposits(prev => [newDep, ...prev]); setNewDepositName(''); setNewDepositAmount(''); };
+            
+            // 시재 버튼(Manual Deposit)
+            const handleAddManualDeposit = (e) => { 
+                e.preventDefault(); 
+                if (!newDepositName.trim() || !newDepositAmount) return openModal("입금자명/금액 필수", 'alert'); 
+                const newDep = { id: `manual_${Date.now()}`, name: newDepositName, amount: newDepositAmount, source: 'manual' }; 
+                setManualDeposits(prev => [newDep, ...prev]); 
+                setNewDepositName(''); 
+                setNewDepositAmount(''); 
+            };
 
             const visibleDeposits = useMemo(() => {
                 if (depositSearch) return filteredDeposits; const unmatched = []; const matched = [];
@@ -1718,7 +1733,18 @@
             const usedAddressNicks = useMemo(() => {
                 const set = new Set();
                 const ordArr = Array.isArray(orders) ? orders : [];
-                ordArr.forEach(o => { if (!o.isCancelled) { const mappedTarget = addressMapping[o.customer]; if (mappedTarget) set.add(normalizeString(mappedTarget)); else set.add(normalizeString(o.customer)); } });
+                ordArr.forEach(o => { 
+                    if (!o.isCancelled) { 
+                        const mappedTarget = addressMapping[o.customer]; 
+                        if (mappedTarget === 'UNMAPPED') {
+                            // 무시 (해제됨)
+                        } else if (mappedTarget) {
+                            set.add(normalizeString(mappedTarget)); 
+                        } else { 
+                            set.add(normalizeString(o.customer)); 
+                        } 
+                    } 
+                });
                 return set;
             }, [orders, addressMapping]);
 
@@ -1969,8 +1995,14 @@
                             </div>
                             
                             <form onSubmit={handleAddManualDeposit} className="flex flex-col gap-1 bg-white dark:bg-slate-900 p-1 rounded border dark:border-slate-600">
-                                <div className="flex gap-1"><input type="text" value={newDepositName} onChange={(e)=>setNewDepositName(e.target.value)} placeholder="입금자" className="w-[50%] text-[10px] border dark:border-slate-600 rounded px-1 py-1 bg-transparent outline-none focus:ring-1 focus:ring-slate-500" /><input type="text" value={newDepositAmount ? Number(newDepositAmount).toLocaleString() : ''} onChange={(e)=>{ const val = e.target.value.replace(/,/g, ''); if(!isNaN(val)) setNewDepositAmount(val); }} placeholder="금액" className="w-[50%] text-[10px] border dark:border-slate-600 rounded px-1 py-1 bg-transparent text-right font-bold outline-none focus:ring-1 focus:ring-slate-500" /></div>
-                                <button type="submit" className="bg-slate-700 text-white text-[10px] font-bold py-1 rounded hover:bg-slate-800 transition-colors shadow-sm">추가</button>
+                                <div className="flex gap-1">
+                                    <input type="text" value={newDepositName} onChange={(e)=>setNewDepositName(e.target.value)} placeholder="입금자" className="w-[50%] text-[10px] border dark:border-slate-600 rounded px-1 py-1 bg-transparent outline-none focus:ring-1 focus:ring-slate-500" />
+                                    <input type="text" value={newDepositAmount ? Number(newDepositAmount).toLocaleString() : ''} onChange={(e)=>{ const val = e.target.value.replace(/,/g, ''); if(!isNaN(val)) setNewDepositAmount(val); }} placeholder="금액" className="w-[50%] text-[10px] border dark:border-slate-600 rounded px-1 py-1 bg-transparent text-right font-bold outline-none focus:ring-1 focus:ring-slate-500" />
+                                </div>
+                                <div className="flex gap-1 mt-0.5">
+                                    <button type="submit" className="flex-1 bg-slate-700 text-white text-[10px] font-bold py-1 rounded hover:bg-slate-800 transition-colors shadow-sm">추가</button>
+                                    <button type="button" onClick={(e) => { e.preventDefault(); openModal('입력할 시재(현금) 금액을 입력하세요.', 'prompt', (val) => { const amount = Number(String(val).replace(/,/g, '')); if (!amount || isNaN(amount)) return openModal('유효한 금액을 입력해주세요.', 'alert'); setManualDeposits(prev => [{ id: `manual_${Date.now()}`, name: '시재', amount: amount, source: 'manual' }, ...prev]); }); }} className="bg-amber-500 text-white text-[10px] font-bold py-1 px-3 rounded hover:bg-amber-600 transition-colors shadow-sm">시재</button>
+                                </div>
                             </form>
                             <div className="relative"><Icon name="magnifying-glass" className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-400 text-[10px]"/><input type="text" placeholder="검색" value={depositSearch} onChange={e => setDepositSearch(e.target.value)} onKeyDown={e => { if(e.key==='Escape'){ setDepositSearch(''); e.target.blur(); } }} className="w-full text-[10px] pl-6 pr-6 py-1.5 border dark:border-slate-600 rounded focus:ring-1 focus:ring-slate-500 outline-none bg-white dark:bg-slate-900" />{depositSearch && <button onClick={()=>setDepositSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><Icon name="x-circle" weight="fill" size={12}/></button>}</div>
                             {selectedNick && <div className="text-[10px] text-slate-700 dark:text-slate-300 bg-slate-200 dark:bg-slate-700 p-1 rounded text-center font-bold animate-pulse border border-slate-300 dark:border-slate-600 truncate">👇 '{selectedNick}' 대기</div>}
@@ -1981,7 +2013,7 @@
                                 return (
                                     <div key={d.id} onClick={() => handleDepositClick(d)} className={`relative flex items-center justify-between py-1.5 px-1.5 border rounded cursor-pointer transition-all group ${isUsed ? 'opacity-70 bg-slate-100 dark:bg-slate-800/80 border-transparent' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm'}`}>
                                         <div className="flex items-center gap-1 overflow-hidden min-w-0">
-                                            <span className={`text-[12px] truncate font-bold ${isUsed ? 'text-slate-400 dark:text-slate-500 line-through' : 'text-slate-800 dark:text-slate-100'}`}>{d.name}</span>
+                                            <span className={`text-[12px] truncate font-bold ${isUsed ? 'text-slate-400 dark:text-slate-500 line-through' : (d.name === '시재' ? 'text-amber-600 dark:text-amber-500' : 'text-slate-800 dark:text-slate-100')}`}>{d.name}</span>
                                             {d.source === 'manual' && <span className="text-[8px] text-slate-400 dark:text-slate-500 bg-slate-200 dark:bg-slate-700 px-0.5 rounded shrink-0">수동</span>}
                                         </div>
                                         <div className="flex items-center gap-1.5 shrink-0 ml-1">
@@ -2040,7 +2072,7 @@
                             <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between">
                                 <span className="flex items-center gap-1"><Icon name="package" weight="fill"/> 실시간 재고</span>
                                 <div className="flex items-center gap-1.5">
-                                    <span className="text-xs text-slate-500 dark:text-slate-400">{Array.isArray(inventory) ? inventory.length : 0}종</span>
+                                    <span className="text-xs text-slate-500 dark:text-slate-400">{inventory.length}종</span>
                                     <button onClick={(e) => { e.stopPropagation(); setIsBatchModalOpen(true); }} className="bg-slate-600 hover:bg-slate-700 text-white text-[9px] px-1.5 py-0.5 rounded shadow-sm transition-colors flex items-center gap-0.5" title="옵션 일괄 생성"><Icon name="list-plus" weight="bold"/> 일괄옵션</button>
                                 </div>
                             </div>
@@ -2197,7 +2229,7 @@
                     
                     if (isCard) { 
                         statusStr = '카드결제';
-                        const cardBase = Math.max(0, baseGrandTotal - depositTotal); 
+                        const cardBase = Math.max(0, baseGrandTotal - depositTotal);
                         if (depositTotal > 0) {
                             msg += `[카드결제]\n총 주문금액 ${baseGrandTotal.toLocaleString()}원\n선입금 ${depositTotal.toLocaleString()}원\n수수료(10%) ${(cardBase * 0.1).toLocaleString()}원\n👉결제요청액 ${(cardBase * 1.1).toLocaleString()}원 예정\n\n핸드폰번호 남겨주세요🌸\n------------------\n\n`; 
                         } else {
@@ -2437,7 +2469,6 @@
             const [orders, setOrders] = useLocalStorage('youtubeOrders', []);
             const [activeTab, setActiveTab] = useState('live');
             
-            // 🔥 누락되었던 팝업(모달) 상태 관리 변수 복구 완료!
             const [isVipModalOpen, setIsVipModalOpen] = useState(false);
             
             const [googleScriptUrl, setGoogleScriptUrl] = useLocalStorage('googleScriptUrl', '');
@@ -2513,7 +2544,6 @@
                     setCheckedOrders(new Set());
                     setClickedChats(new Set());
                     
-                    // 🔥 시트(서버)의 데이터까지 백지로 만들어서 부활 방지
                     if (googleScriptUrl && masterSheetId) {
                         try {
                             const cleanMaster = getCleanSheetId(masterSheetId);
