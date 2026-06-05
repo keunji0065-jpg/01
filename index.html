@@ -1878,7 +1878,7 @@
                     )}
 
                     {/* 채팅 영역 */}
-                    <div className="w-[18%] flex flex-col bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg shadow-sm overflow-hidden min-w-[180px]">
+                    <div className="w-[18%] flex flex-col bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg shadow-sm overflow-hidden min-w-[180px] resize-x shrink-0">
                         <div className="p-1.5 bg-slate-100 dark:bg-slate-900 border-b dark:border-slate-700 grid grid-cols-4 gap-1">
                             {quickMessages.map((msg, idx) => (
                                 <button key={idx} onClick={() => handleCopyQuickMessage(msg, idx)} className={`text-[10px] border rounded py-1 truncate transition-colors shadow-sm ${quickMsgCopyStatus[idx] ? 'bg-green-600 text-white font-bold' : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300'}`}>{quickMsgCopyStatus[idx] ? '✅ 복사완료' : (msg || "빈 메시지")}</button>
@@ -1914,7 +1914,7 @@
                     </div>
 
                     {/* 주문서 영역 */}
-                    <div className="w-[34%] bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg flex flex-col overflow-hidden shadow-sm min-w-[340px]">
+                    <div className="w-[34%] bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg flex flex-col overflow-hidden shadow-sm min-w-[340px] resize-x shrink-0">
                         <div className="grid grid-cols-4 gap-1 p-2 bg-slate-100 dark:bg-slate-800 border-b dark:border-slate-700 text-center text-[10px]">
                             {[{id:'all', label:'총매출', val:dashboardStats.totalSales, isCurrency:true, colSpan:2}, 
                               {id:'no-address', label:'주소없음', val:dashboardStats.missingAddressCount, isCurrency:false, onClick:handleNoAddressClick},
@@ -1987,7 +1987,7 @@
                     </div>
 
                     {/* 입금 영역 */}
-                    <div className="w-[14%] flex flex-col bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg overflow-hidden shadow-sm min-w-[120px]">
+                    <div className="w-[14%] flex flex-col bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg overflow-hidden shadow-sm min-w-[120px] resize-x shrink-0">
                         <div className="p-2 bg-slate-100 dark:bg-slate-800 border-b dark:border-slate-700 flex flex-col gap-2">
                             <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between">
                                 <span className="flex items-center gap-1"><Icon name="money" weight="fill"/> 입금 내역</span>
@@ -2029,7 +2029,7 @@
                     </div>
 
                     {/* 주소록 영역 */}
-                    <div className="w-[13%] flex flex-col bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg overflow-hidden shadow-sm min-w-[130px]">
+                    <div className="w-[13%] flex flex-col bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg overflow-hidden shadow-sm min-w-[130px] resize-x shrink-0">
                         <div className="p-2 bg-slate-100 dark:bg-slate-800 border-b dark:border-slate-700 flex flex-col gap-2">
                             <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between">
                                 <span className="flex items-center gap-1"><Icon name="address-book" weight="fill"/> 실시간 주소록</span>
@@ -2067,7 +2067,7 @@
                     </div>
 
                     {/* 재고 영역 */}
-                    <div className="w-[20%] flex flex-col bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg overflow-hidden shadow-sm min-w-[200px]">
+                    <div className="w-[20%] flex flex-col bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg overflow-hidden shadow-sm min-w-[200px] resize-x shrink-0">
                         <div className="p-2 bg-slate-100 dark:bg-slate-800 border-b dark:border-slate-700 flex flex-col gap-2 shrink-0">
                             <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between">
                                 <span className="flex items-center gap-1"><Icon name="package" weight="fill"/> 실시간 재고</span>
@@ -2109,7 +2109,7 @@
 
         const OrderManagementTab = ({ orders, shippingOverrides, quickShipping, jejuShipping, freeShippingThreshold, broadcastName, addresses, handleExportBackup, handleImportBackup, addressMapping, cardPayments, specialCustomers, openModal, cashReceipts, inventory, productHistory }) => {
             const findAddress = (nick) => {
-                if (addressMapping[nick]) return addresses.find(a => normalizeString(a.nickname) === normalizeString(addressMapping[nick]));
+                if (addressMapping[nick] && addressMapping[nick] !== 'UNMAPPED') return addresses.find(a => normalizeString(a.nickname) === normalizeString(addressMapping[nick]));
                 return addresses.find(a => normalizeString(a.nickname) === normalizeString(nick));
             };
 
@@ -2301,6 +2301,56 @@
                 downloadExcel(data, '현금영수증_요청리스트');
             };
 
+           const handleExportTopCustomers = () => {
+               const groups = {};
+               const ordArr = Array.isArray(orders) ? orders : [];
+               ordArr.forEach(o => {
+                   if (o.isCancelled) return;
+                   if (!groups[o.customer]) groups[o.customer] = [];
+                   groups[o.customer].push(o);
+               });
+
+               const customerTotals = [];
+               Object.entries(groups).forEach(([nick, items]) => {
+                   const isCard = cardPayments && cardPayments[nick];
+                   const productTotal = items.reduce((sum, i) => sum + Number(i.price), 0);
+                   const currentShipping = getCalculatedShipping(nick, productTotal);
+                   const baseGrandTotal = productTotal + (items.length > 0 ? currentShipping : 0);
+                   const depositTotal = items.reduce((sum, i) => sum + (i.deposit || 0), 0);
+                   
+                   const cardBase = Math.max(0, baseGrandTotal - depositTotal);
+                   const cardFee = (isCard && cardBase > 0) ? cardBase * 0.1 : 0;
+                   const grandTotal = baseGrandTotal + cardFee;
+
+                   const addrInfo = findAddress(nick) || {};
+
+                   customerTotals.push({
+                       nick,
+                       realname: addrInfo.realname || '',
+                       phone: fixPhoneNumber(addrInfo.phone) || '',
+                       grandTotal,
+                       depositTotal,
+                       isCard
+                   });
+               });
+
+               if (customerTotals.length === 0) { openModal("주문 내역이 없습니다.", "alert"); return; }
+
+               customerTotals.sort((a, b) => b.grandTotal - a.grandTotal);
+
+               const data = customerTotals.map((c, index) => ({
+                   '순위': index + 1,
+                   '닉네임': c.nick,
+                   '이름': c.realname,
+                   '연락처': c.phone,
+                   '총 주문금액': c.grandTotal,
+                   '입금액': c.depositTotal,
+                   '결제방식': c.isCard ? '카드결제' : '무통장/현금'
+               }));
+
+               downloadExcel(data, '매출상위_고객리스트');
+           };
+
            const handlePrintPackingList = () => {
                const groups = {};
                const ordArr = Array.isArray(orders) ? orders : [];
@@ -2360,56 +2410,6 @@
                const printWin = window.open('', '_blank', 'width=450,height=650');
                if (printWin) { printWin.document.open(); printWin.document.write(printContent); printWin.document.close(); } 
                else { openModal("팝업 차단이 설정되어 있습니다. 브라우저 설정에서 팝업을 허용해 주세요.", "alert"); }
-           };
-
-           const handleExportTopCustomers = () => {
-               const groups = {};
-               const ordArr = Array.isArray(orders) ? orders : [];
-               ordArr.forEach(o => {
-                   if (o.isCancelled) return;
-                   if (!groups[o.customer]) groups[o.customer] = [];
-                   groups[o.customer].push(o);
-               });
-
-               const customerTotals = [];
-               Object.entries(groups).forEach(([nick, items]) => {
-                   const isCard = cardPayments && cardPayments[nick];
-                   const productTotal = items.reduce((sum, i) => sum + Number(i.price), 0);
-                   const currentShipping = getCalculatedShipping(nick, productTotal);
-                   const baseGrandTotal = productTotal + (items.length > 0 ? currentShipping : 0);
-                   const depositTotal = items.reduce((sum, i) => sum + (i.deposit || 0), 0);
-                   
-                   const cardBase = Math.max(0, baseGrandTotal - depositTotal);
-                   const cardFee = (isCard && cardBase > 0) ? cardBase * 0.1 : 0;
-                   const grandTotal = baseGrandTotal + cardFee;
-
-                   const addrInfo = findAddress(nick) || {};
-
-                   customerTotals.push({
-                       nick,
-                       realname: addrInfo.realname || '',
-                       phone: fixPhoneNumber(addrInfo.phone) || '',
-                       grandTotal,
-                       depositTotal,
-                       isCard
-                   });
-               });
-
-               if (customerTotals.length === 0) { openModal("주문 내역이 없습니다.", "alert"); return; }
-
-               customerTotals.sort((a, b) => b.grandTotal - a.grandTotal);
-
-               const data = customerTotals.map((c, index) => ({
-                   '순위': index + 1,
-                   '닉네임': c.nick,
-                   '이름': c.realname,
-                   '연락처': c.phone,
-                   '총 주문금액': c.grandTotal,
-                   '입금액': c.depositTotal,
-                   '결제방식': c.isCard ? '카드결제' : '무통장/현금'
-               }));
-
-               downloadExcel(data, '매출상위_고객리스트');
            };
 
            const fileInputRef = useRef(null); 
@@ -2480,11 +2480,11 @@
             const [bankAccount, setBankAccount] = useLocalStorage('bankAccount', FIXED_BANK_ACCOUNT);
             
             useEffect(() => {
-                setChatSheetId('199YCBXzInxmG8GforoRCNHNps21NhVIf9wHA6NXXhtg');
-                setDepSheetId('14bx2HMd_NID3zQN-Hb0x0At2Qmti7-p1Zfx1ZadNScY');
-                setAddrSheetId('1ywl4gRvswQpvIYtPVbSROzz7a5elbLieYhqMZmt191U');
-                setGoogleScriptUrl('https://script.google.com/macros/s/AKfycbxmzti9c3GQ1ON-xUDKE2Qf0Lm8o9-CB2bU3S3WoPRzbL0Zea07n5i3sF_ltWN7mJx8/exec');
-                setMasterSheetId('1B8SBMX18_Px1CpRHuDTxqodqudiTrf6NfVoptjHtnGQ');
+                if (!chatSheetId || chatSheetId.trim() === '') setChatSheetId('199YCBXzInxmG8GforoRCNHNps21NhVIf9wHA6NXXhtg');
+                if (!depSheetId || depSheetId.trim() === '') setDepSheetId('14bx2HMd_NID3zQN-Hb0x0At2Qmti7-p1Zfx1ZadNScY');
+                if (!addrSheetId || addrSheetId.trim() === '') setAddrSheetId('1ywl4gRvswQpvIYtPVbSROzz7a5elbLieYhqMZmt191U');
+                if (!googleScriptUrl || googleScriptUrl.trim() === '') setGoogleScriptUrl('https://script.google.com/macros/s/AKfycbxmzti9c3GQ1ON-xUDKE2Qf0Lm8o9-CB2bU3S3WoPRzbL0Zea07n5i3sF_ltWN7mJx8/exec');
+                if (!masterSheetId || masterSheetId.trim() === '') setMasterSheetId('1B8SBMX18_Px1CpRHuDTxqodqudiTrf6NfVoptjHtnGQ');
             }, []);
 
             const [quickShipping, setQuickShipping] = useLocalStorage('quickShipping', 4000); 
