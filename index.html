@@ -6,13 +6,14 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>주문서</title>
+    <title>깔로 스마트 오더</title>
     
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin="anonymous"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js" crossorigin="anonymous"></script>
+    <!-- 로컬 파일 실행 시 보안(CORS) 에러가 나지 않도록 crossorigin 속성을 모두 제거했습니다 -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/@phosphor-icons/web" crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <script src="https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
     
@@ -98,13 +99,15 @@
             return new Date(0);
         };
 
+        // 전화번호 010 유지, 하이픈 제거 기능
         const fixPhoneNumber = (numStr) => {
             if (!numStr) return '';
             let cleaned = String(numStr).replace(/[^0-9]/g, '');
             if (cleaned.length === 10 && !cleaned.startsWith('0')) cleaned = '0' + cleaned;
-            return cleaned;
+            return cleaned; 
         };
 
+        // GAS 통신 에러 방어력 강화
         const fetchGas = async (url, payload = null) => {
             const options = { method: payload ? 'POST' : 'GET', redirect: "follow" };
             if (payload) {
@@ -161,6 +164,7 @@
                     const cell_address = {c:C, r:R}; const cell_ref = XLSX.utils.encode_cell(cell_address);
                     if(!ws[cell_ref]) continue; if(!ws[cell_ref].s) ws[cell_ref].s = {};
                     ws[cell_ref].s.alignment = { wrapText: true, vertical: 'top' };
+                    // 엑셀에서도 전화번호 010 유지되도록 문자열(string)로 강제 지정
                     if(ws[cell_ref].v && String(ws[cell_ref].v).startsWith('010')) {
                         ws[cell_ref].t = 's';
                     }
@@ -286,6 +290,52 @@
             );
         };
 
+        const VIPManagementModal = ({ isOpen, onClose, specialCustomers, setSpecialCustomers, openModal }) => {
+            const [newVipNick, setNewVipNick] = useState('');
+            if (!isOpen) return null;
+            
+            const vipList = Object.entries(specialCustomers || {}).filter(([nick, data]) => data.type === 'vip');
+            
+            const handleAddVip = (e) => {
+                e.preventDefault(); const cleanNick = newVipNick.trim(); if (!cleanNick) return;
+                setSpecialCustomers(prev => {
+                    const nickNorm = normalizeString(cleanNick); 
+                    const existingKey = Object.keys(prev).find(k => normalizeString(k) === nickNorm);
+                    if (existingKey && prev[existingKey].type === 'vip') { if (openModal) openModal("이미 등록된 VIP입니다.", "alert"); return prev; }
+                    return { ...prev, [cleanNick]: { type: 'vip', memo: '', purchaseCount: 0, noShowCount: 0 } };
+                });
+                setNewVipNick('');
+            };
+            
+            const handleRemoveVip = (nickToRemove) => { setSpecialCustomers(prev => { const next = { ...prev }; delete next[nickToRemove]; return next; }); };
+            
+            return (
+                <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[9999] animate-pop" onClick={onClose}>
+                    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl p-6 w-full max-w-md mx-4 flex flex-col max-h-[80vh]" onClick={e => e.stopPropagation()}>
+                        <div className="mb-4 border-b dark:border-slate-700 pb-3 flex justify-between items-center shrink-0">
+                            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2"><Icon name="crown" weight="fill" /> VIP 특별 관리 대장</h3>
+                            <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><Icon name="x" weight="bold" size={20}/></button>
+                        </div>
+                        <form onSubmit={handleAddVip} className="flex gap-2 mb-4 shrink-0">
+                            <input type="text" value={newVipNick} onChange={e=>setNewVipNick(e.target.value)} placeholder="추가할 VIP 닉네임" className="flex-1 border dark:border-slate-600 rounded px-3 py-2 text-sm bg-transparent dark:text-white" />
+                            <button type="submit" className="bg-slate-700 text-white px-4 py-2 rounded text-sm font-bold shadow-sm">추가</button>
+                        </form>
+                        <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+                            {vipList.length === 0 ? (<div className="text-center text-slate-500 py-8 text-sm">등록된 VIP가 없습니다.</div>) : (
+                                vipList.map(([nick, data]) => (
+                                    <div key={nick} className="flex justify-between items-center p-2.5 border dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-700/50">
+                                        <span className="font-bold text-slate-800 dark:text-slate-100">{nick}</span>
+                                        <button onClick={() => handleRemoveVip(nick)} className="text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 p-1.5 rounded text-xs font-bold flex items-center gap-1"><Icon name="trash" weight="bold" /> 해제</button>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                        <div className="mt-4 pt-3 border-t dark:border-slate-700 text-[10px] text-slate-500 text-center">💡 VIP로 등록된 고객은 주문 시 자동으로 배송비가 0원 처리됩니다.</div>
+                    </div>
+                </div>
+            );
+        };
+
         const SettingsField = ({ label, value, onChange, placeholder, type="text" }) => (
             <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">{label}</label>
@@ -365,7 +415,7 @@
             );
         };
 
-        const InventoryItemRow = memo(({ item, orders, setOrders, inventory, setInventory, setProductHistory, openModal, expandedInventoryItem, setExpandedInventoryItem, setManualProduct, setCurrentSearchTerm, setManualPrice, setIsFixedProductMode, customerPaidStatus, saveInventoryToServer }) => {
+        const InventoryItemRow = memo(({ item, orders, setOrders, inventory, setInventory, setProductHistory, openModal, expandedInventoryItem, setExpandedInventoryItem, setManualProduct, setCurrentSearchTerm, setManualPrice, setIsFixedProductMode, customerPaidStatus, googleScriptUrl, masterSheetId }) => {
             const [isEditing, setIsEditing] = useState(false);
             const [localName, setLocalName] = useState(item.name);
             const [localPrice, setLocalPrice] = useState(item.price === 0 || item.price === '' ? '' : Number(item.price).toLocaleString());
@@ -401,9 +451,15 @@
                 const oldNameClean = cleanForMatch(item.name);
                 const invArr = Array.isArray(inventory) ? inventory : [];
                 const newInv = invArr.map(i => i.id === item.id ? { ...i, name: newName, price: newPrice } : i);
-                setInventory(newInv);
-                saveInventoryToServer(newInv); 
                 
+                setInventory(newInv);
+                
+                // 재고 수정 즉시 다이렉트 서버 저장
+                if (googleScriptUrl && masterSheetId) {
+                    fetchGas(googleScriptUrl, { action: 'save_inventory', masterId: getCleanSheetId(masterSheetId), data: newInv.map(i => ({ name: i.name, price: i.price })) }).catch(e=>console.log(e));
+                }
+                
+                // 주문서 일괄 변경 동기화
                 if (newName !== item.name || newPrice !== item.price) {
                     setOrders(prev => {
                         const prevArr = Array.isArray(prev) ? prev : [];
@@ -424,7 +480,11 @@
                     const invArr = Array.isArray(inventory) ? inventory : [];
                     const newInv = invArr.filter(i => i.id !== item.id);
                     setInventory(newInv);
-                    saveInventoryToServer(newInv); 
+                    
+                    // 삭제 즉시 다이렉트 서버 저장 (0개라도 저장)
+                    if (googleScriptUrl && masterSheetId) {
+                        fetchGas(googleScriptUrl, { action: 'save_inventory', masterId: getCleanSheetId(masterSheetId), data: newInv.map(i => ({ name: i.name, price: i.price })) }).catch(e=>console.log(e));
+                    }
                 }); 
             };
 
@@ -527,14 +587,14 @@
             useEffect(() => { setLocalPrice(item.price === '' || item.price === 0 ? '' : Number(item.price).toLocaleString()); }, [item.price]);
             
             return (
-                <div className={`flex justify-between items-center text-xs px-1 py-0.5 rounded group transition-colors ${item.isCancelled ? 'bg-red-50/80 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30' : (item.isUnmodified ? 'bg-blue-100 dark:bg-blue-900/50 border-2 border-blue-400 dark:border-blue-600 shadow-sm my-0.5' : 'hover:bg-slate-100 dark:hover:bg-slate-700 border-2 border-transparent')}`}>
+                <div className={`flex justify-between items-center text-xs px-1 py-0.5 rounded group transition-colors ${item.isCancelled ? 'bg-red-50/80 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30' : (item.isRawChat ? 'bg-blue-100 dark:bg-blue-900/50 border-2 border-blue-400 dark:border-blue-600 shadow-sm my-0.5' : 'hover:bg-slate-100 dark:hover:bg-slate-700 border-2 border-transparent')}`}>
                     <div className="flex-1 flex gap-1 items-center">
                         {item.isCancelled && <span className="text-[9px] text-red-500 font-bold shrink-0">[취소]</span>}
                         <input id={`prod-input-${item.id}`} type="text" list="product-list" value={localProduct} 
                             onChange={(e) => setLocalProduct(e.target.value)} onClick={(e) => e.stopPropagation()} 
                             onFocus={(e) => { 
                                 e.target.select(); setSelectedNick(nick); 
-                                if(item.isUnmodified) handleProductChange(item.id, 'isUnmodified', false); 
+                                if(item.isRawChat) handleProductChange(item.id, 'isRawChat', false); 
                             }} 
                             onBlur={() => { 
                                 if (localProduct !== item.product) handleProductChange(item.id, 'product', localProduct); 
@@ -544,7 +604,7 @@
                                     e.preventDefault(); handleProductChange(item.id, 'product', localProduct); document.getElementById(`qty-input-${item.id}`)?.focus(); 
                                 } 
                             }} 
-                            className={`w-full outline-none px-1 rounded bg-transparent font-bold ${item.isCancelled ? 'text-slate-400 line-through' : (item.isUnmodified ? 'text-blue-700 dark:text-blue-300' : 'dark:text-slate-200')}`} placeholder="상품명" disabled={item.isCancelled} />
+                            className={`w-full outline-none px-1 rounded bg-transparent font-bold ${item.isCancelled ? 'text-slate-400 line-through' : (item.isRawChat ? 'text-blue-700 dark:text-blue-300' : 'dark:text-slate-200')}`} placeholder="상품명" disabled={item.isCancelled} />
                     </div>
                     <div className="flex items-center gap-1 group shrink-0">
                         <div className="relative flex items-center">
@@ -552,23 +612,23 @@
                                 onChange={(e) => setLocalQty(e.target.value)} onClick={(e) => e.stopPropagation()} 
                                 onFocus={(e) => { 
                                     e.target.select(); setSelectedNick(nick); 
-                                    if(item.isUnmodified) handleProductChange(item.id, 'isUnmodified', false); 
+                                    if(item.isRawChat) handleProductChange(item.id, 'isRawChat', false); 
                                 }} 
                                 onBlur={() => { const q = localQty === '' || isNaN(parseInt(localQty)) ? '' : parseInt(localQty); if (q !== item.quantity) handleQuantityUpdate(item.id, q); }} 
                                 onKeyDown={(e) => { if(e.key==='Enter') { e.preventDefault(); document.getElementById(`price-input-${item.id}`)?.focus(); } }} 
-                                className={`w-12 text-right pr-4 font-bold outline-none rounded py-0.5 ${item.isCancelled ? 'text-[11px] bg-transparent line-through text-slate-400 cursor-not-allowed' : `${Number(localQty) >= 2 ? 'text-[12px] text-red-600 bg-red-50' : (item.isUnmodified ? 'text-blue-700 dark:text-blue-300' : 'text-[11px] text-slate-800 dark:text-slate-200')} hover:bg-slate-200 bg-transparent`}`} disabled={item.isCancelled} />
-                            <span className={`absolute right-1 pointer-events-none ${Number(localQty) >= 2 && !item.isCancelled ? 'text-[10px] text-red-600 font-bold' : (item.isUnmodified ? 'text-blue-500' : 'text-[10px] text-slate-500')}`}>개</span>
+                                className={`w-12 text-right pr-4 font-bold outline-none rounded py-0.5 ${item.isCancelled ? 'text-[11px] bg-transparent line-through text-slate-400 cursor-not-allowed' : `${Number(localQty) >= 2 ? 'text-[12px] text-red-600 bg-red-50' : (item.isRawChat ? 'text-blue-700 dark:text-blue-300' : 'text-[11px] text-slate-800 dark:text-slate-200')} hover:bg-slate-200 bg-transparent`}`} disabled={item.isCancelled} />
+                            <span className={`absolute right-1 pointer-events-none ${Number(localQty) >= 2 && !item.isCancelled ? 'text-[10px] text-red-600 font-bold' : (item.isRawChat ? 'text-blue-500' : 'text-[10px] text-slate-500')}`}>개</span>
                         </div>
                         <input id={`price-input-${item.id}`} type="text" value={localPrice} 
                             onChange={(e) => { const val = e.target.value.replace(/,/g, ''); if (!isNaN(val) && val !== '') setLocalPrice(Number(val).toLocaleString()); else if (val === '') setLocalPrice(''); }} 
                             onClick={(e) => e.stopPropagation()} 
                             onFocus={(e) => { 
                                 e.target.select(); setSelectedNick(nick); 
-                                if(item.isUnmodified) handleProductChange(item.id, 'isUnmodified', false); 
+                                if(item.isRawChat) handleProductChange(item.id, 'isRawChat', false); 
                             }} 
                             onBlur={() => { const val = String(localPrice).replace(/,/g, ''); if (!isNaN(val) && Number(val) !== Number(item.price)) { handleProductChange(item.id, 'price', val); } }} 
                             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const val = String(localPrice).replace(/,/g, ''); if (!isNaN(val) && Number(val) !== Number(item.price)) { handleProductChange(item.id, 'price', val); } if (!isLast && nextItemId) { document.getElementById(`prod-input-${nextItemId}`)?.focus(); } else { addOrderLogic(nick, '', 1, true, item.id); } } }} 
-                            className={`w-16 text-right bg-transparent outline-none px-1 rounded font-bold ${item.isCancelled ? 'line-through text-slate-400 cursor-not-allowed' : (item.isUnmodified ? 'text-blue-700 dark:text-blue-300' : 'text-slate-700 hover:bg-slate-100')} ${Number(item.price) === 0 && !item.isCancelled ? 'bg-red-50 border-b border-red-300' : ''}`} disabled={item.isCancelled} />
+                            className={`w-16 text-right bg-transparent outline-none px-1 rounded font-bold ${item.isCancelled ? 'line-through text-slate-400 cursor-not-allowed' : (item.isRawChat ? 'text-blue-700 dark:text-blue-300' : 'text-slate-700 hover:bg-slate-100')} ${Number(item.price) === 0 && !item.isCancelled ? 'bg-red-50 border-b border-red-300' : ''}`} disabled={item.isCancelled} />
                         <button onClick={(e)=>{e.stopPropagation(); handleOrderCancel(item.id); setSelectedNick(nick);}} className={`ml-1 ${item.isCancelled ? "text-slate-500" : "text-slate-300 hover:text-red-500"}`} title={item.isCancelled ? "취소 철회" : "주문 취소"}><Icon name={item.isCancelled ? "arrow-u-up-left" : "prohibit"} weight="bold"/></button>
                         <button onClick={(e)=>{e.stopPropagation(); handleOrderDelete(item.id); setSelectedNick(nick);}} className="text-slate-300 hover:text-red-500 ml-1"><Icon name="trash" weight="bold"/></button>
                     </div>
@@ -587,6 +647,7 @@
             const suggestions = useMemo(() => findAddressSuggestions ? findAddressSuggestions(nick) : [], [nick, findAddressSuggestions]);
             const isVip = useMemo(() => { const nickNorm = normalizeString(nick); const key = Object.keys(specialCustomers || {}).find(k => normalizeString(k) === nickNorm); return key && specialCustomers[key].type === 'vip'; }, [specialCustomers, nick]);
 
+            // 전화번호 화면 표시용
             const cleanPhoneDisplay = fixPhoneNumber(addr?.phone);
 
             return (
@@ -621,6 +682,7 @@
                                         <span className="text-green-700 shrink-0 flex items-center gap-0.5"><Icon name="house-line" weight="fill" /> <span className="font-bold">{addr.realname}</span></span>
                                         <span className="text-slate-500 shrink-0 font-medium">{cleanPhoneDisplay}</span>
                                         <span className="text-slate-700 dark:text-slate-300 truncate flex-1 ml-1" title={`${addr.address} ${addr.memo}`}>{addr.address}{addr.memo && <span className="text-red-500 font-bold ml-1.5">[{addr.memo}]</span>}</span>
+                                        {/* 주소 해제 버튼 추가 */}
                                         <button onClick={(e) => { e.stopPropagation(); handleAddressUnmapping(nick); }} className="opacity-0 group-hover:opacity-100 text-[10px] bg-white dark:bg-slate-800 hover:bg-red-50 dark:hover:bg-red-900/30 text-slate-500 hover:text-red-600 px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-600 hover:border-red-300 flex items-center gap-0.5 shrink-0 shadow-sm transition-all ml-auto" title="주소 연결 해제"><Icon name="link-break" weight="bold" /> 해제</button>
                                     </div>
                                 ) : (
@@ -665,7 +727,7 @@
             if (pItems.length !== nItems.length) return false;
             for (let i = 0; i < pItems.length; i++) {
                 const pItem = pItems[i], nItem = nItems[i];
-                if (pItem.product !== nItem.product || pItem.quantity !== nItem.quantity || pItem.price !== nItem.price || pItem.isCancelled !== nItem.isCancelled || pItem.deposit !== nItem.deposit || pItem.isUnmodified !== nItem.isUnmodified) return false;
+                if (pItem.product !== nItem.product || pItem.quantity !== nItem.quantity || pItem.price !== nItem.price || pItem.isCancelled !== nItem.isCancelled || pItem.deposit !== nItem.deposit || pItem.isRawChat !== nItem.isRawChat) return false;
             }
             return true;
         });
@@ -1184,9 +1246,6 @@
                         if (aN.startsWith(term) && !bN.startsWith(term)) return -1; if (!aN.startsWith(term) && bN.startsWith(term)) return 1;
                     }
                     
-                    if (selectedNick === a[0]) return -1;
-                    if (selectedNick === b[0]) return 1;
-                    
                     const aIdx = sortOrderCache.current.indexOf(a[0]); 
                     const bIdx = sortOrderCache.current.indexOf(b[0]);
                     if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx;
@@ -1255,7 +1314,7 @@
                 setClickedChats(prev => new Set(prev).add(chat.id)); 
                 const finalProduct = (isFixedProductMode && manualProduct.trim() !== '') ? manualProduct.trim() : String(chat.content || ''); 
                 const finalPrice = isFixedProductMode ? manualPrice : null; 
-                addOrderLogic(chat.nickname, finalProduct, 1, true, null, finalPrice, isFixedProductMode); 
+                addOrderLogic(chat.nickname, finalProduct, 1, true, null, finalPrice, isFixedProductMode, false, true); 
             };
             
             const handleAddKeyword = (e) => { e.preventDefault(); const kw = keywordInput.trim(); if(!kw) return; setKeywords(prev => { const next = [...(prev || [])]; if(!next.includes(kw)) next.push(kw); return next; }); setKeywordInput(''); };
@@ -1421,11 +1480,13 @@
                         targetOrder.product = value;
                         targetOrder.price = (Number(targetOrder.quantity) || 0) * uPrice;
                         targetOrder.isUnmodified = false;
+                        targetOrder.isRawChat = false;
                     } 
                     else if (field === 'price') {
                         const valNum = Number(String(value).replace(/,/g, ''));
                         targetOrder.price = valNum;
                         targetOrder.isUnmodified = false;
+                        targetOrder.isRawChat = false;
 
                         const cleanProd = String(targetOrder.product || '').trim();
                         const qty = Number(targetOrder.quantity) || 0;
@@ -1448,14 +1509,14 @@
 
                             updatedOrders = updatedOrders.map(o => {
                                 if (o.id !== id && String(o.product).trim() === cleanProd) {
-                                    return { ...o, price: (Number(o.quantity) || 0) * uPrice, isUnmodified: false };
+                                    return { ...o, price: (Number(o.quantity) || 0) * uPrice, isUnmodified: false, isRawChat: false };
                                 }
                                 return o;
                             });
                         }
                     }
-                    else if (field === 'isUnmodified') {
-                        targetOrder.isUnmodified = value;
+                    else if (field === 'isRawChat' || field === 'isUnmodified') {
+                        targetOrder[field] = value;
                     }
                     
                     return updatedOrders;
@@ -1471,7 +1532,7 @@
                             const invItem = Array.isArray(inv) ? inv.find(i => String(i.name).trim() === cleanProd) : null;
                             const unitPrice = invItem ? Number(invItem.price) : (hist[cleanProd] || (o.quantity > 0 ? o.price/o.quantity : 0));
                             const validQty = (newQtyVal === '' || isNaN(parseInt(newQtyVal))) ? '' : parseInt(newQtyVal);
-                            return { ...o, quantity: validQty, price: unitPrice * (Number(validQty) || 0), isUnmodified: false }; 
+                            return { ...o, quantity: validQty, price: unitPrice * (Number(validQty) || 0), isUnmodified: false, isRawChat: false }; 
                         } 
                         return o; 
                     });
@@ -1536,7 +1597,7 @@
                 else { setOrders(prev => { let done = false; const prevArr = Array.isArray(prev) ? prev : []; return prevArr.map(o => { if (o.customer === nick && !done) { done = true; return { ...o, deposit: grandTotal }; } return o; }); }); } 
             }, [setOrders]);
 
-            const addOrderLogic = useCallback((nick, content, qty = 1, force = false, afterId = null, customPrice = null, markAsModified = false, isAuto = false) => {
+            const addOrderLogic = useCallback((nick, content, qty = 1, force = false, afterId = null, customPrice = null, markAsModified = false, isAuto = false, isRawChat = false) => {
                 const cNick = String(nick).replace(/@/g, '').trim(); const cContent = String(content || '').trim();
                 const inv = inventoryRef.current; const hist = productHistoryRef.current;
                 const invItem = Array.isArray(inv) ? inv.find(i => String(i.name).trim() === cContent) : null;
@@ -1572,7 +1633,7 @@
                             const prevArr = Array.isArray(prev) ? prev : [];
                             return prevArr.map(o => {
                                 if (String(o.product).trim() === cContent) {
-                                    return { ...o, price: (Number(o.quantity) || 0) * priceToSave };
+                                    return { ...o, price: (Number(o.quantity) || 0) * priceToSave, isRawChat: false };
                                 }
                                 return o;
                             });
@@ -1582,12 +1643,12 @@
 
                 if (!isAuto) { setCheckedOrders(prev => { const n = new Set(prev); n.delete(cNick); return n; }); setSelectedNick(cNick); setOrderSearch(''); }
                 
-                const newOrder = { id: Date.now() + Math.random(), customer: cNick, product: cContent, quantity: qty, price: Number(price) * qty, deposit: 0, isCancelled: false, isUnmodified: !markAsModified, isSentToEmp: false };
+                const newOrder = { id: Date.now() + Math.random(), customer: cNick, product: cContent, quantity: qty, price: Number(price) * qty, deposit: 0, isCancelled: false, isUnmodified: !markAsModified, isSentToEmp: false, isRawChat: isRawChat };
                 setOrders(prev => {
                     const prevArr = Array.isArray(prev) ? prev : [];
                     if (!afterId && !force && cContent !== '') {
                         const existIdx = prevArr.findIndex(o => o.customer === cNick && o.product === cContent && !o.isCancelled);
-                        if (existIdx !== -1) { const next = [...prevArr]; next[existIdx] = { ...next[existIdx], quantity: next[existIdx].quantity + qty, price: (next[existIdx].quantity + qty) * price, isUnmodified: !markAsModified }; return next; }
+                        if (existIdx !== -1) { const next = [...prevArr]; next[existIdx] = { ...next[existIdx], quantity: next[existIdx].quantity + qty, price: (next[existIdx].quantity + qty) * price, isUnmodified: !markAsModified, isRawChat: false }; return next; }
                     }
                     if (afterId) { const idx = prevArr.findIndex(o => o.id === afterId); if (idx !== -1) { const next = [...prevArr]; next.splice(idx + 1, 0, newOrder); return next; } }
                     return [newOrder, ...prevArr];
@@ -1843,7 +1904,7 @@
                                 </form>
                                 <div className="w-[20%] relative h-full flex items-center min-w-[80px]">
                                     <Icon name="magnifying-glass" className="absolute left-1.5 top-1/2 -translate-y-1/2 text-slate-400 text-[10px]"/>
-                                    <input type="text" placeholder="주문자/상품 검색" value={orderSearch} onChange={e => setOrderSearch(e.target.value)} onKeyDown={e => { if(e.key==='Escape'){ setOrderSearch(''); e.target.blur(); } }} className="w-full h-full pl-6 pr-1 py-1.5 border dark:border-slate-600 rounded text-[10px] outline-none focus:ring-1 focus:ring-slate-500 bg-white dark:bg-slate-800 dark:text-white shadow-sm" />
+                                    <input type="text" placeholder="검색" value={orderSearch} onChange={e => setOrderSearch(e.target.value)} onKeyDown={e => { if(e.key==='Escape'){ setOrderSearch(''); e.target.blur(); } }} className="w-full h-full pl-6 pr-1 py-1.5 border dark:border-slate-600 rounded text-[10px] outline-none focus:ring-1 focus:ring-slate-500 bg-white dark:bg-slate-800 dark:text-white shadow-sm" />
                                 </div>
                             </div>
                         </div>
@@ -1932,7 +1993,7 @@
                                         <div className="text-[11px] text-slate-600 dark:text-slate-400 font-medium flex items-center gap-1 w-full overflow-hidden mt-0.5">
                                             <span className="shrink-0">{addr.realname}</span>
                                             <span className="text-slate-400 shrink-0">|</span>
-                                            <span className="shrink-0">{fixPhoneNumber(addr.phone)}</span>
+                                            <span className="shrink-0">{addr.phone}</span>
                                             <span className="text-slate-700 dark:text-slate-300 truncate flex-1 ml-1" title={`${addr.address} ${addr.memo}`}>{addr.address}{addr.memo && <span className="text-red-500 font-bold ml-1.5">[{addr.memo}]</span>}</span>
                                         </div>
                                     </div>
@@ -1973,7 +2034,7 @@
                         <div className="flex-1 overflow-y-auto p-1.5 space-y-1.5 bg-slate-50 dark:bg-slate-900">
                             {sortedInventoryList.map(item => (
                                 <InventoryItemRow 
-                                    key={item.id} item={item} orders={orders} setOrders={setOrders} inventory={inventory} setInventory={setInventory} setProductHistory={setProductHistory} openModal={openModal} expandedInventoryItem={expandedInventoryItem} setExpandedInventoryItem={setExpandedInventoryItem} setManualProduct={setManualProduct} setCurrentSearchTerm={setCurrentSearchTerm} setManualPrice={setManualPrice} setIsFixedProductMode={setIsFixedProductMode} customerPaidStatus={customerPaidStatus} saveInventoryToServer={saveInventoryToServer}
+                                    key={item.id} item={item} orders={orders} setOrders={setOrders} inventory={inventory} setInventory={setInventory} setProductHistory={setProductHistory} openModal={openModal} expandedInventoryItem={expandedInventoryItem} setExpandedInventoryItem={setExpandedInventoryItem} setManualProduct={setManualProduct} setCurrentSearchTerm={setCurrentSearchTerm} setManualPrice={setManualPrice} setIsFixedProductMode={setIsFixedProductMode} customerPaidStatus={customerPaidStatus} saveInventoryToServer={saveInventoryToServer} googleScriptUrl={googleScriptUrl} masterSheetId={masterSheetId}
                                 />
                             ))}
                         </div>
@@ -2104,7 +2165,7 @@
                     
                     if (isCard) { 
                         statusStr = '카드결제';
-                        const cardBase = Math.max(0, baseGrandTotal - depositTotal); // 잔금 (총액 - 입금액)
+                        const cardBase = Math.max(0, baseGrandTotal - depositTotal); 
                         if (depositTotal > 0) {
                             msg += `[카드결제]\n총 주문금액 ${baseGrandTotal.toLocaleString()}원\n선입금 ${depositTotal.toLocaleString()}원\n수수료(10%) ${(cardBase * 0.1).toLocaleString()}원\n👉결제요청액 ${(cardBase * 1.1).toLocaleString()}원 예정\n\n핸드폰번호 남겨주세요🌸\n------------------\n\n`; 
                         } else {
@@ -2272,7 +2333,7 @@
 
                if (customerTotals.length === 0) { openModal("주문 내역이 없습니다.", "alert"); return; }
 
-               // 최종 금액 기준 내림차순 정렬 (높은 순 -> 낮은 순)
+               // 최종 금액 기준 내림차순 정렬
                customerTotals.sort((a, b) => b.grandTotal - a.grandTotal);
 
                const data = customerTotals.map((c, index) => ({
@@ -2353,13 +2414,13 @@
             const [broadcastName, setBroadcastName] = useLocalStorage('broadcastName', '오늘의방송');
             const [bankAccount, setBankAccount] = useLocalStorage('bankAccount', FIXED_BANK_ACCOUNT);
             
-            // 캐시에 빈 값이 들어있을 경우 강제로 덮어씌우기 (초기 세팅용)
+            // 캐시를 강제로 덮어씌워 통신 오류 원천 차단
             useEffect(() => {
-                if (!chatSheetId || chatSheetId.trim() === '') setChatSheetId('199YCBXzInxmG8GforoRCNHNps21NhVIf9wHA6NXXhtg');
-                if (!depSheetId || depSheetId.trim() === '') setDepSheetId('14bx2HMd_NID3zQN-Hb0x0At2Qmti7-p1Zfx1ZadNScY');
-                if (!addrSheetId || addrSheetId.trim() === '') setAddrSheetId('1ywl4gRvswQpvIYtPVbSROzz7a5elbLieYhqMZmt191U');
-                if (!googleScriptUrl || googleScriptUrl.trim() === '') setGoogleScriptUrl('https://script.google.com/macros/s/AKfycbxmzti9c3GQ1ON-xUDKE2Qf0Lm8o9-CB2bU3S3WoPRzbL0Zea07n5i3sF_ltWN7mJx8/exec');
-                if (!masterSheetId || masterSheetId.trim() === '') setMasterSheetId('1B8SBMX18_Px1CpRHuDTxqodqudiTrf6NfVoptjHtnGQ');
+                setChatSheetId('199YCBXzInxmG8GforoRCNHNps21NhVIf9wHA6NXXhtg');
+                setDepSheetId('14bx2HMd_NID3zQN-Hb0x0At2Qmti7-p1Zfx1ZadNScY');
+                setAddrSheetId('1ywl4gRvswQpvIYtPVbSROzz7a5elbLieYhqMZmt191U');
+                setGoogleScriptUrl('https://script.google.com/macros/s/AKfycbzuY0VQoFxfMxyW7TmqQAOz-4REYxLmi9HH9wLvY7w0TQ1GLX-jMbWraDPjjMsAGa8N/exec');
+                setMasterSheetId('1B8SBMX18_Px1CpRHuDTxqodqudiTrf6NfVoptjHtnGQ');
             }, []);
 
             const [quickShipping, setQuickShipping] = useLocalStorage('quickShipping', 4000); 
@@ -2403,9 +2464,9 @@
                 setModalConfig({ isOpen: true, type: t, message: m, onConfirm: (v) => { if (oc) oc(v); setModalConfig(p => ({ ...p, isOpen: false })); }, onCancel: () => { if (ocan) ocan(); setModalConfig(p => ({ ...p, isOpen: false })); }, initialValue: iv }); 
             }, []);
 
+            // 부드러운 초기화 (새로고침 없이 상태값만 0으로 비움)
             const handleResetAllData = useCallback(() => {
                 openModal("방송 데이터를 완전히 초기화하시겠습니까?\n(입금내역, 주문서, 재고 기록이 영구 삭제됩니다.\n※ 주소록 및 VIP 명단은 절대 지워지지 않습니다!)", 'confirm', () => {
-                    const ordArr = Array.isArray(orders) ? orders : [];
                     setOrders([]);
                     setInventory([]);
                     setProductHistory({});
