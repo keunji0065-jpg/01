@@ -289,6 +289,46 @@
             </div>
         );
 
+        const VipModal = ({ isOpen, onClose, specialCustomers, setSpecialCustomers }) => {
+            const [newVip, setNewVip] = useState('');
+            if (!isOpen) return null;
+            
+            const handleAdd = (e) => {
+                e.preventDefault();
+                if(!newVip.trim()) return;
+                const norm = normalizeString(newVip);
+                setSpecialCustomers(prev => ({...prev, [norm]: { type: 'vip', originalName: newVip.trim() }}));
+                setNewVip('');
+            };
+            const handleRemove = (key) => {
+                setSpecialCustomers(prev => { const next = {...prev}; delete next[key]; return next; });
+            };
+            
+            return (
+                <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[9999] animate-pop" onClick={onClose}>
+                    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl p-6 w-full max-w-sm mx-4" onClick={e => e.stopPropagation()}>
+                        <div className="mb-4 border-b dark:border-slate-700 pb-3 flex justify-between items-center">
+                            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2"><Icon name="crown" weight="fill" className="text-amber-500" /> VIP 관리대장</h3>
+                            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><Icon name="x" weight="bold" size={20}/></button>
+                        </div>
+                        <form onSubmit={handleAdd} className="flex gap-2 mb-4">
+                            <input type="text" value={newVip} onChange={e=>setNewVip(e.target.value)} placeholder="VIP 닉네임 입력" className="flex-1 border dark:border-slate-600 rounded px-3 py-2 text-sm bg-slate-50 dark:bg-slate-900 dark:text-slate-100 outline-none" autoFocus />
+                            <button type="submit" className="bg-slate-700 text-white px-3 py-2 rounded text-sm font-bold whitespace-nowrap shadow-sm hover:bg-slate-800">추가</button>
+                        </form>
+                        <div className="max-h-60 overflow-y-auto space-y-1">
+                            {Object.entries(specialCustomers || {}).map(([key, val]) => (
+                                <div key={key} className="flex justify-between items-center bg-slate-50 dark:bg-slate-700/50 p-2 rounded border dark:border-slate-600">
+                                    <span className="font-bold text-sm text-slate-800 dark:text-slate-200">{val.originalName || key}</span>
+                                    <button onClick={()=>handleRemove(key)} className="text-red-500 hover:text-red-700 text-xs font-bold px-2 py-1 bg-red-50 dark:bg-red-900/30 rounded transition-colors">삭제</button>
+                                </div>
+                            ))}
+                            {Object.keys(specialCustomers || {}).length === 0 && <div className="text-center text-slate-500 text-sm py-4">등록된 VIP가 없습니다.</div>}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
         const SettingsModalContent = ({ 
             googleScriptUrl, setGoogleScriptUrl, 
             chatSheetId, setChatSheetId, depSheetId, setDepSheetId, addrSheetId, setAddrSheetId, masterSheetId, setMasterSheetId, 
@@ -428,7 +468,7 @@
                             </div>
                         ) : (
                             <>
-                                <div className={`flex-1 font-bold truncate pr-1 cursor-pointer select-none ${item.isSoldOut ? 'text-red-500 line-through decoration-red-300 dark:text-red-400' : 'text-slate-800 dark:text-slate-200'}`} title="클릭: 복사 / 더블클릭: 자동 고정 입력"
+                                <div className={`flex-1 font-bold truncate pr-1 cursor-pointer select-none ${item.isSoldOut ? 'text-red-500 dark:text-red-400' : 'text-slate-800 dark:text-slate-200'}`} title="클릭: 복사 / 더블클릭: 자동 고정 입력"
                                     onClick={(e) => {
                                         e.stopPropagation();
                                         const textArea = document.createElement("textarea"); textArea.value = item.name; document.body.appendChild(textArea); textArea.select();
@@ -440,7 +480,6 @@
                                         setIsFixedProductMode(true); document.getElementById('manual-prod-input')?.focus();
                                     }}
                                 >
-                                    {item.isSoldOut && <span className="text-red-600 dark:text-red-400 mr-1.5 font-black">[품절]</span>}
                                     {item.name}
                                 </div>
                                 <button onClick={(e) => { e.stopPropagation(); handleToggleSoldOut(); }} className={`px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0 mx-1 shadow-sm transition-colors ${item.isSoldOut ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-slate-200 text-slate-600 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600'}`}>{item.isSoldOut ? '판매' : '품절'}</button>
@@ -1264,7 +1303,7 @@
                 return safeContent.split(pattern).map((part, i) => kwArray.includes(part) ? <span key={i} className="text-slate-700 dark:text-slate-300 font-bold bg-slate-200 dark:bg-slate-600 px-0.5 rounded">{part}</span> : part);
             }, []);
 
-            const handleChatClick = (chat) => { bringToTopAndScroll(chat.nickname); setClickedChats(prev => new Set(prev).add(chat.id)); const finalProduct = (isFixedProductMode && manualProduct.trim() !== '') ? manualProduct.trim() : String(chat.content || ''); const finalPrice = isFixedProductMode ? manualPrice : null; addOrderLogic(chat.nickname, finalProduct, 1, true, null, finalPrice, isFixedProductMode); };
+            const handleChatClick = (chat) => { bringToTopAndScroll(chat.nickname); setClickedChats(prev => new Set(prev).add(chat.id)); const finalProduct = (isFixedProductMode && manualProduct.trim() !== '') ? manualProduct.trim() : String(chat.content || ''); const finalPrice = isFixedProductMode ? manualPrice : null; addOrderLogic(chat.nickname, finalProduct, 1, true, null, finalPrice, isFixedProductMode, true); };
             const handleAddKeyword = (e) => { e.preventDefault(); const kw = keywordInput.trim(); if(!kw) return; setKeywords(prev => { const next = [...(prev || [])]; if(!next.includes(kw)) next.push(kw); return next; }); setKeywordInput(''); };
             const handleRemoveKeyword = (keyword) => { setKeywords(prev => (prev || []).filter(k => k !== keyword)); };
 
@@ -1273,6 +1312,25 @@
                     setAddresses([]); openModal("화면에서 주소록이 비워졌습니다.", 'alert');
                 });
             }, [openModal, setAddresses]);
+
+            const handleAddressNickEdit = useCallback((addr) => {
+                openModal(`[${addr.nickname}] 님의 주소록 닉네임을 변경합니다.\n수정할 닉네임을 입력하세요.`, 'prompt', (newNick) => {
+                    if (newNick && newNick.trim() !== '' && newNick !== addr.nickname) {
+                        const finalNick = newNick.trim();
+                        const updatedAddr = { ...addr, nickname: finalNick, _source: 'master', timestamp: new Date().toISOString() };
+                        
+                        setAddresses(prev => {
+                            const filtered = prev.filter(a => a.nickname !== addr.nickname);
+                            return [...filtered, updatedAddr];
+                        });
+
+                        if (googleScriptUrl && masterSheetId) {
+                            const payloadToGas = { ...updatedAddr, phone: updatedAddr.phone ? "'" + updatedAddr.phone : '', zipcode: updatedAddr.zipcode ? "'" + updatedAddr.zipcode : '' };
+                            fetchGas(googleScriptUrl, { action: 'save_master_address', masterId: getCleanSheetId(masterSheetId), data: payloadToGas }).catch(()=>{});
+                        }
+                    }
+                }, null, addr.nickname);
+            }, [openModal, setAddresses, googleScriptUrl, masterSheetId]);
 
             const handleNoAddressClick = useCallback(() => {
                 setFilterStatus('no-address');
@@ -1486,10 +1544,18 @@
                 } 
                 else { 
                     const isPaid = (balance <= 0) && (grandTotal >= 0) && (activeItems.length > 0); 
-                    if (depositTotal > 0) msg += `[입금확인]\n${depositTotal.toLocaleString()}원\n------------------\n\n`; 
+                    if (depositTotal > 0 && balance <= 0) {
+                        msg += `[입금확인]\n${depositTotal.toLocaleString()}원\n------------------\n\n`; 
+                    } else if (depositTotal > 0 && balance > 0) {
+                        msg += `[입금확인]\n${depositTotal.toLocaleString()}원 (일부 입금)\n------------------\n\n`; 
+                    }
                     
                     if (balance > 0) {
-                        msg += `${unpaidPrefix}\n${balance.toLocaleString()}원 \n\n${bankAccount}\n입금 부탁드립니다 🙏\n------------------\n\n`; 
+                        if (depositTotal > 0) {
+                            msg += `[부분 미수 안내]\n남은 미수금 👉 ${balance.toLocaleString()}원\n\n${bankAccount}\n추가 입금 부탁드립니다 🙏\n------------------\n\n`; 
+                        } else {
+                            msg += `${unpaidPrefix}\n${balance.toLocaleString()}원 \n\n${bankAccount}\n입금 부탁드립니다 🙏\n------------------\n\n`; 
+                        }
                     } else if (balance < 0) {
                         msg += `${paidMsg}\n\n[과납 안내]\n과납액: ${Math.abs(balance).toLocaleString()}원\n${overpaidMsg}\n------------------\n`;
                     } else {
@@ -1774,6 +1840,7 @@
                                                     const val = e.target.value;
                                                     setManualProduct(val); 
                                                     setCurrentSearchTerm(val);
+                                                    // ✨ 빠른 입력: 즉시 단가 반영 로직 추가
                                                     const invItem = Array.isArray(inventory) ? inventory.find(i => String(i.name).trim() === String(val).trim()) : null;
                                                     const uPrice = invItem ? Number(invItem.price) : (productHistory[val] || 0);
                                                     if (uPrice > 0) setManualPrice(uPrice.toLocaleString());
@@ -1880,9 +1947,12 @@
                                 return (
                                     <div key={`${addr.phone}-${idx}`} onClick={() => handleAddressClick(addr)} className={`relative flex flex-col p-1.5 border rounded cursor-pointer transition-all ${isUsed ? 'opacity-60 bg-slate-100 dark:bg-slate-800/80 border-transparent' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm'}`}>
                                         <div className="flex justify-between items-center gap-1">
-                                            <span className={`text-[12px] font-bold truncate ${isUsed ? 'text-slate-500 dark:text-slate-400' : 'text-slate-800 dark:text-slate-200'}`} title={addr.nickname}>
-                                                {addr.nickname}
-                                            </span>
+                                            <div className="flex items-center min-w-0 flex-1">
+                                                <span className={`text-[12px] font-bold truncate ${isUsed ? 'text-slate-500 dark:text-slate-400' : 'text-slate-800 dark:text-slate-200'}`} title={addr.nickname}>
+                                                    {addr.nickname}
+                                                </span>
+                                                <button onClick={(e) => { e.stopPropagation(); handleAddressNickEdit(addr); }} className="text-slate-400 hover:text-blue-500 shrink-0 ml-1 p-0.5" title="닉네임 변경"><Icon name="pencil-simple" weight="bold" size={10}/></button>
+                                            </div>
                                             <div className="flex items-center gap-1 shrink-0">
                                                 {isUsed ? <span className="text-[8px] font-bold text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900/30 px-1 py-0.5 rounded shrink-0">연결됨</span> : <span className="text-[9px] text-slate-400 dark:text-slate-500 shrink-0">수동매칭 대기</span>}
                                                 <button onClick={(e) => { e.stopPropagation(); setQuickAddrModal({ isOpen: true, nick: addr.nickname, editData: addr }); }} className="text-slate-400 hover:text-slate-700 transition-colors bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 rounded p-0.5" title="주소 수정"><Icon name="pencil-simple" weight="bold" size={12}/></button>
@@ -2002,13 +2072,14 @@
                     const depositTotal = items.reduce((sum, i) => sum + (i.deposit || 0), 0); 
                     const grandTotal = productTotal + (activeItems.length > 0 ? currentShipping : 0); 
                     const isPaid = (depositTotal >= grandTotal) || isCard;
-                    return { nick, items: activeItems, isPaid, isCard, depositTotal, grandTotal };
+                    const balance = grandTotal - depositTotal;
+                    return { nick, items: activeItems, isPaid, isCard, depositTotal, grandTotal, balance };
                 });
 
                 const getStatusPriority = (entry) => { if (entry.isPaid && !entry.isCard) return 1; if (entry.isCard) return 2; return 3; };
                 entries.sort((a, b) => { const pA = getStatusPriority(a); const pB = getStatusPriority(b); if (pA !== pB) return pA - pB; return a.nick.localeCompare(b.nick); });
 
-                let excelRows = []; entries.forEach(({ nick, items, isPaid, isCard }) => { 
+                let excelRows = []; entries.forEach(({ nick, items, isPaid, isCard, depositTotal, grandTotal, balance }) => { 
                     if(items.length === 0) return; 
                     const addrInfo = addresses.find(a => normalizeString(a.nickname) === normalizeString(nick)) || {}; 
                     const fullAddress = addrInfo.zipcode ? `(${addrInfo.zipcode}) ${addrInfo.address || ''}` : (addrInfo.address || ''); 
@@ -2017,7 +2088,7 @@
                     let cleanPhone = String(addrInfo.phone || '').replace(/[^0-9]/g, '');
                     if (cleanPhone.length === 10 && !cleanPhone.startsWith('0')) cleanPhone = '0' + cleanPhone;
 
-                    const statusColumn = isCard ? "카드결제" : (isPaid ? "" : "미입금");
+                    const statusColumn = isCard ? "카드결제" : (isPaid ? "완납" : (depositTotal > 0 ? `부분입금(미수 ${balance.toLocaleString()})` : `미입금(미수 ${balance.toLocaleString()})`));
                     const createRow = (productValue) => ({ '날짜시간': new Date().toLocaleString(), '공란1': '', '입금상태': statusColumn, '닉네임': nick, '주문제품(수량)': productValue, '이름': addrInfo.realname || '', '핸드폰번호': cleanPhone, '주소': fullAddress, '배송메모': addrInfo.memo || '' }); 
                     excelRows.push(createRow(`[ ${nick} ]`)); items.forEach(item => { const qtyPart = item.quantity > 1 ? ` ★${item.quantity}개` : ''; excelRows.push(createRow(`${item.product}${qtyPart}`)); }); 
                 }); 
@@ -2070,11 +2141,19 @@
                         }
                     } else { 
                         const isPaid = (balance <= 0) && (grandTotal >= 0); 
-                        if (depositTotal > 0) msg += `[입금확인]\n${depositTotal.toLocaleString()}원\n------------------\n\n`; 
+                        if (depositTotal > 0 && balance <= 0) {
+                            msg += `[입금확인]\n${depositTotal.toLocaleString()}원\n------------------\n\n`; 
+                        } else if (depositTotal > 0 && balance > 0) {
+                            msg += `[입금확인]\n${depositTotal.toLocaleString()}원 (일부 입금)\n------------------\n\n`; 
+                        }
                         
                         if (balance > 0) {
-                            statusStr = '미입금';
-                            msg += `${templateConfigLocal.unpaidPrefix}\n${balance.toLocaleString()}원 \n\n${bankStr}\n입금 부탁드립니다 🙏\n------------------\n\n`; 
+                            statusStr = depositTotal > 0 ? `부분입금(미수 ${balance.toLocaleString()})` : `미입금(미수 ${balance.toLocaleString()})`;
+                            if (depositTotal > 0) {
+                                msg += `[부분 미수 안내]\n남은 미수금 👉 ${balance.toLocaleString()}원\n\n${bankStr}\n추가 입금 부탁드립니다 🙏\n------------------\n\n`; 
+                            } else {
+                                msg += `${templateConfigLocal.unpaidPrefix}\n${balance.toLocaleString()}원 \n\n${bankStr}\n입금 부탁드립니다 🙏\n------------------\n\n`; 
+                            }
                         } else if (balance < 0) {
                             statusStr = '과납';
                             msg += `${templateConfigLocal.paidMsg}\n\n[과납 안내]\n과납액: ${Math.abs(balance).toLocaleString()}원\n${overpaidMsg}\n------------------\n`;
@@ -2300,6 +2379,7 @@
             const [quickMessages, setQuickMessages] = useLocalStorage('quickMessages', ["안녕하세요! 주문은 하단 링크 클릭💙", "⚠️ 주소 미입력시 배송 보류!", "문의는 카톡 채널로🙏", "확인 중입니다🥰"]);
 
             const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+            const [isVipModalOpen, setIsVipModalOpen] = useState(false);
             const [modalConfig, setModalConfig] = useState({ isOpen: false, type: 'alert', message: '', onConfirm: null });
             const [globalError, setGlobalError] = useState('');
 
@@ -2405,6 +2485,7 @@
                                 ))}
                             </div>
                             <button onClick={()=>setIsDarkMode(!isDarkMode)} className="p-2 hover:bg-slate-800 rounded border border-slate-700 ml-2"><Icon name={isDarkMode ? 'sun' : 'moon'} weight="fill" size={20}/></button>
+                            <button onClick={()=>setIsVipModalOpen(true)} className="p-2 hover:bg-slate-800 rounded border border-slate-700 text-amber-400" title="VIP 관리"><Icon name="crown" weight="fill" size={20}/></button>
                             <button onClick={()=>setIsSettingsOpen(!isSettingsOpen)} className="p-2 hover:bg-slate-800 rounded border border-slate-700"><Icon name="gear" weight="fill" size={20}/></button>
                         </div>
                     </header>
@@ -2413,6 +2494,8 @@
                     
                     <Modal isOpen={modalConfig.isOpen} type={modalConfig.type} message={modalConfig.message} onConfirm={modalConfig.onConfirm} onCancel={modalConfig.onCancel} initialValue={modalConfig.initialValue} />
                     
+                    <VipModal isOpen={isVipModalOpen} onClose={() => setIsVipModalOpen(false)} specialCustomers={specialCustomers} setSpecialCustomers={setSpecialCustomers} />
+
                     {isSettingsOpen && (
                         <SettingsModalContent 
                             googleScriptUrl={googleScriptUrl} setGoogleScriptUrl={setGoogleScriptUrl}
