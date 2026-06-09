@@ -717,7 +717,7 @@
                                 </div>
                                 
                                 <div onClick={(e) => { e.stopPropagation(); openModal(`'${nick}'님의 입금자명(실명)을 입력하세요.`, 'prompt', (newName) => { if(newName !== null) setDepositorNames(prev => ({...prev, [nick]: newName})); }, null, depositorNames[nick] || ''); }} className={`cursor-pointer flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border hover:bg-slate-100 transition-colors ml-1 shrink-0 ${depositorNames[nick] ? 'bg-slate-200 text-slate-700 border-slate-400' : (isAutoDepositor ? 'bg-green-50 text-green-700 border-green-200' : 'bg-white text-slate-500 border-slate-300')}`} title={isAutoDepositor ? "주소록 실명 연동됨 (클릭하여 수정)" : "실명 입금자 등록"}><Icon name="user" weight={depositorNames[nick] || isAutoDepositor ? "fill" : "regular"}/> <span>{displayDepositorName}</span></div>
-                                <div onClick={(e) => { e.stopPropagation(); handleFullDepositToggle(nick, baseGrandTotal, depositTotal); }} className={`cursor-pointer ml-1 flex items-center gap-1 px-1.5 py-0.5 rounded border transition-colors shrink-0 ${isPaidState ? 'bg-green-600 border-green-700 text-white shadow-inner' : 'bg-white border-slate-300 text-slate-500 hover:bg-slate-100'}`} title={isPaidState ? "입금 완료됨 (클릭시 취소)" : "클릭시 전액 입금 처리"}><Icon name={isPaidState ? "toggle-right" : "toggle-left"} weight="fill" size={16} /><span className="text-[10px] font-bold">{isPaidState ? "완납" : "미납"}</span></div>
+                                <div onClick={(e) => { e.stopPropagation(); handleFullDepositToggle(nick, baseGrandTotal, depositTotal); }} className={`cursor-pointer ml-1 flex items-center gap-1 px-1.5 py-0.5 rounded border transition-colors shrink-0 ${isPaidState ? 'bg-green-600 border-green-700 text-white shadow-inner' : 'bg-white border-slate-300 text-slate-500 hover:bg-slate-100'}`} title={isPaidState ? "입금 완료됨 (클릭시 취소)" : "클릭시 부족한 금액을 수동입금으로 채우고 완납 처리"}><Icon name={isPaidState ? "toggle-right" : "toggle-left"} weight="fill" size={16} /><span className="text-[10px] font-bold">{isPaidState ? "완납" : "미납"}</span></div>
                                 <button onClick={(e) => { e.stopPropagation(); copyOrderSheet(nick, items, baseGrandTotal, depositTotal, balance, isCard, addr); }} className={`ml-1 flex items-center gap-1 px-2 py-0.5 rounded border transition-colors shrink-0 ${copyStatus[nick] ? 'bg-green-100 border-green-300 text-green-700' : 'bg-[#FEE500] border-[#E5CE00] text-gray-900 hover:bg-[#FADA0A] active:scale-95'}`} title="주문서 카톡 복사"><Icon name={copyStatus[nick] ? "check" : "chat-circle-dots"} weight="fill" size={16}/><span className="text-[10px] font-bold">카톡</span></button>
                                 <div onClick={(e) => { e.stopPropagation(); handleOrderCheckToggle(nick); }} className="ml-1 cursor-pointer flex items-center shrink-0" title="주문 확인 체크"><input type="checkbox" checked={isOrderConfirmed} readOnly className="custom-checkbox" /></div>
                             </div>
@@ -1289,8 +1289,7 @@
                 orders.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); });
                 
                 Object.entries(groups).forEach(([nick, items]) => {
-                    if (selectedNick === nick) { items.sort((a, b) => a.id - b.id); } 
-                    else { items.sort((a, b) => String(a.product || '').localeCompare(String(b.product || ''), 'ko', { numeric: true })); }
+                    items.sort((a, b) => String(a.product || '').localeCompare(String(b.product || ''), 'ko', { numeric: true }));
                 });
 
                 let entries = Object.entries(groups).filter(([nick, items]) => {
@@ -1328,11 +1327,6 @@
                 });
 
                 entries.sort((a, b) => {
-                    if (selectedNick) {
-                        if (a[0] === selectedNick && b[0] !== selectedNick) return -1;
-                        if (a[0] !== selectedNick && b[0] === selectedNick) return 1;
-                    }
-
                     if (deferredOrderSearch) {
                         const term = String(deferredOrderSearch).toLowerCase().replace(/\s/g, '');
                         const aN = String(a[0]).toLowerCase().replace(/\s/g, ''); 
@@ -1670,9 +1664,28 @@
             }, [addressLookup, getCalculatedShipping, templateConfig, bankAccount, sentAddressRequests, setSentAddressRequests, setCheckedOrders, openModal, broadcastName]);
 
             const handleFullDepositToggle = useCallback((nick, grandTotal, currentDeposit) => { 
-                if (currentDeposit >= grandTotal) { setOrders(prev => prev.map(o => o.customer === nick ? { ...o, deposit: 0 } : o)); } 
-                else { setOrders(prev => { let done = false; return prev.map(o => { if (o.customer === nick && !done) { done = true; return { ...o, deposit: grandTotal }; } return o; }); }); } 
-            }, [setOrders]);
+                if (currentDeposit >= grandTotal) { 
+                    setOrders(prev => prev.map(o => o.customer === nick ? { ...o, deposit: 0 } : o)); 
+                } else { 
+                    const diff = grandTotal - currentDeposit;
+                    if (diff > 0) {
+                        const newDepId = `manual_auto_${Date.now()}_${Math.random()}`;
+                        const newDep = { id: newDepId, name: nick, amount: diff, source: 'manual' };
+                        setManualDeposits(prev => [newDep, ...prev]);
+                        setMatchedDeposits(prev => new Set(prev).add(newDepId));
+                        setOrders(prev => {
+                            let done = false;
+                            return prev.map(o => {
+                                if (o.customer === nick && !done) {
+                                    done = true;
+                                    return { ...o, deposit: (o.deposit || 0) + diff };
+                                }
+                                return o;
+                            });
+                        });
+                    }
+                } 
+            }, [setOrders, setManualDeposits, setMatchedDeposits]);
 
             const addOrderLogic = useCallback((nick, content, qty = 1, force = false, afterId = null, customPrice = null, markAsModified = false, isAuto = false) => {
                 const cNick = String(nick).replace(/@/g, '').trim(); const cContent = String(content || '').trim();
@@ -1779,14 +1792,22 @@
                 
                 if (selectedNick) {
                     const targetClean = normalizeString(selectedNick);
+                    const addrRes = addressLookup.get(selectedNick);
+                    const targetReal = addrRes && addrRes.data ? normalizeString(addrRes.data.realname) : '';
                     res.sort((a, b) => {
-                        const aMatch = normalizeString(a.nickname) === targetClean;
-                        const bMatch = normalizeString(b.nickname) === targetClean;
-                        if (aMatch && !bMatch) return -1; if (!aMatch && bMatch) return 1; return 0; 
+                        const aNickMatch = normalizeString(a.nickname).includes(targetClean);
+                        const bNickMatch = normalizeString(b.nickname).includes(targetClean);
+                        const aRealMatch = targetReal && normalizeString(a.realname).includes(targetReal);
+                        const bRealMatch = targetReal && normalizeString(b.realname).includes(targetReal);
+                        
+                        const aScore = (normalizeString(a.nickname) === targetClean ? 3 : 0) + (aNickMatch ? 1 : 0) + (aRealMatch ? 1 : 0);
+                        const bScore = (normalizeString(b.nickname) === targetClean ? 3 : 0) + (bNickMatch ? 1 : 0) + (bRealMatch ? 1 : 0);
+                        
+                        return bScore - aScore;
                     });
                 }
                 return res;
-            }, [addresses, addressSearch, selectedNick, addressMapping]);
+            }, [addresses, addressSearch, selectedNick, addressMapping, addressLookup]);
 
             const handleQuickAddProduct = async (e) => {
                 e.preventDefault();
