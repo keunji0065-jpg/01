@@ -349,6 +349,83 @@
             );
         };
 
+        const RankingModal = ({ isOpen, onClose, orders, specialCustomers, setSpecialCustomers }) => {
+            const customerStats = useMemo(() => {
+                const stats = {};
+                orders.forEach(o => {
+                    if (o.isCancelled) return;
+                    if (!stats[o.customer]) stats[o.customer] = { totalAmount: 0, itemCount: 0 };
+                    stats[o.customer].totalAmount += Number(o.price);
+                    stats[o.customer].itemCount += Number(o.quantity) || 1;
+                });
+                return Object.entries(stats)
+                    .map(([nick, data]) => ({ nick, ...data }))
+                    .filter(c => c.totalAmount > 0)
+                    .sort((a, b) => b.totalAmount - a.totalAmount);
+            }, [orders]);
+
+            if (!isOpen) return null;
+
+            const handleAddVip = (nick) => {
+                const norm = normalizeString(nick);
+                setSpecialCustomers(prev => ({...prev, [norm]: { type: 'vip', originalName: nick }}));
+            };
+
+            return (
+                <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[9999] animate-pop" onClick={onClose}>
+                    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-md mx-4 flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
+                        <div className="p-4 border-b dark:border-slate-700 flex justify-between items-center shrink-0">
+                            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                                <Icon name="trophy" weight="fill" className="text-yellow-500" /> 오늘 방송 구매왕 랭킹
+                            </h3>
+                            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><Icon name="x" weight="bold" size={20}/></button>
+                        </div>
+                        <div className="p-4 overflow-y-auto flex-1 space-y-2 scrollbar-hide">
+                            <div className="text-center text-xs text-slate-500 mb-2">실제 구매 금액(취소건 제외/배송비 제외) 기준입니다.</div>
+                            {customerStats.length === 0 ? (
+                                <div className="text-center text-slate-500 py-8 text-sm">아직 주문 내역이 없습니다.</div>
+                            ) : (
+                                customerStats.map((c, idx) => {
+                                    const isVip = specialCustomers && specialCustomers[normalizeString(c.nick)]?.type === 'vip';
+                                    let rankBadge = <span className="w-6 h-6 flex items-center justify-center bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-full text-xs font-bold shrink-0">{idx + 1}</span>;
+                                    if (idx === 0) rankBadge = <span className="w-6 h-6 flex items-center justify-center bg-yellow-100 text-yellow-600 border border-yellow-300 rounded-full text-xs font-bold shrink-0 shadow-sm text-sm">1</span>;
+                                    if (idx === 1) rankBadge = <span className="w-6 h-6 flex items-center justify-center bg-gray-100 text-gray-500 border border-gray-300 rounded-full text-xs font-bold shrink-0 shadow-sm text-sm">2</span>;
+                                    if (idx === 2) rankBadge = <span className="w-6 h-6 flex items-center justify-center bg-orange-100 text-orange-600 border border-orange-300 rounded-full text-xs font-bold shrink-0 shadow-sm text-sm">3</span>;
+
+                                    return (
+                                        <div key={c.nick} className="flex items-center justify-between bg-slate-50 dark:bg-slate-700/50 p-2.5 rounded-lg border dark:border-slate-600/50 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
+                                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                                                {rankBadge}
+                                                <div className="flex flex-col min-w-0 pr-2">
+                                                    <span className="font-bold text-sm text-slate-800 dark:text-slate-200 truncate flex items-center gap-1">
+                                                        {c.nick}
+                                                        {isVip && <Icon name="crown" weight="fill" className="text-amber-500 text-[12px] shrink-0" title="VIP 고객"/>}
+                                                    </span>
+                                                    <span className="text-[10px] text-slate-500 dark:text-slate-400">총 {c.itemCount}개 상품</span>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-3 shrink-0">
+                                                <span className="font-bold text-sm sm:text-[15px] text-blue-600 dark:text-blue-400 text-right">
+                                                    {c.totalAmount.toLocaleString()}<span className="text-[10px] text-slate-500 dark:text-slate-400 ml-0.5">원</span>
+                                                </span>
+                                                {!isVip ? (
+                                                    <button onClick={() => handleAddVip(c.nick)} className="px-2 py-1.5 bg-slate-700 text-white text-[10px] rounded hover:bg-slate-800 transition-colors shadow-sm whitespace-nowrap font-bold">
+                                                        VIP 등록
+                                                    </button>
+                                                ) : (
+                                                    <div className="w-[52px]"></div> 
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
         const SettingsModalContent = ({ 
             googleScriptUrl, setGoogleScriptUrl, 
             chatSheetId, setChatSheetId, depSheetId, setDepSheetId, addrSheetId, setAddrSheetId, masterSheetId, setMasterSheetId, 
@@ -2413,6 +2490,7 @@
 
             const [isSettingsOpen, setIsSettingsOpen] = useState(false);
             const [isVipModalOpen, setIsVipModalOpen] = useState(false);
+            const [isRankingModalOpen, setIsRankingModalOpen] = useState(false);
             const [modalConfig, setModalConfig] = useState({ isOpen: false, type: 'alert', message: '', onConfirm: null });
             const [globalError, setGlobalError] = useState('');
 
@@ -2515,9 +2593,10 @@
                                     <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`px-3 py-1.5 rounded text-sm font-bold flex items-center gap-1 transition-all ${activeTab === tab.id ? 'bg-slate-200 text-slate-900' : 'text-slate-400 hover:text-white'}`}><Icon name={tab.icon} weight="bold"/> {tab.label}</button>
                                 ))}
                             </div>
-                            <button onClick={()=>setIsDarkMode(!isDarkMode)} className="p-2 hover:bg-slate-800 rounded border border-slate-700 ml-2"><Icon name={isDarkMode ? 'sun' : 'moon'} weight="fill" size={20}/></button>
-                            <button onClick={()=>setIsVipModalOpen(true)} className="p-2 hover:bg-slate-800 rounded border border-slate-700 text-amber-400" title="VIP 관리"><Icon name="crown" weight="fill" size={20}/></button>
-                            <button onClick={()=>setIsSettingsOpen(!isSettingsOpen)} className="p-2 hover:bg-slate-800 rounded border border-slate-700"><Icon name="gear" weight="fill" size={20}/></button>
+                            <button onClick={()=>setIsDarkMode(!isDarkMode)} className="p-2 hover:bg-slate-800 rounded border border-slate-700 ml-2 text-slate-200" title="화면 테마 변경"><Icon name={isDarkMode ? 'sun' : 'moon'} weight="fill" size={20}/></button>
+                            <button onClick={()=>setIsRankingModalOpen(true)} className="p-2 hover:bg-slate-800 rounded border border-slate-700 text-yellow-400" title="구매왕 랭킹 조회"><Icon name="trophy" weight="fill" size={20}/></button>
+                            <button onClick={()=>setIsVipModalOpen(true)} className="p-2 hover:bg-slate-800 rounded border border-slate-700 text-amber-500" title="VIP 관리대장"><Icon name="crown" weight="fill" size={20}/></button>
+                            <button onClick={()=>setIsSettingsOpen(!isSettingsOpen)} className="p-2 hover:bg-slate-800 rounded border border-slate-700 text-slate-200" title="환경설정"><Icon name="gear" weight="fill" size={20}/></button>
                         </div>
                     </header>
                     
@@ -2526,6 +2605,7 @@
                     <Modal isOpen={modalConfig.isOpen} type={modalConfig.type} message={modalConfig.message} onConfirm={modalConfig.onConfirm} onCancel={modalConfig.onCancel} initialValue={modalConfig.initialValue} />
                     
                     <VipModal isOpen={isVipModalOpen} onClose={() => setIsVipModalOpen(false)} specialCustomers={specialCustomers} setSpecialCustomers={setSpecialCustomers} />
+                    <RankingModal isOpen={isRankingModalOpen} onClose={() => setIsRankingModalOpen(false)} orders={orders} specialCustomers={specialCustomers} setSpecialCustomers={setSpecialCustomers} />
 
                     {isSettingsOpen && (
                         <SettingsModalContent 
