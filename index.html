@@ -787,6 +787,7 @@
             const [addressSearch, setAddressSearch] = useState(''); 
             const [orderSearch, setOrderSearch] = useState('');
             const [chatSearch, setChatSearch] = useState('');
+            const [inventorySearchTerm, setInventorySearchTerm] = useState('');
             const [filterStatus, setFilterStatus] = useState('all');
             const [expandedInventoryItem, setExpandedInventoryItem] = useState(null);
             
@@ -1327,6 +1328,11 @@
                 });
 
                 entries.sort((a, b) => {
+                    if (selectedNick) {
+                        if (a[0] === selectedNick && b[0] !== selectedNick) return -1;
+                        if (a[0] !== selectedNick && b[0] === selectedNick) return 1;
+                    }
+
                     if (deferredOrderSearch) {
                         const term = String(deferredOrderSearch).toLowerCase().replace(/\s/g, '');
                         const aN = String(a[0]).toLowerCase().replace(/\s/g, ''); 
@@ -2075,7 +2081,7 @@
                                 </form>
                                 <div className="relative w-16 sm:w-20 shrink-0">
                                     <Icon name="magnifying-glass" className="absolute left-1.5 top-1/2 -translate-y-1/2 text-slate-400 text-[10px]"/>
-                                    <input type="text" placeholder="검색" value={currentSearchTerm} onChange={e => setCurrentSearchTerm(e.target.value)} className="w-full text-[10px] pl-4 pr-1 py-1 border dark:border-slate-600 rounded outline-none bg-white dark:bg-slate-900 dark:text-white" />
+                                    <input type="text" placeholder="검색" value={inventorySearchTerm} onChange={e => setInventorySearchTerm(e.target.value)} className="w-full text-[10px] pl-4 pr-1 py-1 border dark:border-slate-600 rounded outline-none bg-white dark:bg-slate-900 dark:text-white" />
                                 </div>
                             </div>
                         </div>
@@ -2087,7 +2093,7 @@
                             <div className="w-6 shrink-0"></div>
                         </div>
                         <div className="flex-1 overflow-y-auto p-1.5 space-y-1.5 bg-slate-50 dark:bg-slate-900">
-                            {inventory.filter(i => !currentSearchTerm || String(i.name).toLowerCase().includes(String(currentSearchTerm).toLowerCase())).map(item => (
+                            {inventory.filter(i => !inventorySearchTerm || String(i.name).toLowerCase().includes(String(inventorySearchTerm).toLowerCase())).map(item => (
                                 <InventoryItemRow 
                                     key={item.id} item={item} orders={orders} setOrders={setOrders} inventory={inventory} setInventory={setInventory} setProductHistory={setProductHistory} openModal={openModal} expandedInventoryItem={expandedInventoryItem} setExpandedInventoryItem={setExpandedInventoryItem} setManualProduct={setManualProduct} setCurrentSearchTerm={setCurrentSearchTerm} setManualPrice={setManualPrice} setIsFixedProductMode={setIsFixedProductMode} customerPaidStatus={customerPaidStatus} saveInventoryToServer={saveInventoryToServer} cardPayments={cardPayments}
                                 />
