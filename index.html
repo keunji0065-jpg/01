@@ -50,7 +50,27 @@
         const getLsKey = (key) => `${WS_ID}_${key}`;
 
         const FIXED_BANK_ACCOUNT = "카카오뱅크 김선정\n7942 18 01611";
-        const EMOJI_LIST = ["💙","💖","💛","💚","💜","🤍","❤️","🖤","🤎","💕","💞","⭐","🌟","✨","🔥","💥","💯","✅","✔️","❌","❗","❓","📢","🔔","🌈","💰","💸","💳","🧾","🪙","🚗","🚚","✈️","📱","💻","🎉","🎈"];
+        
+        // 🚀 판매 관련 아이템 위주의 새로운 이모지 대량 추가 (쇼핑, 의류, 신발, 가방, 화장품, 쥬얼리, 꽃 등)
+        const EMOJI_LIST = [
+            "🛍️","🛒","🎁","📦","🏷️","💰","💸","💳","🧾","🪙", // 쇼핑/돈
+            "👗","👕","👖","👚","👔","🧥","🩳","👙","🩱","👘","🥻", // 옷
+            "👠","👟","👞","🥾","🥿","👡","👢","🩰", // 신발
+            "👜","💼","🎒","🧳","👛","👝", // 가방
+            "💄","💋","💅","🧴","🪞","🎀","✂️", // 화장품/뷰티
+            "💎","💍","👑","⌚","👓","🕶️","🧣","🧤","🌂","🧦", // 보석/악세서리
+            "🧢","👒","🎩","🎓","⛑️", // 모자
+            "🌸","🌺","🌻","🌼","🌷","🌹","🥀","🪷","💐","🪴","🍀","🌿", // 꽃/식물
+            "💙","💖","💛","💚","💜","🤍","❤️","🖤","🤎","💕","💞","💗","💓","💘","💝", // 하트
+            "😍","🥰","😘","🤩","😎","🤗","😊","☺️","😉","😆","😁","😄","😃","😀","😋","😝","😜","🤪","🥳","🥺", // 표정
+            "⭐","🌟","✨","🔥","💥","💯","✅","✔️","❌","❗","❓","📢","🔔","🌈","💡","📌","📍","🎈","🎉","🎊", // 기호/장식
+            "🚗","🚚","✈️","🚀","🛵","📱","💻","⌨️","🖥️", // 기술/교통
+            "🐻","🐰","🐱","🐶","🐼","🐯","🦊","🦁","🐮","🐷","🐸","🐒","🐥","🐧","🦄","🐙","🦑","🦀","🐠","🐳","🦋", // 동물
+            "🍎","🍊","🍋","🍌","🍉","🍇","🍓","🍈","🍒","🍑","🥭","🍍","🥥","🥝","🍅","🥑", // 과일
+            "🍔","🍟","🍕","🌭","🥪","🌮","🌯","🥩","🍗","🍖","🍚","🍛","🍜","🍝","🍞","🥐","🥖","🥨","🥞","🧀", // 음식
+            "🍦","🍧","🍨","🍩","🍪","🎂","🍰","🧁","🥧","🍫","🍬","🍭","🍮","🍯","🍼","☕","🍵","🥤","🧋","🧃", // 디저트/음료
+            "🍺","🍻","🥂","🍷","🥃","🍸","🍹","🧉","🍾","🧊" // 주류
+        ];
 
         const Icon = ({ name, className="", weight="regular", size }) => <i className={`ph ph-${name} ${className}`} data-phosphor-icon-weight={weight} style={{fontSize: size}}></i>;
         
@@ -498,16 +518,25 @@
                                     e.stopPropagation();
                                     if(aggregatedOrders.length === 0) return;
                                     let text = `[${item.name} ${Number(item.price).toLocaleString()}원 / ${aggregatedOrders.length}명]\n`;
-                                    for(let k=0; k<aggregatedOrders.length; k+=2) {
-                                        const name1 = aggregatedOrders[k].quantity > 1 ? `${aggregatedOrders[k].customer}(${aggregatedOrders[k].quantity})` : aggregatedOrders[k].customer;
-                                        if(aggregatedOrders[k+1]) {
-                                            const name2 = aggregatedOrders[k+1].quantity > 1 ? `${aggregatedOrders[k+1].customer}(${aggregatedOrders[k+1].quantity})` : aggregatedOrders[k+1].customer;
-                                            text += `${name1} / ${name2}\n`;
-                                        } else { text += `${name1}\n`; }
-                                    }
+                                    const nameList = aggregatedOrders.map(agg => agg.quantity > 1 ? `${agg.customer}(${agg.quantity})` : agg.customer);
+                                    // 🚀 구분자를 한 글자짜리 깔끔한 ✦ 로 연결
+                                    text += nameList.join(' ✦ ');
                                     const textArea = document.createElement("textarea"); textArea.value = text; document.body.appendChild(textArea); textArea.select();
-                                    try { document.execCommand('copy'); openModal('명단이 2열로 복사되었습니다!', 'alert'); } catch (err) {} document.body.removeChild(textArea);
-                                }} className="text-[9px] bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-600 hover:bg-slate-300 px-1.5 py-0.5 rounded font-bold shadow-sm">2열 복사</button>
+                                    try { 
+                                        document.execCommand('copy'); 
+                                        const btn = e.currentTarget;
+                                        const origClass = btn.className;
+                                        const origText = btn.innerText;
+                                        // 모달 대신 버튼 색상 1초 변경 피드백
+                                        btn.className = "text-[9px] bg-green-500 text-white border border-green-600 px-1.5 py-0.5 rounded font-bold shadow-sm transition-colors";
+                                        btn.innerText = "복사 완료!";
+                                        setTimeout(() => {
+                                            btn.className = origClass;
+                                            btn.innerText = origText;
+                                        }, 1000);
+                                    } catch (err) {} 
+                                    document.body.removeChild(textArea);
+                                }} className="text-[9px] bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-600 hover:bg-slate-300 px-1.5 py-0.5 rounded font-bold shadow-sm transition-colors">명단 복사</button>
                             </div>
                             {aggregatedOrders.length === 0 ? (
                                 <div className="text-center text-[10px] text-slate-400 py-2">주문 내역이 없습니다.</div>
@@ -529,7 +558,14 @@
                                                 <span className={`cursor-pointer hover:underline truncate flex-1 flex items-center gap-0.5 ${textColor}`} onClick={(e) => {
                                                     e.stopPropagation();
                                                     const textArea = document.createElement("textarea"); textArea.value = agg.customer; document.body.appendChild(textArea); textArea.select();
-                                                    try { document.execCommand('copy'); openModal(`'${agg.customer}' 닉네임 복사 완료!`, 'alert'); } catch (err) {} document.body.removeChild(textArea);
+                                                    try { 
+                                                        document.execCommand('copy'); 
+                                                        const el = e.currentTarget;
+                                                        // 모달 대신 글자 색상 0.5초 변경 피드백
+                                                        el.style.color = '#22c55e';
+                                                        setTimeout(() => el.style.color = '', 500);
+                                                    } catch (err) {} 
+                                                    document.body.removeChild(textArea);
                                                 }} title="클릭하여 닉네임 복사">
                                                     <span className="truncate">{agg.customer}</span> {agg.quantity > 1 && <span className="text-slate-500 ml-0.5 shrink-0">({agg.quantity}개)</span>}
                                                     {isCard && <span className="text-[8px] bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-300 border border-purple-200 dark:border-purple-700 px-1 py-0.5 rounded shrink-0 leading-none">카드</span>}
@@ -569,7 +605,6 @@
                             onChange={(e) => {
                                 const val = e.target.value;
                                 setLocalProduct(val);
-                                // ✨ 즉시 단가 반영 로직 추가
                                 const invItem = Array.isArray(inventory) ? inventory.find(i => String(i.name).trim() === String(val).trim()) : null;
                                 const uPrice = invItem ? Number(invItem.price) : (productHistory[val] || 0);
                                 if (uPrice > 0) setLocalPrice(uPrice.toLocaleString());
@@ -1180,6 +1215,7 @@
             const customerPaidStatus = useMemo(() => {
                 const status = {};
                 const groups = {};
+                const customerTotals = {};
                 orders.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); });
                 Object.entries(groups).forEach(([nick, items]) => {
                     const activeItems = items.filter(i => !i.isCancelled);
@@ -1840,7 +1876,6 @@
                                                     const val = e.target.value;
                                                     setManualProduct(val); 
                                                     setCurrentSearchTerm(val);
-                                                    // ✨ 빠른 입력: 즉시 단가 반영 로직 추가
                                                     const invItem = Array.isArray(inventory) ? inventory.find(i => String(i.name).trim() === String(val).trim()) : null;
                                                     const uPrice = invItem ? Number(invItem.price) : (productHistory[val] || 0);
                                                     if (uPrice > 0) setManualPrice(uPrice.toLocaleString());
@@ -2084,7 +2119,6 @@
                     const addrInfo = addresses.find(a => normalizeString(a.nickname) === normalizeString(nick)) || {}; 
                     const fullAddress = addrInfo.zipcode ? `(${addrInfo.zipcode}) ${addrInfo.address || ''}` : (addrInfo.address || ''); 
                     
-                    // 전화번호 복구 처리 추가
                     let cleanPhone = String(addrInfo.phone || '').replace(/[^0-9]/g, '');
                     if (cleanPhone.length === 10 && !cleanPhone.startsWith('0')) cleanPhone = '0' + cleanPhone;
 
@@ -2333,7 +2367,6 @@
             const [broadcastName, setBroadcastName] = useLocalStorage('broadcastName', '오늘의방송');
             const [bankAccount, setBankAccount] = useLocalStorage('bankAccount', FIXED_BANK_ACCOUNT);
             
-            // 캐시에 빈 값이 들어있을 경우 강제로 덮어씌우기 (초기 세팅용)
             useEffect(() => {
                 const currentUrl = window.localStorage.getItem(getLsKey('googleScriptUrl'));
                 if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbwKPG6R0_LENHbstaBDQjHbR4td1kMQrS-Jzm27bnhatW42mZXjknKNK7NJ7llgK9Ou')) {
@@ -2383,7 +2416,6 @@
             const [modalConfig, setModalConfig] = useState({ isOpen: false, type: 'alert', message: '', onConfirm: null });
             const [globalError, setGlobalError] = useState('');
 
-            // URL이 없거나 잘못되었을 때 사용자에게 입력을 유도
             useEffect(() => {
                 if (!googleScriptUrl || !googleScriptUrl.includes('/exec')) {
                     setGlobalError("우측 상단 톱니바퀴 ⚙️를 눌러 [통합 앱스 스크립트 URL]을 올바르게 입력해주세요.");
@@ -2402,7 +2434,6 @@
                     const keysToRemove = ['youtubeOrders', 'cardPayments', 'cashReceipts', 'shippingOverrides', 'matchedDeposits', 'sentAddressRequests', 'deletedDepositIds', 'checkedOrders', 'productInventory', 'productHistory', 'ignoredAutoMatch'].map(getLsKey);
                     keysToRemove.forEach(k => localStorage.removeItem(k));
                     
-                    // 강제 새로고침 대신 상태만 부드럽게 날려버림
                     setOrders([]);
                     setInventory([]);
                     setProductHistory({});
