@@ -1048,28 +1048,60 @@
                 result = result.filter(d => !deletedDepositIds.has(d.id)); 
                 if (depositSearch) result = result.filter(d => String(d.name||'').includes(depositSearch) || String(d.amount).includes(depositSearch)); 
                 
-                let targetNick = '', targetReal = '', addressRealName = '';
+                let targetNickClean = '', targetNickKo = '', targetRealClean = '', targetRealKo = '', addrRealClean = '', addrRealKo = '';
                 if (selectedNick) { 
-                    targetNick = cleanForMatch(selectedNick); targetReal = depositorNames[selectedNick] ? cleanForMatch(depositorNames[selectedNick]) : ''; 
-                    const addrRes = addressLookup.get(selectedNick); addressRealName = addrRes && addrRes.data ? cleanForMatch(addrRes.data.realname) : '';
+                    targetNickClean = cleanForMatch(selectedNick); 
+                    targetNickKo = extractKo(selectedNick);
+                    const tReal = depositorNames[selectedNick];
+                    targetRealClean = tReal ? cleanForMatch(tReal) : ''; 
+                    targetRealKo = tReal ? extractKo(tReal) : ''; 
+                    const addrRes = addressLookup.get(selectedNick); 
+                    const aReal = addrRes && addrRes.data ? addrRes.data.realname : '';
+                    addrRealClean = aReal ? cleanForMatch(aReal) : '';
+                    addrRealKo = aReal ? extractKo(aReal) : '';
                 }
 
+                const checkMatch = (tClean, tKo, vClean, vKo) => {
+                    if (!tClean && !tKo) return 10;
+                    if (tClean && vClean && tClean === vClean) return 0;
+                    if (tKo && vKo && tKo === vKo && tKo.length >= 2) return 0;
+                    if (tClean && vClean && (tClean.includes(vClean) || vClean.includes(tClean)) && Math.min(tClean.length, vClean.length) >= 2) return 1;
+                    if (tKo && vKo && (tKo.includes(vKo) || vKo.includes(tKo)) && Math.min(tKo.length, vKo.length) >= 2) return 1;
+                    if (tClean && vClean && (getChosung(tClean).includes(getChosung(vClean)) || getChosung(vClean).includes(getChosung(tClean))) && Math.min(tClean.length, vClean.length) >= 2) return 2;
+                    return 10;
+                };
+
                 const decorated = result.map(d => {
-                    let isUsed = matchedDeposits?.has(d.id) ? 1 : 0; let score = 10;
+                    let isUsed = matchedDeposits?.has(d.id) ? 1 : 0; 
+                    let score = 10;
                     if (selectedNick) {
-                        const val = cleanForMatch(d.name);
-                        if (val) {
-                            if (val === targetNick || val === targetReal || val === addressRealName) score = 0; 
-                            else if ((targetNick && targetReal && (val === targetNick + targetReal || val === targetReal + targetNick)) || 
-                                     (targetNick && addressRealName && (val === targetNick + addressRealName || val === addressRealName + targetNick))) score = 0;
-                            else if ((targetNick && val.startsWith(targetNick)) || (targetReal && val.startsWith(targetReal)) || (addressRealName && val.startsWith(addressRealName))) score = 1; 
-                            else if ((targetNick && val.includes(targetNick)) || (targetReal && val.includes(targetReal)) || (addressRealName && val.includes(addressRealName))) score = 2; 
-                        }
+                        const valClean = cleanForMatch(d.name);
+                        const valKo = extractKo(d.name);
+                        score = Math.min(
+                            checkMatch(targetNickClean, targetNickKo, valClean, valKo),
+                            checkMatch(targetRealClean, targetRealKo, valClean, valKo),
+                            checkMatch(addrRealClean, addrRealKo, valClean, valKo)
+                        );
                     }
                     return { item: d, isUsed, score };
                 });
 
-                decorated.sort((a, b) => { if (a.isUsed !== b.isUsed) return a.isUsed - b.isUsed; if (a.score !== b.score) return a.score - b.score; return 0; });
+                decorated.sort((a, b) => { 
+                    const aIsSimilar = a.score < 10;
+                    const bIsSimilar = b.score < 10;
+                    
+                    if (aIsSimilar && !bIsSimilar) return -1;
+                    if (!aIsSimilar && bIsSimilar) return 1;
+                    
+                    if (aIsSimilar && bIsSimilar) {
+                        if (a.score !== b.score) return a.score - b.score;
+                        if (a.isUsed !== b.isUsed) return a.isUsed - b.isUsed;
+                        return 0;
+                    }
+                    
+                    if (a.isUsed !== b.isUsed) return a.isUsed - b.isUsed;
+                    return 0; 
+                });
                 return decorated.map(d => d.item); 
             }, [allDeposits, depositSearch, selectedNick, deletedDepositIds, matchedDeposits, depositorNames, addressLookup]);
             
@@ -1511,13 +1543,61 @@
                 });
                 let res = Object.values(latestMap);
                 if (addressSearch) { const term = String(addressSearch).toLowerCase(); res = res.filter(a => String(a.nickname).toLowerCase().includes(term) || String(a.realname).toLowerCase().includes(term) || String(a.phone).includes(term)); }
-                res.sort((a, b) => { const tA = parseSafeDate(a.timestamp).getTime(); const tB = parseSafeDate(b.timestamp).getTime(); return tB - tA; });
+                
                 if (selectedNick) {
-                    const targetClean = normalizeString(selectedNick);
-                    res.sort((a, b) => { const aMatch = normalizeString(a.nickname) === targetClean; const bMatch = normalizeString(b.nickname) === targetClean; if (aMatch && !bMatch) return -1; if (!aMatch && bMatch) return 1; return 0; });
+                    const targetNickClean = cleanForMatch(selectedNick);
+                    const targetNickKo = extractKo(selectedNick);
+                    const targetReal = depositorNames[selectedNick];
+                    const targetRealClean = targetReal ? cleanForMatch(targetReal) : '';
+                    const targetRealKo = targetReal ? extractKo(targetReal) : '';
+
+                    const checkMatch = (tClean, tKo, vClean, vKo) => {
+                        if (!tClean && !tKo) return 10;
+                        if (tClean && vClean && tClean === vClean) return 0;
+                        if (tKo && vKo && tKo === vKo && tKo.length >= 2) return 0;
+                        if (tClean && vClean && (tClean.includes(vClean) || vClean.includes(tClean)) && Math.min(tClean.length, vClean.length) >= 2) return 1;
+                        if (tKo && vKo && (tKo.includes(vKo) || vKo.includes(tKo)) && Math.min(tKo.length, vKo.length) >= 2) return 1;
+                        if (tClean && vClean && (getChosung(tClean).includes(getChosung(vClean)) || getChosung(vClean).includes(getChosung(tClean))) && Math.min(tClean.length, vClean.length) >= 2) return 2;
+                        return 10;
+                    };
+
+                    res.forEach(a => {
+                        const aNickClean = cleanForMatch(a.nickname);
+                        const aNickKo = extractKo(a.nickname);
+                        const aRealClean = cleanForMatch(a.realname);
+                        const aRealKo = extractKo(a.realname);
+                        
+                        const scoreNick = Math.min(
+                            checkMatch(targetNickClean, targetNickKo, aNickClean, aNickKo),
+                            checkMatch(targetRealClean, targetRealKo, aNickClean, aNickKo)
+                        );
+                        const scoreReal = Math.min(
+                            checkMatch(targetNickClean, targetNickKo, aRealClean, aRealKo),
+                            checkMatch(targetRealClean, targetRealKo, aRealClean, aRealKo)
+                        );
+
+                        a._tempScore = Math.min(scoreNick, scoreReal);
+                    });
+
+                    res.sort((a, b) => {
+                        const aIsSimilar = a._tempScore < 10;
+                        const bIsSimilar = b._tempScore < 10;
+                        
+                        if (aIsSimilar && !bIsSimilar) return -1;
+                        if (!aIsSimilar && bIsSimilar) return 1;
+                        
+                        if (aIsSimilar && bIsSimilar) {
+                            if (a._tempScore !== b._tempScore) return a._tempScore - b._tempScore;
+                            return parseSafeDate(b.timestamp).getTime() - parseSafeDate(a.timestamp).getTime();
+                        }
+                        
+                        return parseSafeDate(b.timestamp).getTime() - parseSafeDate(a.timestamp).getTime();
+                    });
+                } else {
+                    res.sort((a, b) => { const tA = parseSafeDate(a.timestamp).getTime(); const tB = parseSafeDate(b.timestamp).getTime(); return tB - tA; });
                 }
                 return res;
-            }, [addresses, addressSearch, selectedNick, addressMapping]);
+            }, [addresses, addressSearch, selectedNick, addressMapping, depositorNames]);
 
             const handleQuickAddProduct = async (e) => {
                 e.preventDefault(); const cleanName = String(newInvName).trim();
