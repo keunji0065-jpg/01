@@ -111,27 +111,22 @@
             return new Date(0);
         };
 
-        // 퍼지 매칭(스마트 자동완성) 로직
         const findMatchingProduct = (inputStr, invArray) => {
             if (!inputStr || !invArray || !Array.isArray(invArray)) return null;
             const raw = String(inputStr).trim();
             if (!raw) return null;
             
-            // 1. 완전 일치 확인
             let match = invArray.find(i => i.name === raw);
             if (match) return match;
             
-            // 2. 공백 제거 일치
             const noSpace = raw.replace(/\s/g, '').toLowerCase();
             match = invArray.find(i => i.name.replace(/\s/g, '').toLowerCase() === noSpace);
             if (match) return match;
             
-            // 3. '번', '야', '요' 등 무의미한 조사 제거 일치 (예: "01번" -> "01")
             const noSuffix = noSpace.replace(/[번야요이은는이가을를]/g, '');
             match = invArray.find(i => i.name.replace(/\s/g, '').toLowerCase() === noSuffix);
             if (match) return match;
             
-            // 4. 번호/코드 기반 앞부분 일치 (예: "01" 입력 시 "01 치마" 매칭)
             const codeMatch = noSuffix.match(/^([0-9a-zA-Z]+)/);
             if (codeMatch) {
                 const code = codeMatch[1];
@@ -139,9 +134,8 @@
                     const invClean = i.name.replace(/\s/g, '').toLowerCase();
                     return invClean.startsWith(code);
                 });
-                if (possibleMatches.length === 1) return possibleMatches[0]; // 하나만 확실하게 걸릴 때 자동변환
+                if (possibleMatches.length === 1) return possibleMatches[0];
             }
-            
             return null;
         };
 
@@ -336,6 +330,76 @@
             );
         };
 
+        const BatchAddModal = ({ isOpen, nick, inventory, onClose, onAdd }) => {
+            const [searchTerm, setSearchTerm] = useState('');
+            const [selectedProducts, setSelectedProducts] = useState(new Set());
+
+            useEffect(() => {
+                if (isOpen) {
+                    setSearchTerm('');
+                    setSelectedProducts(new Set());
+                }
+            }, [isOpen]);
+
+            if (!isOpen) return null;
+
+            const filtered = (inventory || []).filter(i => !searchTerm || String(i.name).toLowerCase().includes(searchTerm.toLowerCase())).sort((a, b) => String(a.name).localeCompare(String(b.name), 'ko', { numeric: true }));
+
+            const handleConfirm = () => {
+                if (selectedProducts.size === 0) return onClose();
+                onAdd(nick, Array.from(selectedProducts));
+                onClose();
+            };
+
+            const toggleAll = () => {
+                if (selectedProducts.size === filtered.length && filtered.length > 0) {
+                    setSelectedProducts(new Set());
+                } else {
+                    setSelectedProducts(new Set(filtered.map(i => i.name)));
+                }
+            };
+
+            return (
+                <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[9999] animate-pop" onClick={onClose}>
+                    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl p-6 w-full max-w-md mx-4 max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                        <div className="mb-4 border-b dark:border-slate-700 pb-3 flex justify-between items-center shrink-0">
+                            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2"><Icon name="list-checks" weight="fill" /> '{nick}'님 옵션 일괄 추가</h3>
+                            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><Icon name="x" weight="bold" size={20}/></button>
+                        </div>
+                        
+                        <div className="relative mb-3 shrink-0">
+                            <Icon name="magnifying-glass" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <input type="text" placeholder="상품명 검색" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} autoFocus className="w-full pl-9 pr-3 py-2 border dark:border-slate-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-slate-500 bg-slate-50 dark:bg-slate-900 dark:text-white" />
+                        </div>
+                        
+                        <div className="flex justify-between items-center mb-2 px-1 shrink-0">
+                            <span className="text-xs font-bold text-slate-500">{filtered.length}개 상품</span>
+                            <button onClick={toggleAll} className="text-xs text-slate-600 dark:text-slate-300 font-bold hover:underline">전체선택/해제</button>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto mb-4 border dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/50 p-2 space-y-1 min-h-[200px]">
+                            {filtered.length === 0 ? (
+                                <div className="text-center text-sm text-slate-500 py-10">상품이 없습니다.</div>
+                            ) : (
+                                filtered.map(item => (
+                                    <label key={item.id} className="flex items-center gap-3 p-2 rounded cursor-pointer hover:bg-white dark:hover:bg-slate-800 border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-colors">
+                                        <input type="checkbox" checked={selectedProducts.has(item.name)} onChange={() => { const next = new Set(selectedProducts); if (next.has(item.name)) next.delete(item.name); else next.add(item.name); setSelectedProducts(next); }} className="custom-checkbox shrink-0" />
+                                        <span className="font-bold text-sm text-slate-800 dark:text-slate-200 flex-1 truncate">{item.name}</span>
+                                        <span className="text-xs text-slate-500 dark:text-slate-400 font-medium shrink-0">{Number(item.price || 0).toLocaleString()}원</span>
+                                    </label>
+                                ))
+                            )}
+                        </div>
+
+                        <div className="flex gap-2 shrink-0 pt-2 border-t dark:border-slate-700">
+                            <button onClick={onClose} className="flex-1 py-2.5 rounded-lg text-sm font-bold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors">취소</button>
+                            <button onClick={handleConfirm} className="flex-1 py-2.5 rounded-lg text-sm font-bold bg-slate-700 text-white hover:bg-slate-800 transition-colors shadow-sm">{selectedProducts.size}개 일괄 추가</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
         const SettingsModalContent = ({ 
             googleScriptUrl, setGoogleScriptUrl, 
             chatSheetId, setChatSheetId, depSheetId, setDepSheetId, addrSheetId, setAddrSheetId, masterSheetId, setMasterSheetId, 
@@ -515,8 +579,7 @@
                                         const el = e.currentTarget; el.classList.add('text-green-600', 'dark:text-green-400'); setTimeout(() => el.classList.remove('text-green-600', 'dark:text-green-400'), 500);
                                     }}
                                     onDoubleClick={(e) => {
-                                        e.stopPropagation(); setManualProduct(item.name); 
-                                        setManualPrice(item.price ? Number(item.price).toLocaleString() : '');
+                                        e.stopPropagation(); setManualProduct(item.name); setManualPrice(item.price ? Number(item.price).toLocaleString() : '');
                                         setIsFixedProductMode(true); document.getElementById('manual-prod-input')?.focus();
                                     }}
                                 >
@@ -603,59 +666,48 @@
         });
 
         const OrderItem = memo(({ item, nick, nextItemId, isLast, handleProductChange, handleQuantityUpdate, handleOrderCancel, handleOrderDelete, addOrderLogic, setSelectedNick, inventory, productHistory }) => {
-            const [localProduct, setLocalProduct] = useState(item.product); 
-            const [localQty, setLocalQty] = useState(item.quantity === '' ? '' : item.quantity); 
-            const [localPrice, setLocalPrice] = useState(item.price === '' || item.price === 0 ? '' : Number(item.price).toLocaleString());
-            const [isProductFocused, setIsProductFocused] = useState(false); 
-            const [isQtyFocused, setIsQtyFocused] = useState(false); 
-            const [isPriceFocused, setIsPriceFocused] = useState(false);
+            const [localQty, setLocalQty] = useState(item.quantity === '' ? '' : item.quantity);
+            useEffect(() => { setLocalQty(item.quantity === '' ? '' : item.quantity); }, [item.quantity]);
             
-            useEffect(() => { if (!isProductFocused) setLocalProduct(item.product); }, [item.product, isProductFocused]); 
-            useEffect(() => { if (!isQtyFocused) setLocalQty(item.quantity === '' ? '' : item.quantity); }, [item.quantity, isQtyFocused]); 
-            useEffect(() => { if (!isPriceFocused) setLocalPrice(item.price === '' || item.price === 0 ? '' : Number(item.price).toLocaleString()); }, [item.price, isPriceFocused]);
-            
+            const handleLocalQtyChange = (e) => { setLocalQty(e.target.value); };
+            const handleLocalQtyBlur = () => { handleQuantityUpdate(item.id, localQty); };
+            const handleLocalQtyKeyDown = (e) => { if (e.key === 'Enter') handleLocalQtyBlur(); };
+
             return (
-                <div className={`flex justify-between items-center text-xs px-1 py-0.5 rounded group transition-colors ${item.isCancelled ? 'bg-red-50/80 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30' : (item.isUnmodified ? 'bg-blue-100 dark:bg-blue-900/50 border-2 border-blue-400 dark:border-blue-600 shadow-sm my-0.5' : 'hover:bg-slate-100 dark:hover:bg-slate-700 border-2 border-transparent')}`}>
-                    <div className="flex-1 flex gap-1 items-center">
-                        {item.isCancelled && <span className="text-[9px] text-red-500 font-bold shrink-0">[취소]</span>}
-                        <input id={`prod-input-${item.id}`} type="text" list="product-list" value={localProduct} 
-                            onChange={(e) => {
-                                const val = e.target.value; setLocalProduct(val);
-                                const invItem = Array.isArray(inventory) ? inventory.find(i => String(i.name).trim() === String(val).trim()) : null;
-                                const uPrice = invItem ? Number(invItem.price) : (productHistory[val] || 0);
-                                if (uPrice > 0) setLocalPrice(uPrice.toLocaleString());
-                            }} 
-                            onClick={(e) => e.stopPropagation()} 
-                            onFocus={(e) => { e.target.select(); setIsProductFocused(true); setSelectedNick(nick); if(item.isUnmodified) handleProductChange(item.id, 'isUnmodified', false); }} 
-                            onBlur={() => { setIsProductFocused(false); if (localProduct !== item.product) handleProductChange(item.id, 'product', localProduct); }} 
-                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleProductChange(item.id, 'product', localProduct); setTimeout(() => document.getElementById(`qty-input-${item.id}`)?.focus(), 10); } }} 
-                            className={`w-full outline-none px-1 rounded bg-transparent font-bold ${item.isCancelled ? 'text-slate-400 line-through' : (item.isUnmodified ? 'text-blue-700 dark:text-blue-300' : 'dark:text-slate-200')}`} placeholder="상품명" disabled={item.isCancelled} />
+                <div className={`flex items-center gap-1 group py-0.5 px-1 bg-white dark:bg-slate-800 rounded transition-colors ${item.isCancelled ? 'opacity-40 bg-slate-50 dark:bg-slate-900/50' : 'hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}>
+                    <input type="text" list="product-list" value={item.product || ''} 
+                        onChange={e => handleProductChange(item.id, 'product', e.target.value)}
+                        className={`w-[60%] border-none text-[12px] font-bold outline-none bg-transparent ${item.isCancelled ? 'line-through text-slate-400 dark:text-slate-500' : 'text-slate-800 dark:text-slate-200 focus:ring-1 focus:ring-slate-300 dark:focus:ring-slate-600 rounded'} ${item.isUnmodified ? 'text-blue-600 dark:text-blue-400' : ''}`}
+                        placeholder="상품명 입력"
+                        id={`prod-input-${item.id}`}
+                        onFocus={() => setSelectedNick(nick)}
+                    />
+                    <input type="text" value={localQty} 
+                        onChange={handleLocalQtyChange} onBlur={handleLocalQtyBlur} onKeyDown={handleLocalQtyKeyDown}
+                        className={`w-6 border-none text-[12px] font-bold text-center outline-none bg-transparent ${item.isCancelled ? 'text-slate-400 dark:text-slate-500' : 'text-slate-700 dark:text-slate-300 focus:ring-1 focus:ring-slate-300 dark:focus:ring-slate-600 rounded'}`}
+                        placeholder="0"
+                        disabled={item.isCancelled}
+                    />
+                    <div className="flex items-center gap-0.5 justify-end w-[25%] shrink-0">
+                        <input type="text" value={item.price === 0 || item.price === '' ? '' : Number(item.price).toLocaleString()}
+                            onChange={e => { const val = e.target.value.replace(/,/g, ''); if(val === '' || val === '-') handleProductChange(item.id, 'price', val); else if (!isNaN(val)) handleProductChange(item.id, 'price', val); }}
+                            className={`w-full text-right border-none text-[12px] font-bold outline-none bg-transparent ${item.isCancelled ? 'line-through text-slate-400 dark:text-slate-500' : 'text-slate-800 dark:text-slate-200 focus:ring-1 focus:ring-slate-300 dark:focus:ring-slate-600 rounded'}`}
+                            placeholder="단가"
+                            disabled={item.isCancelled}
+                        />
                     </div>
-                    <div className="flex items-center gap-1 group shrink-0">
-                        <div className="relative flex items-center">
-                            <input id={`qty-input-${item.id}`} type="number" value={localQty} 
-                                onChange={(e) => setLocalQty(e.target.value)} onClick={(e) => e.stopPropagation()} 
-                                onFocus={(e) => { e.target.select(); setIsQtyFocused(true); setSelectedNick(nick); if(item.isUnmodified) handleProductChange(item.id, 'isUnmodified', false); }} 
-                                onBlur={() => { setIsQtyFocused(false); const q = localQty === '' || isNaN(parseInt(localQty)) ? '' : parseInt(localQty); if (q !== item.quantity) handleQuantityUpdate(item.id, q); }} 
-                                onKeyDown={(e) => { if(e.key==='Enter') { e.preventDefault(); setTimeout(() => document.getElementById(`price-input-${item.id}`)?.focus(), 10); } }} 
-                                className={`w-12 text-right pr-4 font-bold outline-none rounded py-0.5 ${item.isCancelled ? 'text-[11px] bg-transparent line-through text-slate-400 cursor-not-allowed' : `${Number(localQty) >= 2 ? 'text-[12px] text-red-600 bg-red-50' : (item.isUnmodified ? 'text-blue-700 dark:text-blue-300' : 'text-[11px] text-slate-800')} hover:bg-slate-200 bg-transparent`}`} disabled={item.isCancelled} />
-                            <span className={`absolute right-1 pointer-events-none ${Number(localQty) >= 2 && !item.isCancelled ? 'text-[10px] text-red-600 font-bold' : (item.isUnmodified ? 'text-blue-500' : 'text-[10px] text-slate-500')}`}>개</span>
-                        </div>
-                        <input id={`price-input-${item.id}`} type="text" value={localPrice} 
-                            onChange={(e) => { const val = e.target.value.replace(/,/g, ''); if (val === '' || val === '-') setLocalPrice(val); else if (!isNaN(val)) setLocalPrice(Number(val).toLocaleString()); }} 
-                            onClick={(e) => e.stopPropagation()} 
-                            onFocus={(e) => { e.target.select(); setIsPriceFocused(true); setSelectedNick(nick); if(item.isUnmodified) handleProductChange(item.id, 'isUnmodified', false); }} 
-                            onBlur={() => { setIsPriceFocused(false); const val = String(localPrice).replace(/,/g, ''); if (!isNaN(val) && Number(val) !== Number(item.price)) { handleProductChange(item.id, 'price', val); } }} 
-                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const val = String(localPrice).replace(/,/g, ''); if (!isNaN(val) && Number(val) !== Number(item.price)) { handleProductChange(item.id, 'price', val); } if (!isLast && nextItemId) { setTimeout(() => document.getElementById(`prod-input-${nextItemId}`)?.focus(), 10); } else { addOrderLogic(nick, '', 1, true, item.id); } } }} 
-                            className={`w-16 text-right bg-transparent outline-none px-1 rounded font-bold ${item.isCancelled ? 'line-through text-slate-400 cursor-not-allowed' : (item.isUnmodified ? 'text-blue-700 dark:text-blue-300' : 'text-slate-700 hover:bg-slate-100')} ${Number(item.price) === 0 && !item.isCancelled ? 'bg-red-50 border-b border-red-300' : ''}`} disabled={item.isCancelled} />
-                        <button onClick={(e)=>{e.stopPropagation(); handleOrderCancel(item.id); setSelectedNick(nick);}} className={`ml-1 ${item.isCancelled ? "text-slate-500" : "text-slate-300 hover:text-red-500"}`} title={item.isCancelled ? "취소 철회" : "주문 취소"}><Icon name={item.isCancelled ? "arrow-u-up-left" : "prohibit"} weight="bold"/></button>
-                        <button onClick={(e)=>{e.stopPropagation(); handleOrderDelete(item.id); setSelectedNick(nick);}} className="text-slate-300 hover:text-red-500 ml-1"><Icon name="trash" weight="bold"/></button>
+                    <div className="flex items-center gap-0.5 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={(e) => { e.stopPropagation(); handleOrderCancel(item.id); }} className={`p-0.5 rounded ${item.isCancelled ? 'bg-slate-200 text-slate-600 hover:bg-slate-300' : 'bg-orange-100 text-orange-600 hover:bg-orange-200'}`} title={item.isCancelled ? "취소 복구" : "주문 취소"}><Icon name={item.isCancelled ? "arrow-counter-clockwise" : "prohibit"} weight="bold" size={10}/></button>
+                        <button onClick={(e) => { e.stopPropagation(); handleOrderDelete(item.id); }} className="bg-red-50 hover:bg-red-100 text-red-500 p-0.5 rounded" title="주문 줄 삭제"><Icon name="trash" weight="bold" size={10}/></button>
+                        {isLast && <button onClick={(e) => { e.stopPropagation(); addOrderLogic(nick, '', 1, true, item.id); }} className="bg-slate-200 hover:bg-slate-300 text-slate-700 p-0.5 rounded ml-0.5 font-bold text-[10px] w-4 flex items-center justify-center">+</button>}
                     </div>
                 </div>
             );
+        }, (prev, next) => {
+            return prev.item.product === next.item.product && prev.item.quantity === next.item.quantity && prev.item.price === next.item.price && prev.item.isCancelled === next.item.isCancelled && prev.item.isUnmodified === next.item.isUnmodified && prev.isLast === next.isLast && prev.nextItemId === next.nextItemId;
         });
 
-        const CustomerBlock = memo(({ nick, items, isSelected, currentShipping, isCard, isPaidState, grandTotal, depositTotal, balance, baseGrandTotal, baseBalance, addr, addrType, addrConflict, addressMapping, autoDepositorName, displayDepositorName, isAutoDepositor, depositorNames, copyStatus, isOrderConfirmed, isEditingShipping, setSelectedNick, addOrderLogic, handleNicknameEdit, toggleCardPayment, handleShippingChange, setEditingShippingNick, openModal, setDepositorNames, handleFullDepositToggle, copyOrderSheet, handleOrderCheckToggle, handleAddressUnmapping, handleAddressMapping, handlePromoteAddress, handleProductChange, handleQuantityUpdate, handleOrderCancel, handleOrderDelete, toggleVIP, specialCustomers, onOpenQuickAddress, findAddressSuggestions, cashReceiptStatus, toggleCashReceipt, inventory, productHistory }) => {
+        const CustomerBlock = memo(({ nick, items, isSelected, currentShipping, isCard, isPaidState, grandTotal, depositTotal, balance, baseGrandTotal, baseBalance, addr, addrType, addrConflict, addressMapping, autoDepositorName, displayDepositorName, isAutoDepositor, depositorNames, copyStatus, isOrderConfirmed, isEditingShipping, setSelectedNick, addOrderLogic, handleNicknameEdit, toggleCardPayment, handleShippingChange, setEditingShippingNick, openModal, setDepositorNames, handleFullDepositToggle, copyOrderSheet, handleOrderCheckToggle, handleAddressUnmapping, handleAddressMapping, handlePromoteAddress, handleProductChange, handleQuantityUpdate, handleOrderCancel, handleOrderDelete, toggleVIP, specialCustomers, onOpenQuickAddress, findAddressSuggestions, cashReceiptStatus, toggleCashReceipt, inventory, productHistory, onOpenBatchAdd }) => {
             let borderClass = 'border-transparent', headerBgClass = 'bg-white dark:bg-slate-800';
             if (isCard) { borderClass = 'border-slate-300 ring-1 ring-slate-300'; headerBgClass = 'bg-slate-50'; } 
             else if (!isPaidState && balance > 0) { borderClass = 'border-red-200 ring-1 ring-red-200'; headerBgClass = 'bg-red-50'; } 
@@ -680,8 +732,9 @@
                                 <span onClick={(e) => { e.stopPropagation(); const textArea = document.createElement("textarea"); textArea.value = nick; document.body.appendChild(textArea); textArea.select(); try { document.execCommand('copy'); const el = e.currentTarget; el.classList.add('text-green-500'); setTimeout(() => el.classList.remove('text-green-500'), 500); } catch (err) {} document.body.removeChild(textArea); }} className={`font-bold text-[12px] text-slate-900 truncate max-w-[120px] sm:max-w-[150px] inline-block align-bottom cursor-pointer hover:text-slate-600`} title="클릭하여 닉네임 복사">{nick}</span>
                                 {addrConflict && <button onClick={(e) => { e.stopPropagation(); handlePromoteAddress(nick, addrConflict); }} className="ml-1 bg-red-50 border border-red-300 text-red-600 text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm animate-pulse flex items-center gap-0.5 shrink-0">🚨 정보변경 감지</button>}
                                 {isVip && <span onClick={(e) => e.stopPropagation()} className="ml-1 text-[10px] px-1.5 py-0.5 rounded border bg-slate-800 text-amber-400 font-bold shadow-sm shrink-0 flex items-center gap-0.5"><Icon name="crown" weight="fill"/> VIP</span>}
-                                <button onClick={(e) => { e.stopPropagation(); addOrderLogic(nick, '', 1); }} className="bg-slate-200 text-slate-700 rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold hover:bg-slate-300 shrink-0" title="빈 상품줄 추가">+</button>
-                                <button onClick={(e)=>{e.stopPropagation(); handleNicknameEdit(nick);}} className="text-slate-400 hover:text-slate-700 shrink-0" title="닉네임 수정"><Icon name="pencil-simple" weight="bold" size={12}/></button>
+                                <button onClick={(e) => { e.stopPropagation(); onOpenBatchAdd(nick); }} className="ml-1 bg-slate-200 text-slate-700 rounded w-5 h-5 flex items-center justify-center text-xs font-bold hover:bg-slate-300 shrink-0" title="체크박스로 여러 상품 한 번에 추가"><Icon name="list-checks" weight="bold" size={14}/></button>
+                                <button onClick={(e) => { e.stopPropagation(); addOrderLogic(nick, '', 1); }} className="ml-1 bg-slate-200 text-slate-700 rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold hover:bg-slate-300 shrink-0" title="빈 상품줄 추가">+</button>
+                                <button onClick={(e)=>{e.stopPropagation(); handleNicknameEdit(nick);}} className="text-slate-400 hover:text-slate-700 shrink-0 ml-1" title="닉네임 수정"><Icon name="pencil-simple" weight="bold" size={12}/></button>
                                 <button onClick={(e) => { e.stopPropagation(); toggleCardPayment(nick); }} className={`ml-1 text-[10px] px-1.5 py-0.5 rounded border transition-colors shrink-0 ${isCard ? 'bg-slate-700 border-slate-800 text-white font-bold' : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-100'}`}>카드</button>
                                 <button onClick={(e) => { e.stopPropagation(); toggleCashReceipt(nick); }} className={`ml-1 text-[10px] px-1.5 py-0.5 rounded border transition-colors shrink-0 ${cashReceiptStatus ? 'bg-indigo-600 border-indigo-700 text-white font-bold shadow-inner' : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-100'}`} title="현금영수증">현영</button>
                                 
@@ -764,6 +817,7 @@
             const [chatSearch, setChatSearch] = useState('');
             const [filterStatus, setFilterStatus] = useState('all');
             const [expandedInventoryItems, setExpandedInventoryItems] = useState(new Set());
+            const [batchAddModal, setBatchAddModal] = useState({ isOpen: false, nick: '' });
             
             const [chats, setChats] = useState([]);
             const [hiddenChatIds, setHiddenChatIds] = useState(() => { try { const s = localStorage.getItem(getLsKey('hiddenChatIds')); const p = JSON.parse(s); return Array.isArray(p) ? p : []; } catch(e){ return []; } });
@@ -813,6 +867,8 @@
             const [syncStatus, setSyncStatus] = useState("대기중");
 
             const sortOrderCache = useRef([]);
+            const outerSortCache = useRef(null);
+            const editingItemsCache = useRef({});
             const orderListRef = useRef(null);
             const chatScrollRef = useRef(null); 
             const inventoryRef = useRef(inventory);
@@ -871,6 +927,69 @@
             const [ignoredAutoMatch, setIgnoredAutoMatch] = useState(() => { try { const s = localStorage.getItem(getLsKey('ignoredAutoMatch')); const p = JSON.parse(s); return Array.isArray(p) ? new Set(p) : new Set(); } catch(e){ return new Set(); } });
             useEffect(() => { localStorage.setItem(getLsKey('ignoredAutoMatch'), JSON.stringify([...ignoredAutoMatch])); }, [ignoredAutoMatch]);
 
+            const saveInventoryToServer = useCallback(async (newInvList) => {
+                if (googleScriptUrl && masterSheetId) {
+                    try { await fetchGas(googleScriptUrl, { action: 'save_inventory', masterId: getCleanSheetId(masterSheetId), data: newInvList.map(i => ({ name: i.name, price: i.price, status: i.isSoldOut ? '품절' : '' })) }); } catch (e) {}
+                }
+            }, [googleScriptUrl, masterSheetId]);
+
+            // 핵심 누락 함수 복구
+            const handleFullDepositToggle = useCallback((nick, grandTotal, currentDeposit) => { 
+                if (currentDeposit >= grandTotal) { 
+                    setOrders(prev => prev.map(o => o.customer === nick ? { ...o, deposit: 0 } : o)); 
+                } else { 
+                    setOrders(prev => { 
+                        let done = false; 
+                        return prev.map(o => { 
+                            if (o.customer === nick && !done) { 
+                                done = true; 
+                                return { ...o, deposit: grandTotal }; 
+                            } 
+                            return o; 
+                        }); 
+                    }); 
+                } 
+            }, [setOrders]);
+
+            const addOrderLogic = useCallback((nick, content, qty = 1, force = false, afterId = null, customPrice = null, markAsModified = false, isAuto = false) => {
+                const cNick = String(nick).replace(/@/g, '').trim(); 
+                
+                const matchedItem = findMatchingProduct(content, inventoryRef.current);
+                const cContent = matchedItem ? matchedItem.name : String(content || '').trim();
+
+                const invArr = Array.isArray(inventoryRef.current) ? inventoryRef.current : [];
+                const hist = productHistoryRef.current;
+                const invItem = invArr.find(i => String(i.name).trim() === cContent);
+                
+                let price = 0; const isCustomPriceValid = customPrice !== null && customPrice !== '';
+                if (isCustomPriceValid) price = Number(String(customPrice).replace(/,/g, '')); else price = invItem ? Number(invItem.price) : (hist[cContent] || 0);
+
+                if (cContent !== '' && (isCustomPriceValid || price > 0)) {
+                    const priceToSave = price || 0;
+                    if (priceToSave >= 1) {
+                        const exists = invArr.find(i => String(i.name).trim() === cContent);
+                        if (!exists) {
+                            const newInv = [{ id: `inv_${Date.now()}_${Math.random()}`, name: cContent, price: priceToSave, stock: '', isSoldOut: false }, ...invArr];
+                            setInventory(newInv);
+                            saveInventoryToServer(newInv);
+                            setProductHistory(h => ({ ...h, [cContent]: priceToSave }));
+                        }
+                    }
+                }
+
+                if (!isAuto) { setCheckedOrders(prev => { const n = new Set(prev); n.delete(cNick); return n; }); setSelectedNick(cNick); }
+                
+                const newOrder = { id: Date.now() + Math.random(), customer: cNick, product: cContent, quantity: qty, price: Number(price) * qty, deposit: 0, isCancelled: false, isUnmodified: !markAsModified, isSentToEmp: false };
+                setOrders(prev => {
+                    if (!afterId && !force && cContent !== '') {
+                        const existIdx = prev.findIndex(o => o.customer === cNick && o.product === cContent && !o.isCancelled);
+                        if (existIdx !== -1) { const next = [...prev]; next[existIdx] = { ...next[existIdx], quantity: next[existIdx].quantity + qty, price: (next[existIdx].quantity + qty) * price, isUnmodified: !markAsModified }; return next; }
+                    }
+                    if (afterId) { const idx = prev.findIndex(o => o.id === afterId); if (idx !== -1) { const next = [...prev]; next.splice(idx + 1, 0, newOrder); return next; } }
+                    return [newOrder, ...prev];
+                });
+            }, [setCheckedOrders, setOrders, setInventory, setProductHistory, saveInventoryToServer]);
+
             const handleRematchAll = useCallback(() => {
                 openModal("모든 입금 매칭을 초기화하고 처음부터 다시 매칭하시겠습니까?\n(현재 주문서에 입력된 입금액이 0으로 초기화된 후 재계산됩니다.)", 'confirm', () => {
                     setOrders(prev => prev.map(o => ({ ...o, deposit: 0, loadedFromCloud: false })));
@@ -878,12 +997,6 @@
                     setIgnoredAutoMatch(new Set());
                 });
             }, [openModal, setOrders, setMatchedDeposits]);
-
-            const saveInventoryToServer = useCallback(async (newInvList) => {
-                if (googleScriptUrl && masterSheetId) {
-                    try { await fetchGas(googleScriptUrl, { action: 'save_inventory', masterId: getCleanSheetId(masterSheetId), data: newInvList.map(i => ({ name: i.name, price: i.price, status: i.isSoldOut ? '품절' : '' })) }); } catch (e) {}
-                }
-            }, [googleScriptUrl, masterSheetId]);
 
             const handleQuickAddressSubmit = async (addrData) => {
                 if (!addrData.timestamp) addrData.timestamp = new Date().toISOString();
@@ -1248,7 +1361,37 @@
 
             const filteredGroupedOrders = useMemo(() => {
                 const groups = {}; orders.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); });
-                Object.entries(groups).forEach(([nick, items]) => { if (selectedNick === nick) { items.sort((a, b) => a.id - b.id); } else { items.sort((a, b) => String(a.product || '').localeCompare(String(b.product || ''), 'ko', { numeric: true })); } });
+                
+                if (selectedNick) {
+                    Object.keys(editingItemsCache.current).forEach(k => {
+                        if (k !== selectedNick) delete editingItemsCache.current[k];
+                    });
+                } else {
+                    editingItemsCache.current = {};
+                    outerSortCache.current = null;
+                }
+
+                Object.entries(groups).forEach(([nick, items]) => { 
+                    if (selectedNick === nick) { 
+                        if (!editingItemsCache.current[nick]) {
+                            items.sort((a, b) => String(b.product || '').localeCompare(String(a.product || ''), 'ko', { numeric: true }));
+                            editingItemsCache.current[nick] = items.map(i => i.id);
+                        } else {
+                            const orderMap = new Map();
+                            editingItemsCache.current[nick].forEach((id, idx) => orderMap.set(id, idx));
+                            items.sort((a, b) => {
+                                const idxA = orderMap.has(a.id) ? orderMap.get(a.id) : -1;
+                                const idxB = orderMap.has(b.id) ? orderMap.get(b.id) : -1;
+                                if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+                                if (idxA === -1 && idxB !== -1) return -1;
+                                if (idxA !== -1 && idxB === -1) return 1;
+                                return b.id - a.id;
+                            });
+                        }
+                    } else { 
+                        items.sort((a, b) => String(b.product || '').localeCompare(String(a.product || ''), 'ko', { numeric: true })); 
+                    } 
+                });
 
                 let entries = Object.entries(groups).filter(([nick, items]) => {
                     if (filterStatus === 'no-address') { return !(addressLookup.get(nick)?.data?.address); }
@@ -1278,15 +1421,29 @@
                         if (aN === term && bN !== term) return -1; if (aN !== term && bN === term) return 1;
                         if (aN.startsWith(term) && !bN.startsWith(term)) return -1; if (!aN.startsWith(term) && bN.startsWith(term)) return 1;
                     }
-                    const aIdx = sortOrderCache.current.indexOf(a[0]); const bIdx = sortOrderCache.current.indexOf(b[0]);
-                    if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx; if (aIdx === -1 && bIdx !== -1) return -1; if (aIdx !== -1 && bIdx === -1) return 1;
-                    return Math.max(...b[1].map(o=>o.id)) - Math.max(...a[1].map(o=>o.id));
+                    
+                    if (selectedNick && outerSortCache.current) {
+                        const idxA = outerSortCache.current.indexOf(a[0]);
+                        const idxB = outerSortCache.current.indexOf(b[0]);
+                        if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+                        if (idxA === -1 && idxB !== -1) return -1;
+                        if (idxA !== -1 && idxB === -1) return 1;
+                        return Math.max(...b[1].map(o=>o.id)) - Math.max(...a[1].map(o=>o.id));
+                    } else {
+                        const aIdx = sortOrderCache.current.indexOf(a[0]); const bIdx = sortOrderCache.current.indexOf(b[0]);
+                        if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx; if (aIdx === -1 && bIdx !== -1) return -1; if (aIdx !== -1 && bIdx === -1) return 1;
+                        return Math.max(...b[1].map(o=>o.id)) - Math.max(...a[1].map(o=>o.id));
+                    }
                 });
+
+                if (selectedNick && !outerSortCache.current) {
+                    outerSortCache.current = entries.map(e => e[0]);
+                }
                 
                 const newNicks = entries.map(e => e[0]).filter(n => !sortOrderCache.current.includes(n));
                 if (newNicks.length > 0) { sortOrderCache.current = [...newNicks, ...sortOrderCache.current]; }
                 return entries;
-            }, [orders, deferredOrderSearch, filterStatus, cardPayments, getCalculatedShipping, addressLookup, depositorNames]);
+            }, [orders, deferredOrderSearch, filterStatus, cardPayments, getCalculatedShipping, addressLookup, depositorNames, selectedNick]);
 
             const totalItemsCount = useMemo(() => { let count = 0; filteredGroupedOrders.forEach(([_, items]) => { count += items.filter(i => !i.isCancelled).length; }); return count; }, [filteredGroupedOrders]);
             useEffect(() => { setDisplayLimit(30); }, [deferredOrderSearch, filterStatus, selectedNick]);
@@ -1327,7 +1484,14 @@
                 return safeContent.split(pattern).map((part, i) => kwArray.includes(part) ? <span key={i} className="text-slate-700 dark:text-slate-300 font-bold bg-slate-200 dark:bg-slate-600 px-0.5 rounded">{part}</span> : part);
             }, []);
 
-            const handleChatClick = (chat) => { bringToTopAndScroll(chat.nickname); setClickedChats(prev => new Set(prev).add(chat.id)); const finalProduct = (isFixedProductMode && manualProduct.trim() !== '') ? manualProduct.trim() : String(chat.content || ''); const finalPrice = isFixedProductMode ? manualPrice : null; addOrderLogic(chat.nickname, finalProduct, 1, true, null, finalPrice, isFixedProductMode, true); };
+            const handleChatClick = useCallback((chat) => { 
+                bringToTopAndScroll(chat.nickname); 
+                setClickedChats(prev => new Set(prev).add(chat.id)); 
+                const finalProduct = (isFixedProductMode && manualProduct.trim() !== '') ? manualProduct.trim() : String(chat.content || ''); 
+                const finalPrice = isFixedProductMode ? manualPrice : null; 
+                addOrderLogic(chat.nickname, finalProduct, 1, true, null, finalPrice, isFixedProductMode, true); 
+            }, [bringToTopAndScroll, setClickedChats, isFixedProductMode, manualProduct, manualPrice, addOrderLogic]);
+
             const handleAddKeyword = (e) => { e.preventDefault(); const kw = keywordInput.trim(); if(!kw) return; setKeywords(prev => { const next = [...(prev || [])]; if(!next.includes(kw)) next.push(kw); return next; }); setKeywordInput(''); };
             const handleRemoveKeyword = (keyword) => { setKeywords(prev => (prev || []).filter(k => k !== keyword)); };
 
@@ -1511,7 +1675,6 @@
             }, [openModal, setAddressMapping]);
 
             const handleProductChange = useCallback((id, field, value) => { 
-                if (field === 'product' && !isFixedProductMode) setCurrentSearchTerm(value);
                 setOrders(prev => prev.map(o => { 
                     if (o.id === id) { 
                         const newOrder = { ...o, [field]: value, isUnmodified: false }; 
@@ -1562,6 +1725,41 @@
             const handleOrderCancel = useCallback((id) => setOrders(prev => prev.map(o => o.id === id ? { ...o, isCancelled: !o.isCancelled } : o)), [setOrders]);
             const handleOrderDelete = useCallback((id) => openModal("주문 삭제하시겠습니까?", 'confirm', () => setOrders(prev => prev.filter(o => o.id !== id))), [openModal, setOrders]);
 
+            const handleBatchAddOrders = useCallback((nick, productNames) => {
+                if(!productNames || productNames.length === 0) return;
+                const cNick = String(nick).replace(/@/g, '').trim();
+                const hist = productHistoryRef.current;
+                
+                setSelectedNick(cNick);
+                
+                setOrders(prev => {
+                    let newOrders = [...prev];
+                    productNames.forEach(prodName => {
+                        const invArr = Array.isArray(inventoryRef.current) ? inventoryRef.current : [];
+                        const invItem = invArr.find(i => String(i.name).trim() === prodName);
+                        const price = invItem ? Number(invItem.price) : (hist[prodName] || 0);
+                        
+                        const existIdx = newOrders.findIndex(o => o.customer === cNick && o.product === prodName && !o.isCancelled);
+                        if (existIdx !== -1) {
+                            newOrders[existIdx] = { ...newOrders[existIdx], quantity: newOrders[existIdx].quantity + 1, price: (newOrders[existIdx].quantity + 1) * price, isUnmodified: false };
+                        } else {
+                            newOrders.unshift({
+                                id: Date.now() + Math.random(),
+                                customer: cNick,
+                                product: prodName,
+                                quantity: 1,
+                                price: price,
+                                deposit: 0,
+                                isCancelled: false,
+                                isUnmodified: false,
+                                isSentToEmp: false
+                            });
+                        }
+                    });
+                    return newOrders;
+                });
+            }, [setOrders]);
+
             const copyOrderSheet = useCallback((nick, items, grandTotal, depositTotal, balance, isCard, addrData, e) => {
                 const activeItems = items.filter(i => !i.isCancelled); const addr = addrData || addressLookup.get(nick)?.data || {};
                 const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0); const currentShipping = getCalculatedShipping(nick, productTotal);
@@ -1601,52 +1799,7 @@
                 } catch (err) { } document.body.removeChild(textArea);
             }, [addressLookup, getCalculatedShipping, templateConfig, bankAccount, sentAddressRequests, setSentAddressRequests, setCheckedOrders, broadcastName]);
 
-            const handleFullDepositToggle = useCallback((nick, grandTotal, currentDeposit) => { 
-                if (currentDeposit >= grandTotal) { setOrders(prev => prev.map(o => o.customer === nick ? { ...o, deposit: 0 } : o)); } 
-                else { setOrders(prev => { let done = false; return prev.map(o => { if (o.customer === nick && !done) { done = true; return { ...o, deposit: grandTotal }; } return o; }); }); } 
-            }, [setOrders]);
-
-            const addOrderLogic = useCallback((nick, content, qty = 1, force = false, afterId = null, customPrice = null, markAsModified = false, isAuto = false) => {
-                const cNick = String(nick).replace(/@/g, '').trim(); 
-                
-                // 퍼지 매칭 적용
-                const matchedItem = findMatchingProduct(content, inventoryRef.current);
-                const cContent = matchedItem ? matchedItem.name : String(content || '').trim();
-
-                const invArr = Array.isArray(inventoryRef.current) ? inventoryRef.current : [];
-                const hist = productHistoryRef.current;
-                const invItem = invArr.find(i => String(i.name).trim() === cContent);
-                
-                let price = 0; const isCustomPriceValid = customPrice !== null && customPrice !== '';
-                if (isCustomPriceValid) price = Number(String(customPrice).replace(/,/g, '')); else price = invItem ? Number(invItem.price) : (hist[cContent] || 0);
-
-                if (cContent !== '' && (isCustomPriceValid || price > 0)) {
-                    const priceToSave = price || 0;
-                    if (priceToSave >= 1) {
-                        const exists = invArr.find(i => String(i.name).trim() === cContent);
-                        if (!exists) {
-                            const newInv = [{ id: `inv_${Date.now()}_${Math.random()}`, name: cContent, price: priceToSave, stock: '', isSoldOut: false }, ...invArr];
-                            setInventory(newInv);
-                            saveInventoryToServer(newInv);
-                            setProductHistory(h => ({ ...h, [cContent]: priceToSave }));
-                        }
-                    }
-                }
-
-                if (!isAuto) { setCheckedOrders(prev => { const n = new Set(prev); n.delete(cNick); return n; }); setSelectedNick(cNick); }
-                
-                const newOrder = { id: Date.now() + Math.random(), customer: cNick, product: cContent, quantity: qty, price: Number(price) * qty, deposit: 0, isCancelled: false, isUnmodified: !markAsModified, isSentToEmp: false };
-                setOrders(prev => {
-                    if (!afterId && !force && cContent !== '') {
-                        const existIdx = prev.findIndex(o => o.customer === cNick && o.product === cContent && !o.isCancelled);
-                        if (existIdx !== -1) { const next = [...prev]; next[existIdx] = { ...next[existIdx], quantity: next[existIdx].quantity + qty, price: (next[existIdx].quantity + qty) * price, isUnmodified: !markAsModified }; return next; }
-                    }
-                    if (afterId) { const idx = prev.findIndex(o => o.id === afterId); if (idx !== -1) { const next = [...prev]; next.splice(idx + 1, 0, newOrder); return next; } }
-                    return [newOrder, ...prev];
-                });
-            }, [setCheckedOrders, setOrders, setInventory, setProductHistory, saveInventoryToServer]);
-
-            const handleManualSubmit = (e) => { e.preventDefault(); if(!manualNick.trim()) return openModal("닉네임을 입력해주세요.", 'alert'); addOrderLogic(manualNick, manualProduct, 1, false, null, manualPrice, true); setManualNick(''); if (!isFixedProductMode) { setManualProduct(''); setManualPrice(''); } };
+            const handleManualSubmit = useCallback((e) => { e.preventDefault(); if(!manualNick.trim()) return openModal("닉네임을 입력해주세요.", 'alert'); addOrderLogic(manualNick, manualProduct, 1, false, null, manualPrice, true); setManualNick(''); if (!isFixedProductMode) { setManualProduct(''); setManualPrice(''); } }, [manualNick, manualProduct, manualPrice, isFixedProductMode, addOrderLogic, openModal]);
             
             const handleDepositClick = (dep) => {
                 const isUsed = matchedDeposits?.has(dep.id);
@@ -1659,7 +1812,7 @@
                         return;
                     }
 
-                    openModal(`'${targetNick}' 주문자의 입금 매칭(${Number(dep.amount).toLocaleString()}원)을 취소하고 금액을 차감하시겠습니까?`, 'confirm', () => {
+                    openModal(`'${targetNick}' 주문자의 입금 매칭(${Number(dep.amount).toLocaleString()}원)을 취소하고 금액 차감을 진행하시겠습니까?`, 'confirm', () => {
                         setOrders(prev => {
                             let amountToRemove = Number(dep.amount);
                             return prev.map(o => {
@@ -1801,12 +1954,9 @@
                 setNewInvName(''); setNewInvPrice(''); setNewInvStock('');
             };
 
-            // 재고 정렬을 위한 useMemo (가장 오래된 것이 맨 아래로, 최신이 맨 위로 오도록 내림차순 정렬)
             const sortedInventory = useMemo(() => {
                 return [...inventory].sort((a, b) => {
-                    const timeA = a.id && a.id.startsWith('inv_') ? Number(a.id.split('_')[1]) || 0 : 0;
-                    const timeB = b.id && b.id.startsWith('inv_') ? Number(b.id.split('_')[1]) || 0 : 0;
-                    return timeB - timeA;
+                    return String(b.name || '').localeCompare(String(a.name || ''), 'ko', { numeric: true });
                 });
             }, [inventory]);
 
@@ -1959,7 +2109,7 @@
                                 const grand = baseGrand + cardFee; const bal = baseBal + cardFee;
                                 const { data: addrData, conflict: addrConflict, type: addrType } = addressLookup.get(nick);
                                 
-                                return (<CustomerBlock key={nick} nick={nick} items={items} isSelected={selectedNick === nick} currentShipping={ship} isCard={isCard} isPaidState={bal <= 0 && activeItems.length > 0} grandTotal={grand} depositTotal={depSum} balance={bal} baseGrandTotal={baseGrand} baseBalance={baseBal} addr={addrData} addrType={addrType} addrConflict={addrConflict} addressMapping={addressMapping} autoDepositorName={addrData?.realname || ''} displayDepositorName={depositorNames[nick] || addrData?.realname || '입금자'} isAutoDepositor={!depositorNames[nick] && addrData?.realname} depositorNames={depositorNames} copyStatus={copyStatus} isOrderConfirmed={checkedOrders.has(nick)} isEditingShipping={editingShippingNick === nick} setSelectedNick={setSelectedNick} addOrderLogic={addOrderLogic} handleNicknameEdit={handleNicknameEdit} toggleCardPayment={toggleCardPayment} handleShippingChange={handleShippingChange} setEditingShippingNick={setEditingShippingNick} openModal={openModal} setDepositorNames={setDepositorNames} handleFullDepositToggle={handleFullDepositToggle} copyOrderSheet={copyOrderSheet} handleOrderCheckToggle={handleOrderCheckToggle} handleAddressUnmapping={handleAddressUnmapping} handleAddressMapping={handleAddressMapping} handlePromoteAddress={handlePromoteAddress} handleProductChange={handleProductChange} handleQuantityUpdate={handleQuantityUpdate} handleOrderCancel={handleOrderCancel} handleOrderDelete={handleOrderDelete} toggleVIP={specialCustomers} onOpenQuickAddress={(nick) => setQuickAddrModal({ isOpen: true, nick, editData: null })} findAddressSuggestions={findAddressSuggestions} cashReceiptStatus={cashReceipts[nick]} toggleCashReceipt={toggleCashReceipt} inventory={inventory} productHistory={productHistory} />);
+                                return (<CustomerBlock key={nick} nick={nick} items={items} isSelected={selectedNick === nick} currentShipping={ship} isCard={isCard} isPaidState={bal <= 0 && activeItems.length > 0} grandTotal={grand} depositTotal={depSum} balance={bal} baseGrandTotal={baseGrand} baseBalance={baseBal} addr={addrData} addrType={addrType} addrConflict={addrConflict} addressMapping={addressMapping} autoDepositorName={addrData?.realname || ''} displayDepositorName={depositorNames[nick] || addrData?.realname || '입금자'} isAutoDepositor={!depositorNames[nick] && addrData?.realname} depositorNames={depositorNames} copyStatus={copyStatus} isOrderConfirmed={checkedOrders.has(nick)} isEditingShipping={editingShippingNick === nick} setSelectedNick={setSelectedNick} addOrderLogic={addOrderLogic} handleNicknameEdit={handleNicknameEdit} toggleCardPayment={toggleCardPayment} handleShippingChange={handleShippingChange} setEditingShippingNick={setEditingShippingNick} openModal={openModal} setDepositorNames={setDepositorNames} handleFullDepositToggle={handleFullDepositToggle} copyOrderSheet={copyOrderSheet} handleOrderCheckToggle={handleOrderCheckToggle} handleAddressUnmapping={handleAddressUnmapping} handleAddressMapping={handlePromoteAddress} handleProductChange={handleProductChange} handleQuantityUpdate={handleQuantityUpdate} handleOrderCancel={handleOrderCancel} handleOrderDelete={handleOrderDelete} toggleVIP={specialCustomers} onOpenQuickAddress={(nick) => setQuickAddrModal({ isOpen: true, nick, editData: null })} findAddressSuggestions={findAddressSuggestions} cashReceiptStatus={cashReceipts[nick]} toggleCashReceipt={toggleCashReceipt} inventory={inventory} productHistory={productHistory} onOpenBatchAdd={(n) => setBatchAddModal({ isOpen: true, nick: n })} />);
                             })}
                         </div>
                     </div>
@@ -2050,6 +2200,8 @@
                             ))}
                         </div>
                     </div>
+                    
+                    <BatchAddModal isOpen={batchAddModal.isOpen} nick={batchAddModal.nick} inventory={inventory} onClose={() => setBatchAddModal({ isOpen: false, nick: '' })} onAdd={handleBatchAddOrders} />
                 </div>
             );
         };
@@ -2322,7 +2474,6 @@
             const [addressMapping, setAddressMapping] = useLocalStorage('addressMapping', {});
             const [specialCustomers, setSpecialCustomers] = useLocalStorage('specialCustomers', {});
             const [inventory, setInventory] = useLocalStorage('productInventory', []);
-            
             const [quickMessages, setQuickMessages] = useLocalStorage('quickMessages', ["안녕하세요! 주문은 하단 링크 클릭💙", "⚠️ 주소 미입력시 배송 보류!", "문의는 카톡 채널로🙏", "확인 중입니다🥰"]);
 
             const effectiveAddresses = useMemo(() => {
@@ -2400,21 +2551,19 @@
                         </div>
                     </header>
                     
-                    {globalError && <div className="bg-red-500 text-white text-xs font-bold text-center py-2 px-4 shadow-md z-[60] flex items-center justify-center gap-2"><Icon name="warning" weight="bold" size={16} /><span>{globalError}</span></div>}
-                    <Modal isOpen={modalConfig.isOpen} type={modalConfig.type} message={modalConfig.message} onConfirm={modalConfig.onConfirm} onCancel={modalConfig.onCancel} initialValue={modalConfig.initialValue} />
-                    <VipModal isOpen={isVipModalOpen} onClose={() => setIsVipModalOpen(false)} specialCustomers={specialCustomers} setSpecialCustomers={setSpecialCustomers} />
+                    {globalError && <div className="bg-red-500 text-white text-xs font-bold text-center py-1.5 flex items-center justify-center gap-2 animate-pulse"><Icon name="warning-circle" weight="fill" /> {globalError}</div>}
 
-                    {isSettingsOpen && (
-                        <SettingsModalContent 
-                            googleScriptUrl={googleScriptUrl} setGoogleScriptUrl={setGoogleScriptUrl} chatSheetId={chatSheetId} setChatSheetId={setChatSheetId} depSheetId={depSheetId} setDepSheetId={setDepSheetId} addrSheetId={addrSheetId} setAddrSheetId={setAddrSheetId} masterSheetId={masterSheetId} setMasterSheetId={setMasterSheetId} broadcastName={broadcastName} setBroadcastName={setBroadcastName} quickShipping={quickShipping} setQuickShipping={setQuickShipping} jejuShipping={jejuShipping} setJejuShipping={setJejuShipping} freeShippingThreshold={freeShippingThreshold} setFreeShippingThreshold={setFreeShippingThreshold} templateConfig={templateConfig} setTemplateConfig={setTemplateConfig} bankAccount={bankAccount} setBankAccount={setBankAccount} quickMessages={quickMessages} setQuickMessages={setQuickMessages} setIsSettingsOpen={setIsSettingsOpen}
-                            addressStartDate={addressStartDate} setAddressStartDate={setAddressStartDate} soundVolume={soundVolume} setSoundVolume={setSoundVolume}
-                        />
-                    )}
-                    
-                    <main className="flex-1 overflow-hidden bg-slate-200 dark:bg-slate-950 p-2 relative">
-                        {activeTab === 'live' && <LiveTab {...{ orders, setOrders, productHistory, setProductHistory, quickShipping, jejuShipping, freeShippingThreshold, shippingOverrides, setShippingOverrides, bankAccount, googleScriptUrl, chatSheetId, depSheetId, addrSheetId, masterSheetId, addresses: effectiveAddresses, setAddresses, cardPayments, setCardPayments, matchedDeposits, setMatchedDeposits, depositorNames, setDepositorNames, clickedChats, setClickedChats, openModal, keywords, setKeywords, sentAddressRequests, setSentAddressRequests, deletedDepositIds, setDeletedDepositIds, checkedOrders, setCheckedOrders, addressMapping, setAddressMapping, templateConfig, specialCustomers, setSpecialCustomers, inventory, setInventory, quickMessages, handleResetAllData, broadcastName, setGlobalError, cashReceipts, setCashReceipts, soundEnabled, soundVolume }} />}
-                        {activeTab === 'manage' && <OrderManagementTab {...{ orders, shippingOverrides, quickShipping, jejuShipping, freeShippingThreshold, broadcastName, addresses: effectiveAddresses, handleExportBackup, handleImportBackup, addressMapping, cardPayments, specialCustomers, openModal, cashReceipts, inventory, productHistory, fileInputRef }} />}
-                    </main>
+                    <div className="flex-1 overflow-hidden relative">
+                        {activeTab === 'live' ? (
+                            <LiveTab orders={orders} setOrders={setOrders} productHistory={productHistory} setProductHistory={setProductHistory} quickShipping={quickShipping} jejuShipping={jejuShipping} freeShippingThreshold={freeShippingThreshold} shippingOverrides={shippingOverrides} setShippingOverrides={setShippingOverrides} bankAccount={bankAccount} googleScriptUrl={googleScriptUrl} chatSheetId={chatSheetId} depSheetId={depSheetId} addrSheetId={addrSheetId} masterSheetId={masterSheetId} addresses={effectiveAddresses} setAddresses={setAddresses} cardPayments={cardPayments} setCardPayments={setCardPayments} matchedDeposits={matchedDeposits} setMatchedDeposits={setMatchedDeposits} depositorNames={depositorNames} setDepositorNames={setDepositorNames} clickedChats={clickedChats} setClickedChats={setClickedChats} openModal={openModal} keywords={keywords} setKeywords={setKeywords} sentAddressRequests={sentAddressRequests} setSentAddressRequests={setSentAddressRequests} deletedDepositIds={deletedDepositIds} setDeletedDepositIds={setDeletedDepositIds} checkedOrders={checkedOrders} setCheckedOrders={setCheckedOrders} addressMapping={addressMapping} setAddressMapping={setAddressMapping} templateConfig={templateConfig} specialCustomers={specialCustomers} setSpecialCustomers={setSpecialCustomers} inventory={inventory} setInventory={setInventory} quickMessages={quickMessages} handleResetAllData={handleResetAllData} broadcastName={broadcastName} setGlobalError={setGlobalError} cashReceipts={cashReceipts} setCashReceipts={setCashReceipts} soundEnabled={soundEnabled} soundVolume={soundVolume} />
+                        ) : (
+                            <OrderManagementTab orders={orders} shippingOverrides={shippingOverrides} quickShipping={quickShipping} jejuShipping={jejuShipping} freeShippingThreshold={freeShippingThreshold} broadcastName={broadcastName} addresses={effectiveAddresses} handleExportBackup={handleExportBackup} handleImportBackup={handleImportBackup} addressMapping={addressMapping} cardPayments={cardPayments} specialCustomers={specialCustomers} openModal={openModal} cashReceipts={cashReceipts} inventory={inventory} productHistory={productHistory} fileInputRef={fileInputRef} />
+                        )}
+                    </div>
+
+                    {isSettingsOpen && <SettingsModalContent googleScriptUrl={googleScriptUrl} setGoogleScriptUrl={setGoogleScriptUrl} chatSheetId={chatSheetId} setChatSheetId={setChatSheetId} depSheetId={depSheetId} setDepSheetId={setDepSheetId} addrSheetId={addrSheetId} setAddrSheetId={setAddrSheetId} masterSheetId={masterSheetId} setMasterSheetId={setMasterSheetId} broadcastName={broadcastName} setBroadcastName={setBroadcastName} quickShipping={quickShipping} setQuickShipping={setQuickShipping} jejuShipping={jejuShipping} setJejuShipping={setJejuShipping} freeShippingThreshold={freeShippingThreshold} setFreeShippingThreshold={setFreeShippingThreshold} templateConfig={templateConfig} setTemplateConfig={setTemplateConfig} bankAccount={bankAccount} setBankAccount={setBankAccount} quickMessages={quickMessages} setQuickMessages={setQuickMessages} addressStartDate={addressStartDate} setAddressStartDate={setAddressStartDate} soundVolume={soundVolume} setSoundVolume={setSoundVolume} setIsSettingsOpen={setIsSettingsOpen} />}
+                    <VipModal isOpen={isVipModalOpen} onClose={()=>setIsVipModalOpen(false)} specialCustomers={specialCustomers} setSpecialCustomers={setSpecialCustomers} />
+                    <Modal isOpen={modalConfig.isOpen} type={modalConfig.type} message={modalConfig.message} onConfirm={modalConfig.onConfirm} onCancel={modalConfig.onCancel} initialValue={modalConfig.initialValue} />
                 </div>
             );
         };
