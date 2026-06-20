@@ -111,6 +111,40 @@
             return new Date(0);
         };
 
+        // 퍼지 매칭(스마트 자동완성) 로직
+        const findMatchingProduct = (inputStr, invArray) => {
+            if (!inputStr || !invArray || !Array.isArray(invArray)) return null;
+            const raw = String(inputStr).trim();
+            if (!raw) return null;
+            
+            // 1. 완전 일치 확인
+            let match = invArray.find(i => i.name === raw);
+            if (match) return match;
+            
+            // 2. 공백 제거 일치
+            const noSpace = raw.replace(/\s/g, '').toLowerCase();
+            match = invArray.find(i => i.name.replace(/\s/g, '').toLowerCase() === noSpace);
+            if (match) return match;
+            
+            // 3. '번', '야', '요' 등 무의미한 조사 제거 일치 (예: "01번" -> "01")
+            const noSuffix = noSpace.replace(/[번야요이은는이가을를]/g, '');
+            match = invArray.find(i => i.name.replace(/\s/g, '').toLowerCase() === noSuffix);
+            if (match) return match;
+            
+            // 4. 번호/코드 기반 앞부분 일치 (예: "01" 입력 시 "01 치마" 매칭)
+            const codeMatch = noSuffix.match(/^([0-9a-zA-Z]+)/);
+            if (codeMatch) {
+                const code = codeMatch[1];
+                const possibleMatches = invArray.filter(i => {
+                    const invClean = i.name.replace(/\s/g, '').toLowerCase();
+                    return invClean.startsWith(code);
+                });
+                if (possibleMatches.length === 1) return possibleMatches[0]; // 하나만 확실하게 걸릴 때 자동변환
+            }
+            
+            return null;
+        };
+
         const fetchGas = async (url, payload = null) => {
             const options = { method: payload ? 'POST' : 'GET', redirect: "follow" };
             if (payload) {
@@ -386,7 +420,7 @@
             );
         };
 
-        const InventoryItemRow = memo(({ item, itemStats, setOrders, inventory, setInventory, setProductHistory, openModal, expandedInventoryItem, setExpandedInventoryItem, setManualProduct, setCurrentSearchTerm, setManualPrice, setIsFixedProductMode, customerPaidStatus, saveInventoryToServer, cardPayments }) => {
+        const InventoryItemRow = memo(({ item, itemStats, setOrders, inventory, setInventory, setProductHistory, openModal, expandedInventoryItems, setExpandedInventoryItems, setManualProduct, setCurrentSearchTerm, setManualPrice, setIsFixedProductMode, customerPaidStatus, saveInventoryToServer, cardPayments }) => {
             const [isEditing, setIsEditing] = useState(false);
             const [localName, setLocalName] = useState(item.name);
             const [localPrice, setLocalPrice] = useState(item.price === 0 || item.price === '' ? '' : Number(item.price).toLocaleString());
@@ -399,7 +433,7 @@
             const orderedCount = itemStats ? itemStats.count : 0;
             const aggregatedOrders = itemStats ? itemStats.aggregated : [];
 
-            const isExpanded = expandedInventoryItem === item.name;
+            const isExpanded = expandedInventoryItems.has(item.name);
 
             const handleSave = () => {
                 const newName = localName.trim();
@@ -481,7 +515,8 @@
                                         const el = e.currentTarget; el.classList.add('text-green-600', 'dark:text-green-400'); setTimeout(() => el.classList.remove('text-green-600', 'dark:text-green-400'), 500);
                                     }}
                                     onDoubleClick={(e) => {
-                                        e.stopPropagation(); setManualProduct(item.name); setCurrentSearchTerm(item.name); setManualPrice(item.price ? Number(item.price).toLocaleString() : '');
+                                        e.stopPropagation(); setManualProduct(item.name); 
+                                        setManualPrice(item.price ? Number(item.price).toLocaleString() : '');
                                         setIsFixedProductMode(true); document.getElementById('manual-prod-input')?.focus();
                                     }}
                                 >
@@ -494,7 +529,15 @@
                                     {item.stock !== undefined && item.stock !== '' ? item.stock - orderedCount : '∞'}
                                 </div>
                                 <div className={`w-8 text-center font-bold shrink-0 ${item.isSoldOut ? 'text-red-400' : 'text-slate-600 dark:text-slate-400'}`}>{orderedCount}</div>
-                                <button onClick={(e) => { e.stopPropagation(); setExpandedInventoryItem(isExpanded ? null : item.name); }} className={`ml-1 p-0.5 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors shrink-0 w-5 flex justify-center ${isExpanded ? 'bg-slate-200 dark:bg-slate-600 text-slate-700' : ''}`}><Icon name="caret-down" weight="bold" className={`transition-transform ${isExpanded ? 'rotate-180' : ''}`} /></button>
+                                <button onClick={(e) => { 
+                                    e.stopPropagation(); 
+                                    setExpandedInventoryItems(prev => {
+                                        const next = new Set(prev);
+                                        if (next.has(item.name)) next.delete(item.name);
+                                        else next.add(item.name);
+                                        return next;
+                                    });
+                                }} className={`ml-1 p-0.5 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors shrink-0 w-5 flex justify-center ${isExpanded ? 'bg-slate-200 dark:bg-slate-600 text-slate-700' : ''}`}><Icon name="caret-down" weight="bold" className={`transition-transform ${isExpanded ? 'rotate-180' : ''}`} /></button>
                             </>
                         )}
                     </div>
@@ -540,6 +583,23 @@
                     )}
                 </div>
             );
+        }, (prev, next) => {
+            if (prev.item.name !== next.item.name || prev.item.price !== next.item.price || prev.item.isSoldOut !== next.item.isSoldOut || prev.item.stock !== next.item.stock) return false;
+            
+            const isExpandedPrev = prev.expandedInventoryItems.has(prev.item.name);
+            const isExpandedNext = next.expandedInventoryItems.has(next.item.name);
+            if (isExpandedPrev !== isExpandedNext) return false;
+            
+            if (isExpandedNext) {
+                if (prev.itemStats !== next.itemStats) return false;
+                if (prev.customerPaidStatus !== next.customerPaidStatus) return false;
+                if (prev.cardPayments !== next.cardPayments) return false;
+            } else {
+                const prevCount = prev.itemStats ? prev.itemStats.count : 0;
+                const nextCount = next.itemStats ? next.itemStats.count : 0;
+                if (prevCount !== nextCount) return false;
+            }
+            return true;
         });
 
         const OrderItem = memo(({ item, nick, nextItemId, isLast, handleProductChange, handleQuantityUpdate, handleOrderCancel, handleOrderDelete, addOrderLogic, setSelectedNick, inventory, productHistory }) => {
@@ -703,7 +763,7 @@
             const [orderSearch, setOrderSearch] = useState('');
             const [chatSearch, setChatSearch] = useState('');
             const [filterStatus, setFilterStatus] = useState('all');
-            const [expandedInventoryItem, setExpandedInventoryItem] = useState(null);
+            const [expandedInventoryItems, setExpandedInventoryItems] = useState(new Set());
             
             const [chats, setChats] = useState([]);
             const [hiddenChatIds, setHiddenChatIds] = useState(() => { try { const s = localStorage.getItem(getLsKey('hiddenChatIds')); const p = JSON.parse(s); return Array.isArray(p) ? p : []; } catch(e){ return []; } });
@@ -1061,10 +1121,12 @@
                         if (res.inventory && Array.isArray(res.inventory)) {
                             setInventory(prevInv => {
                                 const prevArray = Array.isArray(prevInv) ? prevInv : [];
+                                // [최적화 패치] 로컬에 이미 재고 데이터가 있으면 5초마다 서버 데이터로 덮어쓰지 않음
+                                // 수동으로 수정/삭제 시 랙이나 지연에 의해 부활하는 현상 완벽 방지
                                 if (prevArray.length > 0) return prevArray;
 
-                                return res.inventory.map(i => ({
-                                    id: `inv_${Date.now()}_${Math.random()}`,
+                                return res.inventory.slice().reverse().map((i, index) => ({
+                                    id: `inv_${Date.now()}_${index}`,
                                     name: i.name, 
                                     price: Number(i.price), 
                                     stock: '', 
@@ -1449,12 +1511,16 @@
             }, [openModal, setAddressMapping]);
 
             const handleProductChange = useCallback((id, field, value) => { 
-                if (field === 'product') setCurrentSearchTerm(value);
+                if (field === 'product' && !isFixedProductMode) setCurrentSearchTerm(value);
                 setOrders(prev => prev.map(o => { 
                     if (o.id === id) { 
                         const newOrder = { ...o, [field]: value, isUnmodified: false }; 
                         if(field === 'product') { 
-                            const cleanVal = String(value).trim(); const inv = inventoryRef.current; const hist = productHistoryRef.current;
+                            const matchedItem = findMatchingProduct(value, inventoryRef.current);
+                            const cleanVal = matchedItem ? matchedItem.name : String(value).trim();
+                            newOrder.product = cleanVal;
+
+                            const inv = inventoryRef.current; const hist = productHistoryRef.current;
                             const invItem = Array.isArray(inv) ? inv.find(i => String(i.name).trim() === cleanVal) : null;
                             const uPrice = invItem ? Number(invItem.price) : (hist[cleanVal] || 0);
                             newOrder.price = (Number(newOrder.quantity) || 0) * uPrice; 
@@ -1467,7 +1533,7 @@
                                 const inv = inventoryRef.current;
                                 const exists = Array.isArray(inv) ? inv.find(i => String(i.name).trim() === cleanProd) : null;
                                 if (!exists) {
-                                    const newInv = [{ id: `inv_${Date.now()}_${Math.random()}`, name: cleanProd, price: uPrice, isSoldOut: false }, ...(Array.isArray(inv) ? inv : [])];
+                                    const newInv = [{ id: `inv_${Date.now()}_${Math.random()}`, name: cleanProd, price: uPrice, stock: '', isSoldOut: false }, ...(Array.isArray(inv) ? inv : [])];
                                     setInventory(newInv);
                                     saveInventoryToServer(newInv);
                                     setProductHistory(h => ({ ...h, [cleanProd]: uPrice }));
@@ -1478,7 +1544,7 @@
                     } 
                     return o; 
                 })); 
-            }, [setOrders, setProductHistory, setInventory, saveInventoryToServer]);
+            }, [setOrders, setProductHistory, setInventory, saveInventoryToServer, isFixedProductMode]);
 
             const handleQuantityUpdate = useCallback((itemId, newQtyVal) => { 
                 setOrders(prev => prev.map(o => { 
@@ -1541,7 +1607,12 @@
             }, [setOrders]);
 
             const addOrderLogic = useCallback((nick, content, qty = 1, force = false, afterId = null, customPrice = null, markAsModified = false, isAuto = false) => {
-                const cNick = String(nick).replace(/@/g, '').trim(); const cContent = String(content || '').trim();
+                const cNick = String(nick).replace(/@/g, '').trim(); 
+                
+                // 퍼지 매칭 적용
+                const matchedItem = findMatchingProduct(content, inventoryRef.current);
+                const cContent = matchedItem ? matchedItem.name : String(content || '').trim();
+
                 const invArr = Array.isArray(inventoryRef.current) ? inventoryRef.current : [];
                 const hist = productHistoryRef.current;
                 const invItem = invArr.find(i => String(i.name).trim() === cContent);
@@ -1580,15 +1651,15 @@
             const handleDepositClick = (dep) => {
                 const isUsed = matchedDeposits?.has(dep.id);
                 if (isUsed) {
-                    openModal(`'${dep.name}' 님의 입금 매칭을 취소하시겠습니까?`, 'confirm', () => {
-                        let targetNick = selectedNick;
-                        if (!targetNick) {
-                            targetNick = orders.find(o => !o.isCancelled && cleanForMatch(o.customer) === cleanForMatch(dep.name))?.customer;
-                        }
-                        if (!targetNick) {
-                            targetNick = dep.name;
-                        }
+                    const exactMatchCustomer = orders.find(o => !o.isCancelled && cleanForMatch(o.customer) === cleanForMatch(dep.name))?.customer;
+                    const targetNick = selectedNick || exactMatchCustomer;
 
+                    if (!targetNick) {
+                        openModal("매칭을 해제할 주문자(닉네임)를 먼저 클릭하여 노란색으로 선택한 후, 매칭 완료된 입금 내역을 클릭해 주세요.", "alert");
+                        return;
+                    }
+
+                    openModal(`'${targetNick}' 주문자의 입금 매칭(${Number(dep.amount).toLocaleString()}원)을 취소하고 금액을 차감하시겠습니까?`, 'confirm', () => {
                         setOrders(prev => {
                             let amountToRemove = Number(dep.amount);
                             return prev.map(o => {
@@ -1602,10 +1673,14 @@
                         });
                         setMatchedDeposits(p => { const next = new Set(p); next.delete(dep.id); return next; }); 
                         setIgnoredAutoMatch(p => new Set(p).add(dep.id)); 
-                    }); return;
+                    }); 
+                    return;
                 }
-                const targetNick = selectedNick || orders.find(o => !o.isCancelled && cleanForMatch(o.customer) === cleanForMatch(dep.name))?.customer;
+
+                const exactMatchCustomer = orders.find(o => !o.isCancelled && cleanForMatch(o.customer) === cleanForMatch(dep.name))?.customer;
+                const targetNick = selectedNick || exactMatchCustomer;
                 if (!targetNick) return openModal("입금을 연결할 주문자(닉네임)를 먼저 클릭하여 노란색으로 선택해주세요.", "alert");
+                
                 setOrders(prev => { let done = false; return prev.map(o => { if (!done && o.customer === targetNick) { done = true; return { ...o, deposit: (o.deposit || 0) + Number(dep.amount) }; } return o; }); });
                 setMatchedDeposits(p => new Set(p).add(dep.id)); setIgnoredAutoMatch(p => new Set(p).add(dep.id));
             };
@@ -1725,6 +1800,15 @@
                 if(priceNum > 0) setProductHistory(prev => ({...prev, [cleanName]: priceNum}));
                 setNewInvName(''); setNewInvPrice(''); setNewInvStock('');
             };
+
+            // 재고 정렬을 위한 useMemo (가장 오래된 것이 맨 아래로, 최신이 맨 위로 오도록 내림차순 정렬)
+            const sortedInventory = useMemo(() => {
+                return [...inventory].sort((a, b) => {
+                    const timeA = a.id && a.id.startsWith('inv_') ? Number(a.id.split('_')[1]) || 0 : 0;
+                    const timeB = b.id && b.id.startsWith('inv_') ? Number(b.id.split('_')[1]) || 0 : 0;
+                    return timeB - timeA;
+                });
+            }, [inventory]);
 
             return (
                 <div className="flex h-full gap-2 p-2 overflow-x-auto bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100">
@@ -1961,8 +2045,8 @@
                             <div className="flex-1 text-left pl-1">상품명 <span className="text-[8px] font-normal">(수정가능)</span></div><div className="w-5 shrink-0"></div><div className="w-12 shrink-0 text-center">단가</div><div className="w-10 shrink-0 text-center">잔여</div><div className="w-8 shrink-0 text-center">주문</div><div className="w-6 shrink-0"></div>
                         </div>
                         <div className="flex-1 overflow-y-auto p-1.5 space-y-1.5 bg-slate-50 dark:bg-slate-900">
-                            {inventory.filter(i => !currentSearchTerm || String(i.name).toLowerCase().includes(String(currentSearchTerm).toLowerCase())).map(item => (
-                                <InventoryItemRow key={item.id || item.name} item={item} itemStats={inventoryStats[item.name]} setOrders={setOrders} inventory={inventory} setInventory={setInventory} setProductHistory={setProductHistory} openModal={openModal} expandedInventoryItem={expandedInventoryItem} setExpandedInventoryItem={setExpandedInventoryItem} setManualProduct={setManualProduct} setCurrentSearchTerm={setCurrentSearchTerm} setManualPrice={setManualPrice} setIsFixedProductMode={setIsFixedProductMode} customerPaidStatus={customerPaidStatus} saveInventoryToServer={saveInventoryToServer} cardPayments={cardPayments} />
+                            {sortedInventory.filter(i => !currentSearchTerm || String(i.name).toLowerCase().includes(String(currentSearchTerm).toLowerCase())).map(item => (
+                                <InventoryItemRow key={item.id || item.name} item={item} itemStats={inventoryStats[item.name]} setOrders={setOrders} inventory={inventory} setInventory={setInventory} setProductHistory={setProductHistory} openModal={openModal} expandedInventoryItems={expandedInventoryItems} setExpandedInventoryItems={setExpandedInventoryItems} setManualProduct={setManualProduct} setCurrentSearchTerm={setCurrentSearchTerm} setManualPrice={setManualPrice} setIsFixedProductMode={setIsFixedProductMode} customerPaidStatus={customerPaidStatus} saveInventoryToServer={saveInventoryToServer} cardPayments={cardPayments} />
                             ))}
                         </div>
                     </div>
