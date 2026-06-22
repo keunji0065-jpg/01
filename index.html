@@ -635,7 +635,7 @@
             );
         });
 
-        const CustomerBlock = memo(({ nick, items, isSelected, currentShipping, isCard, isPaidState, grandTotal, depositTotal, balance, addr, addrConflict, addressMapping, displayDepositorName, isAutoDepositor, depositorNames, copyStatus, isOrderConfirmed, isEditingShipping, setSelectedNick, addOrderLogic, handleNicknameEdit, toggleCardPayment, handleShippingChange, setEditingShippingNick, openModal, setDepositorNames, handleFullDepositToggle, copyOrderSheet, handleOrderCheckToggle, handleAddressUnmapping, handlePromoteAddress, handleProductChange, handleQuantityUpdate, handleOrderCancel, handleOrderDelete, specialCustomers, onOpenQuickAddress, cashReceiptStatus, toggleCashReceipt, setMultiAddNick }) => {
+        const CustomerBlock = memo(({ nick, items, isSelected, currentShipping, isCard, isPaidState, grandTotal, depositTotal, balance, addr, addrConflict, addressMapping, displayDepositorName, isAutoDepositor, depositorNames, copyStatus, isOrderConfirmed, isEditingShipping, connectedDeposits, setSelectedNick, addOrderLogic, handleNicknameEdit, toggleCardPayment, handleShippingChange, setEditingShippingNick, openModal, setDepositorNames, handleFullDepositToggle, copyOrderSheet, handleOrderCheckToggle, handleAddressUnmapping, handlePromoteAddress, handleProductChange, handleQuantityUpdate, handleOrderCancel, handleOrderDelete, handleUnmatchDeposit, specialCustomers, onOpenQuickAddress, cashReceiptStatus, toggleCashReceipt, setMultiAddNick }) => {
             let borderClass = 'border-transparent', headerBgClass = 'bg-white dark:bg-slate-800';
             if (isCard) { borderClass = 'border-slate-300 ring-1 ring-slate-300'; headerBgClass = 'bg-slate-50 dark:bg-slate-800/80'; } 
             else if (!isPaidState && balance > 0) { borderClass = 'border-red-200 ring-1 ring-red-200'; headerBgClass = 'bg-red-50 dark:bg-red-900/10'; } 
@@ -707,6 +707,29 @@
                             <OrderItem key={item.id} item={item} nick={nick} nextItemId={items[idx + 1]?.id} isLast={idx === items.length - 1} handleProductChange={handleProductChange} handleQuantityUpdate={handleQuantityUpdate} handleOrderCancel={handleOrderCancel} handleOrderDelete={handleOrderDelete} addOrderLogic={addOrderLogic} setSelectedNick={setSelectedNick} />
                         ))}
                     </div>
+                    
+                    {/* 연결된 입금 내역 (주문서 하단에 바로 표시 및 해제) */}
+                    {connectedDeposits && connectedDeposits.length > 0 && (
+                        <div className="p-1.5 bg-blue-50/40 dark:bg-blue-900/10 border-t border-blue-100 dark:border-blue-900/30 flex flex-col gap-1">
+                            <div className="text-[10px] font-bold text-blue-700 dark:text-blue-400 flex items-center gap-1">
+                                <Icon name="link" weight="bold" /> 연결된 입금 내역
+                            </div>
+                            {connectedDeposits.map(dep => (
+                                <div key={dep.id} className="flex justify-between items-center bg-white dark:bg-slate-800 p-1.5 rounded border border-blue-200 dark:border-blue-800 shadow-sm min-w-0">
+                                    <div className="flex items-center gap-1 pr-2 truncate flex-1">
+                                        {dep.source === 'manual' && <span className="text-[8px] text-slate-400 dark:text-slate-500 bg-slate-200 dark:bg-slate-700 px-0.5 rounded shrink-0">수동</span>}
+                                        <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 truncate">{dep.name}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                        <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400">+{Number(dep.amount).toLocaleString()}</span>
+                                        <button onClick={(e) => { e.stopPropagation(); handleUnmatchDeposit(dep); }} className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-white dark:bg-slate-700 text-slate-500 dark:text-slate-400 border border-slate-300 dark:border-slate-600 hover:bg-red-50 hover:text-red-500 hover:border-red-300 transition-colors shadow-sm">
+                                            해제
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
             );
         }, (prev, next) => {
@@ -715,6 +738,12 @@
             const pVip = prev.specialCustomers && prev.specialCustomers[normalizeString(prev.nick)]?.type === 'vip';
             const nVip = next.specialCustomers && next.specialCustomers[normalizeString(next.nick)]?.type === 'vip';
             if (pVip !== nVip) return false;
+            if (prev.connectedDeposits?.length !== next.connectedDeposits?.length) return false;
+            if (prev.connectedDeposits && next.connectedDeposits) {
+                for (let i = 0; i < prev.connectedDeposits.length; i++) {
+                    if (prev.connectedDeposits[i].id !== next.connectedDeposits[i].id) return false;
+                }
+            }
             if (prev.items.length !== next.items.length) return false;
             for (let i = 0; i < prev.items.length; i++) {
                 const pItem = prev.items[i], nItem = next.items[i];
@@ -1224,7 +1253,7 @@
                     const addr = addressLookup.get(nick); if (!addr || !addr.data || !addr.data.address) missingAddressCount++;
                     const isCard = cardPayments[nick]; const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0);
                     const shipping = getCalculatedShipping(nick, productTotal); const baseGrandTotal = productTotal + shipping; const baseBalance = baseGrandTotal - depositTotal;
-                    const cardFee = (isCard && baseBalance > 0) ? baseBalance * 0.1 : 0; const finalGrandTotal = baseGrandTotal + cardFee; const finalBalance = baseBalance + cardFee;
+                    const cardFee = (isCard && baseBalance > 0) ? Math.floor(baseBalance * 0.1) : 0; const finalGrandTotal = baseGrandTotal + cardFee; const finalBalance = baseBalance + cardFee;
 
                     totalSales += finalGrandTotal; 
                     if (finalBalance > 0) { if (isCard) totalCardExpected += finalBalance; else totalUnpaid += finalBalance; } else if (finalBalance < 0 && !isCard) { totalOverpaid += Math.abs(finalBalance); }
@@ -1271,7 +1300,7 @@
                     const activeItems = items.filter(i => !i.isCancelled); const activeProd = activeItems.reduce((s,i) => s + Number(i.price), 0);
                     const currentDep = items.reduce((s,i) => s + (Number(i.deposit) || 0), 0); const currentShip = getCalculatedShipping(nick, activeProd);
                     const baseBal = activeProd + (activeItems.length > 0 ? currentShip : 0) - currentDep; const isCard = cardPayments[nick];
-                    const finalBal = baseBal + (isCard && baseBal > 0 ? baseBal * 0.1 : 0);
+                    const finalBal = baseBal + (isCard && baseBal > 0 ? Math.floor(baseBal * 0.1) : 0);
                     
                     if (filterStatus === 'unpaid') return !isCard && finalBal > 0 && activeProd > 0;
                     if (filterStatus === 'overpaid') return !isCard && finalBal < 0;
@@ -1440,7 +1469,8 @@
                 if (field === 'product') setCurrentSearchTerm(value);
                 setOrders(prev => prev.map(o => { 
                     if (o.id === id) { 
-                        const newOrder = { ...o, [field]: value, isUnmodified: false }; 
+                        const parsedValue = field === 'price' ? Number(String(value).replace(/,/g, '')) : value;
+                        const newOrder = { ...o, [field]: parsedValue, isUnmodified: false }; 
                         if(field === 'product') { 
                             const cleanVal = String(value).trim(); const inv = inventoryRef.current; const hist = productHistoryRef.current;
                             const invItem = Array.isArray(inv) ? inv.find(i => String(i.name).trim() === cleanVal) : null;
@@ -1448,9 +1478,9 @@
                             newOrder.price = (Number(newOrder.quantity) || 0) * uPrice; 
                         } 
                         if (field === 'price' && o.product && String(o.product).trim() !== '') { 
-                            const cleanProd = String(o.product).trim(); const valNum = String(value).replace(/,/g, '');
-                            const effQty = (o.quantity && o.quantity > 0) ? o.quantity : 1;
-                            const uPrice = Number(valNum) / effQty; 
+                            const cleanProd = String(o.product).trim(); const valNum = Number(String(value).replace(/,/g, ''));
+                            const effQty = (o.quantity && o.quantity > 0) ? Number(o.quantity) : 1;
+                            const uPrice = valNum / effQty; 
                             if (uPrice >= 1) {
                                 setInventory(prevInv => {
                                     if (!Array.isArray(prevInv)) return prevInv;
@@ -1476,7 +1506,7 @@
                     if (o.id === itemId) { 
                         const cleanProd = String(o.product || '').trim(); const inv = inventoryRef.current; const hist = productHistoryRef.current;
                         const invItem = Array.isArray(inv) ? inv.find(i => String(i.name).trim() === cleanProd) : null;
-                        const unitPrice = invItem ? Number(invItem.price) : (hist[cleanProd] || (o.quantity > 0 ? o.price/o.quantity : 0));
+                        const unitPrice = invItem ? Number(invItem.price) : (hist[cleanProd] || (Number(o.quantity) > 0 ? Number(o.price)/Number(o.quantity) : 0));
                         const validQty = (newQtyVal === '' || isNaN(parseInt(newQtyVal))) ? '' : parseInt(newQtyVal);
                         return { ...o, quantity: validQty, price: unitPrice * (Number(validQty) || 0), isUnmodified: false }; 
                     } 
@@ -1489,22 +1519,39 @@
 
             const copyOrderSheet = useCallback((nick, items, grandTotal, depositTotal, balance, isCard, addrData, e) => {
                 const activeItems = items.filter(i => !i.isCancelled); const addr = addrData || addressLookup.get(nick)?.data || {};
-                const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0); const currentShipping = getCalculatedShipping(nick, productTotal);
+                const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0); 
+                const currentShipping = getCalculatedShipping(nick, productTotal);
+                
+                const baseGrandTotal = productTotal + currentShipping;
+                const baseBalance = baseGrandTotal - depositTotal;
+                const cardFee = (isCard && baseBalance > 0) ? Math.floor(baseBalance * 0.1) : 0;
+                const finalGrandTotal = baseGrandTotal + cardFee;
+                const finalBalance = baseBalance + cardFee;
+
                 const itemListText = activeItems.map(i => `${i.product}${i.quantity > 1 ? ` ★${i.quantity}개` : ''} ${Number(i.price).toLocaleString()}원`).join('\n');
                 const { emoji, paidMsg, unpaidPrefix, overpaidMsg = '과납 금액이 있습니다.\n환불 또는 적립 여부를 알려주세요!', addrNotice, surveyNotice, alwaysRequestAddress } = templateConfig;
                 
-                let msg = `${emoji} ${nick} 님 ${emoji}\n\n[${broadcastName} 주문목록]\n${itemListText}\n배송비 ${currentShipping.toLocaleString()}원\n\n총 주문금액 ${grandTotal.toLocaleString()}원\n------------------\n`;
+                let msg = `${emoji} ${nick} 님 ${emoji}\n\n[${broadcastName} 주문목록]\n${itemListText}\n배송비 ${currentShipping.toLocaleString()}원\n\n총 주문금액 ${finalGrandTotal.toLocaleString()}원\n------------------\n`;
+                
                 if (isCard) { 
-                    const cardBase = Math.max(0, grandTotal - depositTotal);
-                    if (depositTotal > 0) { msg += `[카드결제]\n총 주문금액 ${grandTotal.toLocaleString()}원\n선입금 ${depositTotal.toLocaleString()}원\n수수료(10%) ${(cardBase * 0.1).toLocaleString()}원\n👉결제요청액 ${(cardBase * 1.1).toLocaleString()}원 예정\n\n핸드폰번호 남겨주세요🌸\n------------------\n\n`; } 
-                    else { msg += `[카드결제]\n금액 ${cardBase.toLocaleString()}원\n수수료(10%) ${(cardBase * 0.1).toLocaleString()}원\n👉결제요청액 ${(cardBase * 1.1).toLocaleString()}원 예정\n\n핸드폰번호 남겨주세요🌸\n------------------\n\n`; }
+                    const cardBase = Math.max(0, baseBalance);
+                    if (depositTotal > 0) { 
+                        msg += `[카드결제]\n총 주문금액 ${baseGrandTotal.toLocaleString()}원\n선입금 ${depositTotal.toLocaleString()}원\n수수료(10%) ${cardFee.toLocaleString()}원\n👉결제요청액 ${finalBalance.toLocaleString()}원 예정\n\n핸드폰번호 남겨주세요🌸\n------------------\n\n`; 
+                    } 
+                    else { 
+                        msg += `[카드결제]\n금액 ${cardBase.toLocaleString()}원\n수수료(10%) ${cardFee.toLocaleString()}원\n👉결제요청액 ${finalBalance.toLocaleString()}원 예정\n\n핸드폰번호 남겨주세요🌸\n------------------\n\n`; 
+                    }
                 } 
                 else { 
-                    const isPaid = (balance <= 0) && (grandTotal >= 0) && (activeItems.length > 0); 
-                    if (depositTotal > 0 && balance <= 0) { msg += `[입금확인]\n${depositTotal.toLocaleString()}원\n------------------\n\n`; } 
-                    else if (depositTotal > 0 && balance > 0) { msg += `[입금확인]\n${depositTotal.toLocaleString()}원 (일부 입금)\n------------------\n\n`; }
-                    if (balance > 0) { if (depositTotal > 0) { msg += `[부분 미수 안내]\n남은 미수금 👉 ${balance.toLocaleString()}원\n\n${bankAccount}\n추가 입금 부탁드립니다 🙏\n------------------\n\n`; } else { msg += `${unpaidPrefix}\n${balance.toLocaleString()}원 \n\n${bankAccount}\n입금 부탁드립니다 🙏\n------------------\n\n`; } } 
-                    else if (balance < 0) { msg += `${paidMsg}\n\n[과납 안내]\n과납액: ${Math.abs(balance).toLocaleString()}원\n${overpaidMsg}\n------------------\n`; } 
+                    const isPaid = (finalBalance <= 0) && (finalGrandTotal >= 0) && (activeItems.length > 0); 
+                    if (depositTotal > 0 && finalBalance <= 0) { msg += `[입금확인]\n${depositTotal.toLocaleString()}원\n------------------\n\n`; } 
+                    else if (depositTotal > 0 && finalBalance > 0) { msg += `[입금확인]\n${depositTotal.toLocaleString()}원 (일부 입금)\n------------------\n\n`; }
+                    
+                    if (finalBalance > 0) { 
+                        if (depositTotal > 0) { msg += `[부분 미수 안내]\n남은 미수금 👉 ${finalBalance.toLocaleString()}원\n\n${bankAccount}\n추가 입금 부탁드립니다 🙏\n------------------\n\n`; } 
+                        else { msg += `${unpaidPrefix}\n${finalBalance.toLocaleString()}원 \n\n${bankAccount}\n입금 부탁드립니다 🙏\n------------------\n\n`; } 
+                    } 
+                    else if (finalBalance < 0) { msg += `${paidMsg}\n\n[과납 안내]\n과납액: ${Math.abs(finalBalance).toLocaleString()}원\n${overpaidMsg}\n------------------\n`; } 
                     else { if (isPaid) msg += `${paidMsg}\n------------------\n`; }
                 }
                 
@@ -1561,11 +1608,12 @@
 
                 if (!isAuto) { setCheckedOrders(prev => { const n = new Set(prev); n.delete(cNick); return n; }); setSelectedNick(cNick); setOrderSearch(''); }
                 
-                const newOrder = { id: Date.now() + Math.random(), customer: cNick, product: cContent, quantity: qty, price: Number(price) * qty, deposit: 0, isCancelled: false, isUnmodified: !markAsModified, isSentToEmp: false };
+                const safeQty = Number(qty) || 1;
+                const newOrder = { id: Date.now() + Math.random(), customer: cNick, product: cContent, quantity: safeQty, price: price * safeQty, deposit: 0, isCancelled: false, isUnmodified: !markAsModified, isSentToEmp: false };
                 setOrders(prev => {
                     if (!afterId && !force && cContent !== '') {
                         const existIdx = prev.findIndex(o => o.customer === cNick && o.product === cContent && !o.isCancelled);
-                        if (existIdx !== -1) { const next = [...prev]; next[existIdx] = { ...next[existIdx], quantity: next[existIdx].quantity + qty, price: (next[existIdx].quantity + qty) * price, isUnmodified: !markAsModified }; return next; }
+                        if (existIdx !== -1) { const next = [...prev]; next[existIdx] = { ...next[existIdx], quantity: next[existIdx].quantity + safeQty, price: (next[existIdx].quantity + safeQty) * price, isUnmodified: !markAsModified }; return next; }
                     }
                     if (afterId) { const idx = prev.findIndex(o => o.id === afterId); if (idx !== -1) { const next = [...prev]; next.splice(idx + 1, 0, newOrder); return next; } }
                     return [newOrder, ...prev];
@@ -1623,13 +1671,90 @@
                     setMatchedDeposits(prev => { const next = {...prev}; delete next[id]; return next; }); 
                 }); 
             };
-            const handleAddManualDeposit = (e) => { e.preventDefault(); if (!newDepositName.trim() || !newDepositAmount) return openModal("입금자명/금액 필수", 'alert'); const newDep = { id: `manual_${Date.now()}`, name: newDepositName, amount: newDepositAmount, source: 'manual' }; setManualDeposits(prev => [newDep, ...prev]); setNewDepositName(''); setNewDepositAmount(''); };
+            const handleAddManualDeposit = (e) => { 
+                e.preventDefault(); 
+                if (!newDepositName.trim() || !newDepositAmount) return openModal("입금자명/금액 필수", 'alert'); 
+                const newDep = { id: `manual_${Date.now()}`, name: newDepositName, amount: Number(String(newDepositAmount).replace(/,/g, '')), source: 'manual' }; 
+                setManualDeposits(prev => [newDep, ...prev]); 
+                setNewDepositName(''); setNewDepositAmount(''); 
+            };
 
-            const visibleDeposits = useMemo(() => {
-                if (depositSearch) return filteredDeposits; const unmatched = []; const matched = [];
-                filteredDeposits.forEach(d => { if (matchedDeposits[d.id]) matched.push(d); else unmatched.push(d); });
-                return [...unmatched, ...matched];
-            }, [filteredDeposits, depositSearch, matchedDeposits]);
+            const handleDepositClick = (dep) => {
+                if (matchedDeposits[dep.id]) {
+                    handleUnmatchDeposit(dep);
+                } else {
+                    handleMatchDeposit(dep);
+                }
+            };
+
+            const processedDeposits = useMemo(() => { 
+                let result = [...allDeposits]; 
+                result = result.filter(d => !deletedDepositIds.has(d.id)); 
+                if (depositSearch) result = result.filter(d => String(d.name||'').includes(depositSearch) || String(d.amount).includes(depositSearch)); 
+                
+                let targetNickClean = '', targetNickKo = '', targetRealClean = '', targetRealKo = '', addrRealClean = '', addrRealKo = '';
+                if (selectedNick) { 
+                    targetNickClean = cleanForMatch(selectedNick); 
+                    targetNickKo = extractKo(selectedNick);
+                    const tReal = depositorNames[selectedNick];
+                    targetRealClean = tReal ? cleanForMatch(tReal) : ''; 
+                    targetRealKo = tReal ? extractKo(tReal) : ''; 
+                    const addrRes = addressLookup.get(selectedNick); 
+                    const aReal = addrRes && addrRes.data ? addrRes.data.realname : '';
+                    addrRealClean = aReal ? cleanForMatch(aReal) : '';
+                    addrRealKo = aReal ? extractKo(aReal) : '';
+                }
+
+                const checkMatch = (tClean, tKo, vClean, vKo) => {
+                    if (!tClean && !tKo) return 10;
+                    if (tClean && vClean && tClean === vClean) return 0;
+                    if (tKo && vKo && tKo === vKo && tKo.length >= 2) return 0;
+                    if (tClean && vClean && (tClean.includes(vClean) || vClean.includes(tClean)) && Math.min(tClean.length, vClean.length) >= 2) return 1;
+                    if (tKo && vKo && (tKo.includes(vKo) || vKo.includes(tKo)) && Math.min(tKo.length, vKo.length) >= 2) return 1;
+                    if (tClean && vClean && (getChosung(tClean).includes(getChosung(vClean)) || getChosung(vClean).includes(getChosung(tClean))) && Math.min(tClean.length, vClean.length) >= 2) return 2;
+                    return 10;
+                };
+
+                const decorated = result.map(d => {
+                    let isUsed = matchedDeposits[d.id] ? 1 : 0; 
+                    let score = 10;
+                    if (selectedNick) {
+                        const valClean = cleanForMatch(d.name);
+                        const valKo = extractKo(d.name);
+                        score = Math.min(
+                            checkMatch(targetNickClean, targetNickKo, valClean, valKo),
+                            checkMatch(targetRealClean, targetRealKo, valClean, valKo),
+                            checkMatch(addrRealClean, addrRealKo, valClean, valKo)
+                        );
+                    }
+                    return { item: d, isUsed, score };
+                });
+
+                decorated.sort((a, b) => { 
+                    const aIsSimilar = a.score < 10;
+                    const bIsSimilar = b.score < 10;
+                    if (aIsSimilar && !bIsSimilar) return -1;
+                    if (!aIsSimilar && bIsSimilar) return 1;
+                    if (aIsSimilar && bIsSimilar) {
+                        if (a.score !== b.score) return a.score - b.score;
+                        if (a.isUsed !== b.isUsed) return a.isUsed - b.isUsed;
+                        return 0;
+                    }
+                    if (a.isUsed !== b.isUsed) return a.isUsed - b.isUsed;
+                    return parseSafeDate(b.item.time || b.item.date).getTime() - parseSafeDate(a.item.time || a.item.date).getTime();
+                });
+                return decorated; 
+            }, [allDeposits, depositSearch, selectedNick, deletedDepositIds, matchedDeposits, depositorNames, addressLookup]);
+
+            const connectedDepositsByNick = useMemo(() => {
+                const map = {};
+                Object.entries(matchedDeposits).forEach(([depId, nick]) => {
+                    if (!map[nick]) map[nick] = [];
+                    const dep = allDeposits.find(d => d.id === depId);
+                    if (dep) map[nick].push(dep);
+                });
+                return map;
+            }, [matchedDeposits, allDeposits]);
 
             const usedAddressNicks = useMemo(() => {
                 const set = new Set();
@@ -1850,13 +1975,13 @@
                                 const baseGrand = prodSum + (activeItems.length > 0 ? ship : 0);
                                 const baseBal = baseGrand - depSum;
                                 const isCard = cardPayments[nick];
-                                const cardFee = (isCard && baseBal > 0) ? baseBal * 0.1 : 0;
+                                const cardFee = (isCard && baseBal > 0) ? Math.floor(baseBal * 0.1) : 0;
                                 const grand = baseGrand + cardFee;
                                 const bal = baseBal + cardFee;
                                 
                                 const { data: addrData, conflict: addrConflict } = addressLookup.get(nick);
                                 
-                                return (<CustomerBlock key={nick} nick={nick} items={items} isSelected={selectedNick === nick} currentShipping={ship} isCard={isCard} isPaidState={bal <= 0 && activeItems.length > 0} grandTotal={grand} depositTotal={depSum} balance={bal} baseGrandTotal={baseGrand} baseBalance={baseBal} addr={addrData} addrConflict={addrConflict} addressMapping={addressMapping} displayDepositorName={depositorNames[nick] || addrData?.realname || '입금자'} isAutoDepositor={!depositorNames[nick] && addrData?.realname} depositorNames={depositorNames} copyStatus={copyStatus} isOrderConfirmed={checkedOrders.has(nick)} isEditingShipping={editingShippingNick === nick} setSelectedNick={setSelectedNick} addOrderLogic={addOrderLogic} handleNicknameEdit={handleNicknameEdit} toggleCardPayment={toggleCardPayment} handleShippingChange={handleShippingChange} setEditingShippingNick={setEditingShippingNick} openModal={openModal} setDepositorNames={setDepositorNames} handleFullDepositToggle={handleFullDepositToggle} copyOrderSheet={copyOrderSheet} handleOrderCheckToggle={handleOrderCheckToggle} handleAddressUnmapping={handleAddressUnmapping} handleAddressMapping={handleAddressMapping} handlePromoteAddress={handlePromoteAddress} handleProductChange={handleProductChange} handleQuantityUpdate={handleQuantityUpdate} handleOrderCancel={handleOrderCancel} handleOrderDelete={handleOrderDelete} specialCustomers={specialCustomers} onOpenQuickAddress={(nick) => setQuickAddrModal({ isOpen: true, nick, editData: null })} cashReceiptStatus={cashReceipts[nick]} toggleCashReceipt={toggleCashReceipt} setMultiAddNick={setMultiAddNick} />);
+                                return (<CustomerBlock key={nick} nick={nick} items={items} isSelected={selectedNick === nick} currentShipping={ship} isCard={isCard} isPaidState={bal <= 0 && activeItems.length > 0} grandTotal={grand} depositTotal={depSum} balance={bal} baseGrandTotal={baseGrand} baseBalance={baseBal} addr={addrData} addrConflict={addrConflict} addressMapping={addressMapping} displayDepositorName={depositorNames[nick] || addrData?.realname || '입금자'} isAutoDepositor={!depositorNames[nick] && addrData?.realname} depositorNames={depositorNames} copyStatus={copyStatus} isOrderConfirmed={checkedOrders.has(nick)} isEditingShipping={editingShippingNick === nick} connectedDeposits={connectedDepositsByNick[nick] || []} setSelectedNick={setSelectedNick} addOrderLogic={addOrderLogic} handleNicknameEdit={handleNicknameEdit} toggleCardPayment={toggleCardPayment} handleShippingChange={handleShippingChange} setEditingShippingNick={setEditingShippingNick} openModal={openModal} setDepositorNames={setDepositorNames} handleFullDepositToggle={handleFullDepositToggle} copyOrderSheet={copyOrderSheet} handleOrderCheckToggle={handleOrderCheckToggle} handleAddressUnmapping={handleAddressUnmapping} handleAddressMapping={handleAddressMapping} handlePromoteAddress={handlePromoteAddress} handleProductChange={handleProductChange} handleQuantityUpdate={handleQuantityUpdate} handleOrderCancel={handleOrderCancel} handleOrderDelete={handleOrderDelete} handleUnmatchDeposit={handleUnmatchDeposit} specialCustomers={specialCustomers} onOpenQuickAddress={(nick) => setQuickAddrModal({ isOpen: true, nick, editData: null })} cashReceiptStatus={cashReceipts[nick]} toggleCashReceipt={toggleCashReceipt} setMultiAddNick={setMultiAddNick} />);
                             })}
                         </div>
                     </div>
@@ -1866,13 +1991,13 @@
                         <div className="p-2 bg-slate-100 dark:bg-slate-800 border-b dark:border-slate-700 flex flex-col gap-2">
                             <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between">
                                 <span className="flex items-center gap-1"><Icon name="money" weight="fill"/> 입금 내역</span>
-                                <div className="flex items-center gap-1.5"><span className="text-[10px] text-slate-500 dark:text-slate-400 mr-1">{filteredDeposits.length}건</span><button onClick={handleRematchAll} className="bg-red-500 hover:bg-red-600 text-white text-[9px] px-1.5 py-0.5 rounded shadow-sm transition-colors flex items-center gap-0.5" title="모든 매칭 초기화"><Icon name="arrows-clockwise" weight="bold"/></button></div>
+                                <div className="flex items-center gap-1.5"><span className="text-[10px] text-slate-500 dark:text-slate-400 mr-1">{processedDeposits.length}건</span><button onClick={handleRematchAll} className="bg-red-500 hover:bg-red-600 text-white text-[9px] px-1.5 py-0.5 rounded shadow-sm transition-colors flex items-center gap-0.5" title="모든 매칭 초기화"><Icon name="arrows-clockwise" weight="bold"/></button></div>
                             </div>
                             
                             <form onSubmit={handleAddManualDeposit} className="flex flex-col gap-1 bg-white dark:bg-slate-900 p-1 rounded border dark:border-slate-600">
                                 <div className="flex gap-1"><input type="text" value={newDepositName} onChange={(e)=>setNewDepositName(e.target.value)} placeholder="입금자" className="w-[50%] text-[10px] border dark:border-slate-600 rounded px-1 py-1 bg-transparent outline-none focus:ring-1 focus:ring-slate-500" /><input type="text" value={newDepositAmount ? Number(newDepositAmount).toLocaleString() : ''} onChange={(e)=>{ const val = e.target.value.replace(/,/g, ''); if(!isNaN(val)) setNewDepositAmount(val); }} placeholder="금액" className="w-[50%] text-[10px] border dark:border-slate-600 rounded px-1 py-1 bg-transparent text-right font-bold outline-none focus:ring-1 focus:ring-slate-500" /></div>
                                 <div className="flex gap-1 mt-1">
-                                    <button type="button" onClick={() => { openModal("현금 시재 금액을 입력하세요.", "prompt", (amount) => { if(!amount) return; const val = amount.replace(/,/g, ''); if (!isNaN(val) && Number(val) > 0) { const newDep = { id: `manual_${Date.now()}`, name: "시재", amount: val, source: 'manual' }; setManualDeposits(prev => [newDep, ...prev]); } else { setTimeout(() => openModal("유효한 금액을 입력해주세요.", "alert"), 100); } }); }} className="flex-1 bg-emerald-600 text-white text-[10px] font-bold py-1 rounded hover:bg-emerald-700 transition-colors shadow-sm">시재</button>
+                                    <button type="button" onClick={() => { openModal("현금 시재 금액을 입력하세요.", "prompt", (amount) => { if(!amount) return; const val = String(amount).replace(/,/g, ''); if (!isNaN(val) && Number(val) > 0) { const newDep = { id: `manual_${Date.now()}`, name: "시재", amount: Number(val), source: 'manual' }; setManualDeposits(prev => [newDep, ...prev]); } else { setTimeout(() => openModal("유효한 금액을 입력해주세요.", "alert"), 100); } }); }} className="flex-1 bg-emerald-600 text-white text-[10px] font-bold py-1 rounded hover:bg-emerald-700 transition-colors shadow-sm">시재</button>
                                     <button type="submit" className="flex-1 bg-slate-700 text-white text-[10px] font-bold py-1 rounded hover:bg-slate-800 transition-colors shadow-sm">추가</button>
                                 </div>
                             </form>
@@ -1880,14 +2005,16 @@
                             {selectedNick && <div className="text-[10px] text-slate-700 dark:text-slate-300 bg-slate-200 dark:bg-slate-700 p-1 rounded text-center font-bold animate-pulse border border-slate-300 dark:border-slate-600 truncate">👇 '{selectedNick}' 대기</div>}
                         </div>
                         <div className="flex-1 overflow-y-auto p-1 space-y-1 bg-slate-50 dark:bg-slate-900">
-                            {visibleDeposits.map(d => {
+                            {processedDeposits.map(({ item: d, isUsed, score }) => {
                                 const matchedNick = matchedDeposits[d.id];
-                                const isUsed = !!matchedNick;
+                                const isMatched = score < 10 && selectedNick;
+                                const isSuggested = isMatched && !isUsed;
                                 
                                 return (
-                                    <div key={d.id} onClick={() => handleDepositClick(d)} className={`relative flex items-center justify-between py-1.5 px-1.5 border rounded cursor-pointer transition-all group ${isUsed ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 shadow-inner' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-slate-400 shadow-sm'}`}>
+                                    <div key={d.id} onClick={() => handleDepositClick(d)} className={`relative flex items-center justify-between py-1.5 px-1.5 border rounded cursor-pointer transition-all group ${isUsed ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 shadow-inner' : isSuggested ? 'border-amber-400 bg-amber-50 dark:bg-amber-900/20 shadow-md ring-1 ring-amber-400' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-slate-400 shadow-sm'}`}>
                                         <div className="flex flex-col min-w-0 flex-1 pr-1">
                                             <div className="flex items-center gap-1 cursor-pointer w-max" onClick={(e) => handleCopyDepositName(e, d.name)} title="클릭하여 이름 복사">
+                                                {isSuggested && <span className="text-[10px] bg-amber-400 text-white font-bold px-1 rounded shrink-0">유사</span>}
                                                 <span className={`text-[12px] truncate font-bold hover:underline ${isUsed ? 'text-slate-500' : 'text-slate-800 dark:text-slate-100'}`}>{d.name}</span>
                                                 {d.source === 'manual' && <span className="text-[8px] text-slate-400 dark:text-slate-500 bg-slate-200 dark:bg-slate-700 px-0.5 rounded shrink-0">수동</span>}
                                             </div>
@@ -2018,6 +2145,10 @@
             const getCalculatedShipping = (nick, productTotal) => {
                 if (shippingOverrides && shippingOverrides[nick] !== undefined) return Number(shippingOverrides[nick]);
                 if (specialCustomers[normalizeString(nick)]?.type === 'vip') return 0;
+                
+                const addr = findAddress(nick);
+                const isJeju = addr && addr.address && addr.address.includes('제주');
+                
                 let calcShip = (freeShippingThreshold > 0 && productTotal >= freeShippingThreshold) ? 0 : Number(quickShipping);
                 if (isJeju) { calcShip += (Number(jejuShipping) - Number(quickShipping)); }
                 return Math.max(0, calcShip);
@@ -2030,16 +2161,31 @@
                 Object.entries(cGroups).forEach(([nick, items]) => {
                     const activeItems = items.filter(i => !i.isCancelled); if(activeItems.length === 0) return;
                     const pTotal = activeItems.reduce((s, i) => s + Number(i.price), 0);
-                    cPaidStatus[nick] = (items.reduce((s, i) => s + (Number(i.deposit) || 0), 0) >= pTotal + getCalculatedShipping(nick, pTotal)) || cardPayments[nick];
+                    const baseBalance = pTotal + getCalculatedShipping(nick, pTotal) - items.reduce((s, i) => s + (Number(i.deposit) || 0), 0);
+                    cPaidStatus[nick] = cardPayments[nick] || (baseBalance <= 0);
                 });
+                
                 orders.forEach(o => { 
-                    if(o.isCancelled) return; 
-                    const name = o.product || '(상품명 없음)'; 
+                    if(o.isCancelled || !o.product) return; 
+                    const name = String(o.product).trim(); 
                     if (!summary[name]) {summary[name] = 0; paidSummary[name] = 0; unpaidSummary[name] = 0;}
-                    summary[name] += Number(o.quantity); if (cPaidStatus[o.customer]) paidSummary[name] += Number(o.quantity); else unpaidSummary[name] += Number(o.quantity);
+                    summary[name] += Number(o.quantity); 
+                    if (cPaidStatus[o.customer]) paidSummary[name] += Number(o.quantity); 
+                    else unpaidSummary[name] += Number(o.quantity);
                 }); 
-                const data = Object.keys(summary).sort().map(p => ({ '상품명': p, '제품금액': productHistory[p]||0, '입금완료 수량': paidSummary[p], '미입금 수량': unpaidSummary[p] })); 
-                downloadExcel(data, '상품별_발주리스트'); 
+                
+                const data = Object.keys(summary).sort().map(p => {
+                    const invItem = inventory.find(i => i.name === p);
+                    const uPrice = invItem ? Number(invItem.price) : (productHistory[p] || 0);
+                    return { 
+                        '상품명': p, 
+                        '단가': uPrice, 
+                        '총 수량': summary[p],
+                        '입금완료 수량': paidSummary[p], 
+                        '미입금 수량': unpaidSummary[p]
+                    };
+                }); 
+                downloadExcel(data, `${broadcastName}_상품별_발주리스트`); 
             };
 
             const handleExportCustomers = () => { 
@@ -2047,26 +2193,151 @@
                 let excelRows = []; 
                 Object.entries(groups).forEach(([nick, items]) => { 
                     const aItems = items.filter(i => !i.isCancelled); if(aItems.length === 0) return;
+                    
                     const pTotal = aItems.reduce((s, i) => s + Number(i.price), 0);
-                    const bal = pTotal + getCalculatedShipping(nick, pTotal) - items.reduce((s, i) => s + (Number(i.deposit) || 0), 0);
-                    const status = cardPayments[nick] ? "카드결제" : (cashReceipts[nick] ? "현금영수증" : (bal <= 0 ? "완납" : `미수금 ${bal.toLocaleString()}`));
-                    excelRows.push({ '닉네임': nick, '입금상태': status, '주문제품': `[ ${nick} ]` }); 
-                    aItems.forEach(i => excelRows.push({ '닉네임': nick, '입금상태': status, '주문제품': `${i.product} ${i.quantity}개` })); 
+                    const currentShipping = getCalculatedShipping(nick, pTotal);
+                    const depTotal = items.reduce((s, i) => s + (Number(i.deposit) || 0), 0);
+                    const baseGrandTotal = pTotal + currentShipping;
+                    const baseBalance = baseGrandTotal - depTotal;
+                    
+                    const isCard = cardPayments[nick];
+                    const cardFee = (isCard && baseBalance > 0) ? Math.floor(baseBalance * 0.1) : 0;
+                    const finalGrandTotal = baseGrandTotal + cardFee;
+                    const finalBalance = baseBalance + cardFee;
+
+                    let status = "미수금";
+                    if (isCard) status = "카드결제";
+                    else if (finalBalance < 0) status = "과납";
+                    else if (finalBalance <= 0) status = "완납";
+                    
+                    const addr = findAddress(nick) || {};
+                    const isVip = specialCustomers[normalizeString(nick)]?.type === 'vip';
+                    
+                    excelRows.push({ 
+                        '닉네임': nick, 
+                        '고객분류': isVip ? 'VIP' : '일반',
+                        '입금상태': status,
+                        '주문제품': `[ ${nick} 님 주문요약 ]`,
+                        '제품금액': pTotal,
+                        '배송비': currentShipping,
+                        '총주문금액': finalGrandTotal,
+                        '입금액': depTotal,
+                        '미수금': finalBalance > 0 ? finalBalance : 0,
+                        '과납금액': finalBalance < 0 ? Math.abs(finalBalance) : 0,
+                        '카드결제': isCard ? 'O' : 'X',
+                        '현금영수증': cashReceipts[nick] ? '신청' : 'X',
+                        '수령인명': addr.realname || '',
+                        '연락처': addr.phone || '',
+                        '우편번호': addr.zipcode || '',
+                        '주소': addr.address || '',
+                        '요청사항': addr.memo || ''
+                    }); 
+                    
+                    aItems.forEach(i => {
+                        excelRows.push({ 
+                            '닉네임': nick, 
+                            '고객분류': '',
+                            '입금상태': '',
+                            '주문제품': `${i.product} (${i.quantity}개)`,
+                            '제품금액': i.price,
+                            '배송비': '',
+                            '총주문금액': '',
+                            '입금액': '',
+                            '미수금': '',
+                            '과납금액': '',
+                            '카드결제': '',
+                            '현금영수증': '',
+                            '수령인명': '',
+                            '연락처': '',
+                            '우편번호': '',
+                            '주소': '',
+                            '요청사항': ''
+                        });
+                    }); 
                 }); 
-                downloadExcel(excelRows, '고객별_정산_배송리스트'); 
+                downloadExcel(excelRows, `${broadcastName}_고객별_배송리스트`); 
+            };
+
+            const handleExportKakao = () => { 
+                const groups = {}; orders.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); }); 
+                let excelRows = []; 
+                Object.entries(groups).forEach(([nick, items]) => { 
+                    const aItems = items.filter(i => !i.isCancelled); if(aItems.length === 0) return;
+                    
+                    const pTotal = aItems.reduce((s, i) => s + Number(i.price), 0);
+                    const currentShipping = getCalculatedShipping(nick, pTotal);
+                    const depTotal = items.reduce((s, i) => s + (Number(i.deposit) || 0), 0);
+                    const baseGrandTotal = pTotal + currentShipping;
+                    const baseBalance = baseGrandTotal - depTotal;
+                    
+                    const isCard = cardPayments[nick];
+                    const cardFee = (isCard && baseBalance > 0) ? Math.floor(baseBalance * 0.1) : 0;
+                    const finalBalance = baseBalance + cardFee;
+
+                    const addr = findAddress(nick) || {};
+                    const itemListText = aItems.map(i => `${i.product} ${i.quantity}개`).join(', ');
+
+                    excelRows.push({ 
+                        '닉네임': nick, 
+                        '수령인명': addr.realname || '',
+                        '연락처': addr.phone || '',
+                        '주문내역': itemListText,
+                        '미수금액': finalBalance > 0 ? finalBalance : 0,
+                        '상태': isCard ? '카드결제' : (finalBalance <= 0 ? '완납' : '미수금')
+                    }); 
+                }); 
+                downloadExcel(excelRows, `${broadcastName}_카톡전송용`); 
+            };
+
+            const handleExportPrint = () => { 
+                const groups = {}; orders.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); }); 
+                let excelRows = []; 
+                Object.entries(groups).forEach(([nick, items]) => { 
+                    const aItems = items.filter(i => !i.isCancelled); if(aItems.length === 0) return;
+                    
+                    const addr = findAddress(nick) || {};
+                    const itemListText = aItems.map(i => `[${i.product} ${i.quantity}개]`).join('\n');
+                    
+                    excelRows.push({ 
+                        '닉네임': nick, 
+                        '수령인명': addr.realname || '',
+                        '연락처': addr.phone || '',
+                        '우편번호': addr.zipcode || '',
+                        '주소': addr.address ? `${addr.address}` : '',
+                        '상세주소 및 메모': addr.memo || '',
+                        '주문품목(합침)': itemListText
+                    }); 
+                }); 
+                downloadExcel(excelRows, `${broadcastName}_포장인쇄용`); 
             };
 
             return (
                 <div className="flex flex-col items-center justify-center h-full p-10 gap-6 overflow-y-auto dark:bg-slate-900">
                     <div className="grid grid-cols-2 gap-6 w-full max-w-5xl"> 
-                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-lg border dark:border-slate-700 text-center"><h2 className="font-bold mb-2 text-slate-800 dark:text-white">발주용 품목 집계</h2><button onClick={handleExportProducts} className="w-full bg-slate-700 text-white py-3 rounded-lg">엑셀 다운로드</button></div>
-                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-lg border dark:border-slate-700 text-center"><h2 className="font-bold mb-2 text-slate-800 dark:text-white">배송용 고객 리스트</h2><button onClick={handleExportCustomers} className="w-full bg-slate-700 text-white py-3 rounded-lg">엑셀 다운로드</button></div>
-                        <div className="col-span-2 bg-slate-100 dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 flex justify-between">
+                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-lg border dark:border-slate-700 text-center">
+                            <h2 className="font-bold mb-2 text-slate-800 dark:text-white">발주용 품목 집계</h2>
+                            <button onClick={handleExportProducts} className="w-full bg-slate-700 hover:bg-slate-800 text-white py-3 rounded-lg transition-colors">엑셀 다운로드</button>
+                        </div>
+                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-lg border dark:border-slate-700 text-center">
+                            <h2 className="font-bold mb-2 text-slate-800 dark:text-white">배송용 고객 리스트 (상세)</h2>
+                            <button onClick={handleExportCustomers} className="w-full bg-slate-700 hover:bg-slate-800 text-white py-3 rounded-lg transition-colors">엑셀 다운로드</button>
+                        </div>
+                        
+                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-lg border dark:border-slate-700 text-center">
+                            <h2 className="font-bold mb-2 text-slate-800 dark:text-white">카톡 전송용 리스트</h2>
+                            <button onClick={handleExportKakao} className="w-full bg-[#FEE500] hover:bg-[#FADA0A] text-gray-900 font-bold py-3 rounded-lg transition-colors shadow-sm">엑셀 다운로드</button>
+                        </div>
+                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-lg border dark:border-slate-700 text-center">
+                            <h2 className="font-bold mb-2 text-slate-800 dark:text-white">포장 인쇄용 리스트 (합산)</h2>
+                            <button onClick={handleExportPrint} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-lg transition-colors shadow-sm">엑셀 다운로드</button>
+                        </div>
+
+                        <div className="col-span-2 bg-slate-100 dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 flex justify-between items-center">
                             <div><h2 className="font-bold mb-2 text-slate-800 dark:text-white">전체 데이터 백업/복구</h2><p className="text-xs text-slate-500">(.json 전용)</p></div>
                             <div className="flex gap-3 w-1/2">
-                                <button onClick={handleExportBackup} className="flex-1 bg-slate-700 text-white py-3 rounded-lg">파일로 저장</button>
+                                <button onClick={handleExportBackup} className="flex-1 bg-slate-700 hover:bg-slate-800 text-white py-3 rounded-lg transition-colors">파일로 저장</button>
                                 <input type="file" accept=".json" id="file-upload" onChange={handleImportBackup} className="hidden" />
-                                <button onClick={()=>document.getElementById('file-upload').click()} className="flex-1 bg-slate-500 text-white py-3 rounded-lg">파일 불러오기</button>
+                                <button onClick={()=>document.getElementById('file-upload').click()} className="flex-1 bg-slate-500 hover:bg-slate-600 text-white py-3 rounded-lg transition-colors">파일 불러오기</button>
                             </div>
                         </div>
                     </div>
