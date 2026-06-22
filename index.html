@@ -2138,206 +2138,206 @@
 
         const OrderManagementTab = ({ orders, shippingOverrides, quickShipping, jejuShipping, freeShippingThreshold, broadcastName, addresses, handleExportBackup, handleImportBackup, addressMapping, cardPayments, specialCustomers, openModal, cashReceipts, inventory, productHistory }) => {
             const findAddress = (nick) => {
-                if (addressMapping[nick] && addressMapping[nick] !== '__UNMAPPED__') return addresses.find(a => normalizeString(a.nickname) === normalizeString(addressMapping[nick]));
-                return addresses.find(a => normalizeString(a.nickname) === normalizeString(nick));
+                if (!nick) return undefined;
+                const cleanNick = normalizeString(nick);
+                const mappedTarget = addressMapping[nick] || addressMapping[cleanNick];
+                if (mappedTarget === '__UNMAPPED__') return undefined;
+                
+                let matches = addresses.filter(a => normalizeString(a.nickname) === (mappedTarget ? normalizeString(mappedTarget) : cleanNick));
+                if (matches.length === 0 && !mappedTarget) {
+                    matches = addresses.filter(a => normalizeString(a.realname) === cleanNick);
+                }
+
+                if (matches.length > 0) {
+                    matches.sort((a,b) => parseSafeDate(b.timestamp).getTime() - parseSafeDate(a.timestamp).getTime());
+                    const masterMatch = matches.find(m => m._source === 'master');
+                    return masterMatch || matches[0];
+                }
+                return undefined;
             };
 
             const getCalculatedShipping = (nick, productTotal) => {
                 if (shippingOverrides && shippingOverrides[nick] !== undefined) return Number(shippingOverrides[nick]);
-                if (specialCustomers[normalizeString(nick)]?.type === 'vip') return 0;
-                
-                const addr = findAddress(nick);
-                const isJeju = addr && addr.address && addr.address.includes('제주');
-                
+                const nickNorm = normalizeString(nick); const specialKey = Object.keys(specialCustomers || {}).find(k => normalizeString(k) === nickNorm);
+                if (specialKey && specialCustomers[specialKey].type === 'vip') return 0;
+                const addr = findAddress(nick); const isJeju = addr && addr.address && addr.address.includes('제주');
                 let calcShip = (freeShippingThreshold > 0 && productTotal >= freeShippingThreshold) ? 0 : Number(quickShipping);
                 if (isJeju) { calcShip += (Number(jejuShipping) - Number(quickShipping)); }
                 return Math.max(0, calcShip);
             };
 
             const handleExportProducts = () => { 
-                const summary = {}; const unpaidSummary = {}; const paidSummary = {}; const cGroups = {};
-                orders.forEach(o => { if(!cGroups[o.customer]) cGroups[o.customer] = []; cGroups[o.customer].push(o); });
-                const cPaidStatus = {};
-                Object.entries(cGroups).forEach(([nick, items]) => {
-                    const activeItems = items.filter(i => !i.isCancelled); if(activeItems.length === 0) return;
-                    const pTotal = activeItems.reduce((s, i) => s + Number(i.price), 0);
-                    const baseBalance = pTotal + getCalculatedShipping(nick, pTotal) - items.reduce((s, i) => s + (Number(i.deposit) || 0), 0);
-                    cPaidStatus[nick] = cardPayments[nick] || (baseBalance <= 0);
+                const summary = {}; const unpaidSummary = {}; const paidSummary = {}; const customerPaidStatus = {}; const customerGroups = {};
+                orders.forEach(o => { if(!customerGroups[o.customer]) customerGroups[o.customer] = []; customerGroups[o.customer].push(o); });
+                const savedCardPayments = cardPayments || {};
+                Object.entries(customerGroups).forEach(([nick, items]) => {
+                    const activeItems = items.filter(i => !i.isCancelled); if(activeItems.length === 0) { customerPaidStatus[nick] = false; return; }
+                    const isCard = savedCardPayments[nick]; const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0);
+                    const shipping = getCalculatedShipping(nick, productTotal); const depositTotal = items.reduce((sum, i) => sum + (i.deposit || 0), 0);
+                    const grandTotal = productTotal + (activeItems.length > 0 ? shipping : 0); customerPaidStatus[nick] = (depositTotal >= grandTotal) || isCard;
                 });
-                
                 orders.forEach(o => { 
-                    if(o.isCancelled || !o.product) return; 
-                    const name = String(o.product).trim(); 
-                    if (!summary[name]) {summary[name] = 0; paidSummary[name] = 0; unpaidSummary[name] = 0;}
-                    summary[name] += Number(o.quantity); 
-                    if (cPaidStatus[o.customer]) paidSummary[name] += Number(o.quantity); 
-                    else unpaidSummary[name] += Number(o.quantity);
+                    if(o.isCancelled) return; const name = o.product || '(상품명 없음)'; 
+                    if (!summary[name]) summary[name] = 0; if (!paidSummary[name]) paidSummary[name] = 0; if (!unpaidSummary[name]) unpaidSummary[name] = 0;
+                    summary[name] += Number(o.quantity); if (customerPaidStatus[o.customer]) paidSummary[name] += Number(o.quantity); else unpaidSummary[name] += Number(o.quantity);
                 }); 
-                
-                const data = Object.keys(summary).sort().map(p => {
-                    const invItem = inventory.find(i => i.name === p);
-                    const uPrice = invItem ? Number(invItem.price) : (productHistory[p] || 0);
-                    return { 
-                        '상품명': p, 
-                        '단가': uPrice, 
-                        '총 수량': summary[p],
-                        '입금완료 수량': paidSummary[p], 
-                        '미입금 수량': unpaidSummary[p]
-                    };
+                const sortedKeys = Object.keys(summary).filter(product => summary[product] > 0).sort((a, b) => a.localeCompare(b, 'ko', { numeric: true }));
+                const data = sortedKeys.map(product => {
+                    const invItem = inventory && Array.isArray(inventory) ? inventory.find(i => String(i.name).trim() === String(product).trim()) : null;
+                    const price = invItem ? Number(invItem.price) : (productHistory && productHistory[product] ? Number(productHistory[product]) : 0);
+                    return { '상품명': product, '제품금액': price, '입금완료 수량': paidSummary[product]||0, '미입금 수량': (summary[product]||0) - (paidSummary[product]||0) };
                 }); 
-                downloadExcel(data, `${broadcastName}_상품별_발주리스트`); 
+                downloadExcel(data, '상품별_발주리스트'); 
             };
 
             const handleExportCustomers = () => { 
                 const groups = {}; orders.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); }); 
-                let excelRows = []; 
-                Object.entries(groups).forEach(([nick, items]) => { 
-                    const aItems = items.filter(i => !i.isCancelled); if(aItems.length === 0) return;
-                    
-                    const pTotal = aItems.reduce((s, i) => s + Number(i.price), 0);
-                    const currentShipping = getCalculatedShipping(nick, pTotal);
-                    const depTotal = items.reduce((s, i) => s + (Number(i.deposit) || 0), 0);
-                    const baseGrandTotal = pTotal + currentShipping;
-                    const baseBalance = baseGrandTotal - depTotal;
-                    
-                    const isCard = cardPayments[nick];
-                    const cardFee = (isCard && baseBalance > 0) ? Math.floor(baseBalance * 0.1) : 0;
-                    const finalGrandTotal = baseGrandTotal + cardFee;
-                    const finalBalance = baseBalance + cardFee;
+                let entries = Object.entries(groups).map(([nick, items]) => {
+                    const activeItems = items.filter(i => !i.isCancelled); const isCard = cardPayments[nick]; 
+                    const hasCashReceipt = cashReceipts[nick];
+                    const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0);
+                    const currentShipping = getCalculatedShipping(nick, productTotal);
+                    const depositTotal = items.reduce((sum, i) => sum + (i.deposit || 0), 0); 
+                    const grandTotal = productTotal + (activeItems.length > 0 ? currentShipping : 0); 
+                    const isPaid = (depositTotal >= grandTotal) || isCard;
+                    const balance = grandTotal - depositTotal;
+                    return { nick, items: activeItems, isPaid, isCard, hasCashReceipt, depositTotal, grandTotal, balance };
+                });
 
-                    let status = "미수금";
-                    if (isCard) status = "카드결제";
-                    else if (finalBalance < 0) status = "과납";
-                    else if (finalBalance <= 0) status = "완납";
+                const getStatusPriority = (entry) => { if (entry.isPaid && !entry.isCard) return 1; if (entry.isCard) return 2; return 3; };
+                entries.sort((a, b) => { const pA = getStatusPriority(a); const pB = getStatusPriority(b); if (pA !== pB) return pA - pB; return a.nick.localeCompare(b.nick); });
+
+                let excelRows = []; entries.forEach(({ nick, items, isPaid, isCard, hasCashReceipt, depositTotal, grandTotal, balance }) => { 
+                    if(items.length === 0) return; 
+                    const addrInfo = findAddress(nick) || {}; 
+                    const fullAddress = addrInfo.zipcode ? `(${addrInfo.zipcode}) ${addrInfo.address || ''}` : (addrInfo.address || ''); 
                     
-                    const addr = findAddress(nick) || {};
-                    const isVip = specialCustomers[normalizeString(nick)]?.type === 'vip';
-                    
-                    excelRows.push({ 
-                        '닉네임': nick, 
-                        '고객분류': isVip ? 'VIP' : '일반',
-                        '입금상태': status,
-                        '주문제품': `[ ${nick} 님 주문요약 ]`,
-                        '제품금액': pTotal,
-                        '배송비': currentShipping,
-                        '총주문금액': finalGrandTotal,
-                        '입금액': depTotal,
-                        '미수금': finalBalance > 0 ? finalBalance : 0,
-                        '과납금액': finalBalance < 0 ? Math.abs(finalBalance) : 0,
-                        '카드결제': isCard ? 'O' : 'X',
-                        '현금영수증': cashReceipts[nick] ? '신청' : 'X',
-                        '수령인명': addr.realname || '',
-                        '연락처': addr.phone || '',
-                        '우편번호': addr.zipcode || '',
-                        '주소': addr.address || '',
-                        '요청사항': addr.memo || ''
-                    }); 
-                    
-                    aItems.forEach(i => {
-                        excelRows.push({ 
-                            '닉네임': nick, 
-                            '고객분류': '',
-                            '입금상태': '',
-                            '주문제품': `${i.product} (${i.quantity}개)`,
-                            '제품금액': i.price,
-                            '배송비': '',
-                            '총주문금액': '',
-                            '입금액': '',
-                            '미수금': '',
-                            '과납금액': '',
-                            '카드결제': '',
-                            '현금영수증': '',
-                            '수령인명': '',
-                            '연락처': '',
-                            '우편번호': '',
-                            '주소': '',
-                            '요청사항': ''
-                        });
-                    }); 
+                    let cleanPhone = String(addrInfo.phone || '').replace(/[^0-9]/g, '');
+                    if (cleanPhone.length === 10 && !cleanPhone.startsWith('0')) cleanPhone = '0' + cleanPhone;
+
+                    const statusColumn = isCard ? "카드결제" : (hasCashReceipt ? "현금영수증" : (isPaid ? "완납" : (depositTotal > 0 ? `부분입금(미수 ${balance.toLocaleString()})` : `미입금(미수 ${balance.toLocaleString()})`)));
+                    const createRow = (productValue) => ({ '날짜시간': new Date().toLocaleString(), '공란1': '', '입금상태': statusColumn, '닉네임': nick, '주문제품(수량)': productValue, '이름': addrInfo.realname || '', '핸드폰번호': cleanPhone, '주소': fullAddress, '배송메모': addrInfo.memo || '' }); 
+                    excelRows.push(createRow(`[ ${nick} ]`)); items.forEach(item => { const qtyPart = item.quantity > 1 ? ` ★${item.quantity}개` : ''; excelRows.push(createRow(`${item.product}${qtyPart}`)); }); 
                 }); 
-                downloadExcel(excelRows, `${broadcastName}_고객별_배송리스트`); 
+                downloadExcel(excelRows, '고객별_정산_배송리스트'); 
             };
 
-            const handleExportKakao = () => { 
-                const groups = {}; orders.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); }); 
-                let excelRows = []; 
-                Object.entries(groups).forEach(([nick, items]) => { 
-                    const aItems = items.filter(i => !i.isCancelled); if(aItems.length === 0) return;
-                    
-                    const pTotal = aItems.reduce((s, i) => s + Number(i.price), 0);
-                    const currentShipping = getCalculatedShipping(nick, pTotal);
-                    const depTotal = items.reduce((s, i) => s + (Number(i.deposit) || 0), 0);
-                    const baseGrandTotal = pTotal + currentShipping;
-                    const baseBalance = baseGrandTotal - depTotal;
-                    
-                    const isCard = cardPayments[nick];
-                    const cardFee = (isCard && baseBalance > 0) ? Math.floor(baseBalance * 0.1) : 0;
-                    const finalBalance = baseBalance + cardFee;
-
-                    const addr = findAddress(nick) || {};
-                    const itemListText = aItems.map(i => `${i.product} ${i.quantity}개`).join(', ');
-
-                    excelRows.push({ 
-                        '닉네임': nick, 
-                        '수령인명': addr.realname || '',
-                        '연락처': addr.phone || '',
-                        '주문내역': itemListText,
-                        '미수금액': finalBalance > 0 ? finalBalance : 0,
-                        '상태': isCard ? '카드결제' : (finalBalance <= 0 ? '완납' : '미수금')
-                    }); 
-                }); 
-                downloadExcel(excelRows, `${broadcastName}_카톡전송용`); 
+            const handleExportAllMessages = () => {
+                const groups = {}; orders.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); });
+                const templateConfigStr = localStorage.getItem(getLsKey('templateConfig'));
+                const templateConfigLocal = templateConfigStr ? JSON.parse(templateConfigStr) : { emoji: '💙', paidMsg: '😍 완납 확인! 감사합니다 😍', unpaidPrefix: '[미입금]\n총 입금하실 금액\n👉', overpaidMsg: '과납 금액이 있습니다.\n환불 또는 적립 여부를 알려주세요!', addrNotice: '※ 배송지 변경 시 채팅으로 변경할 주소를 남겨주세요!', surveyNotice: '방송마다 1회 하단의 주문서(배송지입력) 필수!!', alwaysRequestAddress: false };
+                const overpaidMsg = templateConfigLocal.overpaidMsg || '과납 금액이 있습니다.\n환불 또는 적립 여부를 알려주세요!';
+                const bankStr = localStorage.getItem(getLsKey('bankAccount')) || "카카오뱅크 김선정\n7942 18 01611";
+                const sentAddressRequestsStr = localStorage.getItem(getLsKey('sentAddressRequests')); const sentAddressRequestsLocal = sentAddressRequestsStr ? new Set(JSON.parse(sentAddressRequestsStr)) : new Set();
+                const data = []; 
+                Object.entries(groups).forEach(([nick, items]) => {
+                    const activeItems = items.filter(i => !i.isCancelled); if (activeItems.length === 0) return;
+                    const isCard = cardPayments && cardPayments[nick]; const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0);
+                    const currentShipping = getCalculatedShipping(nick, productTotal); const baseGrandTotal = productTotal + currentShipping;
+                    const depositTotal = items.reduce((sum, i) => sum + (i.deposit || 0), 0); const baseBalance = baseGrandTotal - depositTotal;
+                    const cardFee = (isCard && baseBalance > 0) ? Math.floor(baseBalance * 0.1) : 0; const grandTotal = baseGrandTotal + cardFee; const balance = baseBalance + cardFee;
+                    const itemListTextForMsg = activeItems.map(i => `${i.product}${i.quantity > 1 ? ` ★${i.quantity}개` : ''} ${Number(i.price).toLocaleString()}원`).join('\n');
+                    const itemListTextForExcel = activeItems.map(i => `${i.product}(${i.quantity}개)`).join(', '); 
+                    const addrInfo = findAddress(nick) || {};
+                    let msg = `${templateConfigLocal.emoji} ${nick} 님 ${templateConfigLocal.emoji}\n\n[${broadcastName} 주문목록]\n${itemListTextForMsg}\n배송비 ${currentShipping.toLocaleString()}원\n\n총 주문금액 ${baseGrandTotal.toLocaleString()}원\n------------------\n`;
+                    let statusStr = '';
+                    if (isCard) { 
+                        statusStr = '카드결제'; const cardBase = Math.max(0, baseGrandTotal - depositTotal);
+                        if (depositTotal > 0) { msg += `[카드결제]\n총 주문금액 ${baseGrandTotal.toLocaleString()}원\n선입금 ${depositTotal.toLocaleString()}원\n수수료(10%) ${Math.floor(cardBase * 0.1).toLocaleString()}원\n👉결제요청액 ${Math.floor(cardBase * 1.1).toLocaleString()}원 예정\n\n핸드폰번호 남겨주세요🌸\n------------------\n\n`; } 
+                        else { msg += `[카드결제]\n금액 ${cardBase.toLocaleString()}원\n수수료(10%) ${Math.floor(cardBase * 0.1).toLocaleString()}원\n👉결제요청액 ${Math.floor(cardBase * 1.1).toLocaleString()}원 예정\n\n핸드폰번호 남겨주세요🌸\n------------------\n\n`; }
+                    } else { 
+                        const isPaid = (balance <= 0) && (grandTotal >= 0); 
+                        if (depositTotal > 0 && balance <= 0) { msg += `[입금확인]\n${depositTotal.toLocaleString()}원\n------------------\n\n`; } 
+                        else if (depositTotal > 0 && balance > 0) { msg += `[입금확인]\n${depositTotal.toLocaleString()}원 (일부 입금)\n------------------\n\n`; }
+                        if (balance > 0) {
+                            statusStr = depositTotal > 0 ? `부분입금(미수 ${balance.toLocaleString()})` : `미입금(미수 ${balance.toLocaleString()})`;
+                            if (depositTotal > 0) { msg += `[부분 미수 안내]\n남은 미수금 👉 ${balance.toLocaleString()}원\n\n${bankStr}\n추가 입금 부탁드립니다 🙏\n------------------\n\n`; } 
+                            else { msg += `${templateConfigLocal.unpaidPrefix}\n${balance.toLocaleString()}원 \n\n${bankStr}\n입금 부탁드립니다 🙏\n------------------\n\n`; }
+                        } else if (balance < 0) { statusStr = '과납'; msg += `${templateConfigLocal.paidMsg}\n\n[과납 안내]\n과납액: ${Math.abs(balance).toLocaleString()}원\n${overpaidMsg}\n------------------\n`; } 
+                        else { statusStr = '입금'; if (isPaid) msg += `${templateConfigLocal.paidMsg}\n------------------\n`; }
+                    }
+                    if (addrInfo && addrInfo.address && !templateConfigLocal.alwaysRequestAddress) {
+                        let cleanPhone = String(addrInfo.phone || '').replace(/[^0-9]/g, ''); if (cleanPhone.length === 10 && !cleanPhone.startsWith('0')) cleanPhone = '0' + cleanPhone;
+                        msg += `\n[배송지 확인]\n\n${addrInfo.realname || nick}\n${cleanPhone}\n${addrInfo.address} ${addrInfo.zipcode ? `(${addrInfo.zipcode})` : ''}\n${addrInfo.memo ? addrInfo.memo + '\n' : ''}\n------------------\n${templateConfigLocal.addrNotice}`;
+                    } else if (!sentAddressRequestsLocal.has(nick) || templateConfigLocal.alwaysRequestAddress) { msg += `\n${templateConfigLocal.surveyNotice}`; }
+                    data.push({ '닉네임': nick, '상품명': itemListTextForExcel, '가격': grandTotal.toLocaleString() + '원', '입금액': depositTotal.toLocaleString() + '원', '상태': statusStr, '카톡전송메세지': msg });
+                });
+                if (data.length === 0) { openModal("주문 내역이 없습니다.", "alert"); return; }
+                data.sort((a, b) => String(a['닉네임'] || '').localeCompare(String(b['닉네임'] || '')));
+                downloadExcel(data, '전체고객_카톡메세지_리스트');
             };
 
-            const handleExportPrint = () => { 
-                const groups = {}; orders.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); }); 
-                let excelRows = []; 
-                Object.entries(groups).forEach(([nick, items]) => { 
-                    const aItems = items.filter(i => !i.isCancelled); if(aItems.length === 0) return;
-                    
-                    const addr = findAddress(nick) || {};
-                    const itemListText = aItems.map(i => `[${i.product} ${i.quantity}개]`).join('\n');
-                    
-                    excelRows.push({ 
-                        '닉네임': nick, 
-                        '수령인명': addr.realname || '',
-                        '연락처': addr.phone || '',
-                        '우편번호': addr.zipcode || '',
-                        '주소': addr.address ? `${addr.address}` : '',
-                        '상세주소 및 메모': addr.memo || '',
-                        '주문품목(합침)': itemListText
-                    }); 
-                }); 
-                downloadExcel(excelRows, `${broadcastName}_포장인쇄용`); 
+            const handleExportCashReceipts = () => {
+                const groups = {}; orders.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); });
+                const data = []; 
+                Object.entries(groups).forEach(([nick, items]) => {
+                    if (!cashReceipts || !cashReceipts[nick]) return;
+                    const activeItems = items.filter(i => !i.isCancelled); if (activeItems.length === 0) return;
+                    const depositTotal = items.reduce((sum, i) => sum + (i.deposit || 0), 0); const addrInfo = findAddress(nick) || {};
+                    let cleanPhone = String(addrInfo.phone || '').replace(/[^0-9]/g, ''); if (cleanPhone.length === 10 && !cleanPhone.startsWith('0')) cleanPhone = '0' + cleanPhone;
+                    data.push({ '방송명': broadcastName, '닉네임': nick, '금액': depositTotal, '전화번호': cleanPhone });
+                });
+                if (data.length === 0) { openModal("현금영수증 요청자로 체크(현영)된 고객이 없습니다.", "alert"); return; }
+                data.sort((a, b) => String(a['닉네임'] || '').localeCompare(String(b['닉네임'] || '')));
+                downloadExcel(data, '현금영수증_요청리스트');
             };
 
+            const handlePrintPackingList = () => {
+                const groups = {}; orders.forEach(o => { if (o.isCancelled) return; if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); });
+                if (Object.keys(groups).length === 0) { openModal("인쇄할 주문 내역이 없습니다.", "alert"); return; }
+                let printContent = `<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>포장리스트_인쇄</title><style>@import url("https://cdn.jsdelivr.net/gh/moonspam/NanumSquareNeo/nanumsquareneo.css");@page { size: 100mm 150mm; margin: 0 !important; }* { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }html, body { margin: 0; padding: 0; width: 100mm; background: #fff; color: #000; font-family: 'NanumSquareNeo', sans-serif; }.slip { width: 100mm; padding: 8mm 4mm 4mm 4mm; page-break-after: always; position: relative; }.nick { font-size: 26px; font-weight: 900; text-align: center; margin-bottom: 12px; border: 2px solid #000; padding: 8px 5px; border-radius: 8px; box-shadow: 3px 3px 0 #000; background-color: #fff; }table { width: 100%; border-collapse: collapse; margin-bottom: 10px; table-layout: fixed; }thead { display: table-header-group; }tr { page-break-inside: avoid; page-break-after: auto; }th, td { border-bottom: 1px solid #000; padding: 6px 2px; text-align: left; vertical-align: middle; }th { font-size: 13px; color: #000; border-bottom: 2px solid #000; padding-bottom: 4px; }.right { text-align: right; }.product-name { font-weight: 800; font-size: 15px; word-break: break-all; overflow-wrap: anywhere; line-height: 1.3; padding-right: 5px; }.qty { font-weight: 900; font-size: 16px; white-space: nowrap; text-align: right; width: 45px; }.total { font-size: 18px; font-weight: 900; text-align: right; border-top: 2px solid #000; padding-top: 8px; margin-top: 8px; }.footer { text-align: center; font-size: 12px; font-weight: bold; border-top: 1px dashed #000; padding-top: 8px; margin-top: 15px; margin-bottom: 5px; }</style></head><body>`;
+                const sortedCustomers = Object.keys(groups).sort((a, b) => a.localeCompare(b, 'ko'));
+                sortedCustomers.forEach(nick => {
+                    const items = groups[nick]; items.sort((a, b) => String(b.product || '').localeCompare(String(a.product || ''), 'ko', { numeric: true }));
+                    let totalQty = 0;
+                    let itemsHtml = items.map(item => { const q = Number(item.quantity) || 0; totalQty += q; return '<tr><td class="product-name">' + item.product + '</td><td class="qty right">' + q + '개</td></tr>'; }).join('');
+                    const totalItems = items.length;
+                    printContent += '<div class="slip"><div class="nick">' + nick + '</div><table><thead><tr><th>상품명</th><th class="right">수량</th></tr></thead><tbody>' + itemsHtml + '</tbody></table><div class="total">합계: ' + totalItems + '품목 ' + totalQty + '개</div><div class="footer">구매해 주셔서 감사합니다 ❤️</div></div>';
+                });
+                printContent += '<script>window.onload=function(){setTimeout(function(){window.print();},500);}</' + 'script></body></html>';
+                const printWin = window.open('', '_blank', 'width=450,height=650');
+                if (printWin) { printWin.document.open(); printWin.document.write(printContent); printWin.document.close(); } 
+                else { openModal("팝업 차단이 설정되어 있습니다. 팝업을 허용해 주세요.", "alert"); }
+            };
+
+            const fileInputRef = useRef(null); 
             return (
                 <div className="flex flex-col items-center justify-center h-full p-10 gap-6 overflow-y-auto dark:bg-slate-900">
                     <div className="grid grid-cols-2 gap-6 w-full max-w-5xl"> 
                         <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-lg border dark:border-slate-700 text-center">
-                            <h2 className="font-bold mb-2 text-slate-800 dark:text-white">발주용 품목 집계</h2>
-                            <button onClick={handleExportProducts} className="w-full bg-slate-700 hover:bg-slate-800 text-white py-3 rounded-lg transition-colors">엑셀 다운로드</button>
+                            <h2 className="text-lg font-bold mb-2 dark:text-slate-100 flex items-center justify-center gap-2"><Icon name="clipboard-text" weight="fill" className="text-slate-600"/> 발주용 품목 집계</h2>
+                            <p className="text-slate-500 dark:text-slate-400 mb-4 text-xs">상품별 전체 수량 요약 (취소건 제외)</p>
+                            <button onClick={handleExportProducts} className="w-full bg-slate-700 text-white font-bold py-3 rounded-lg transition-transform hover:scale-105 shadow-md flex items-center justify-center gap-2 hover:bg-slate-800"><Icon name="download-simple" weight="bold"/> 엑셀 다운로드</button>
                         </div>
                         <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-lg border dark:border-slate-700 text-center">
-                            <h2 className="font-bold mb-2 text-slate-800 dark:text-white">배송용 고객 리스트 (상세)</h2>
-                            <button onClick={handleExportCustomers} className="w-full bg-slate-700 hover:bg-slate-800 text-white py-3 rounded-lg transition-colors">엑셀 다운로드</button>
+                            <h2 className="text-lg font-bold mb-2 dark:text-slate-100 flex items-center justify-center gap-2"><Icon name="users" weight="fill" className="text-slate-600"/> 배송용 고객 리스트 (전체)</h2>
+                            <p className="text-slate-500 dark:text-slate-400 mb-4 text-xs">완납 상단 / 카드 중간 / 노쇼 하단 자동 정렬</p>
+                            <button onClick={handleExportCustomers} className="w-full bg-slate-700 text-white font-bold py-3 rounded-lg transition-transform hover:scale-105 shadow-md flex items-center justify-center gap-2 hover:bg-slate-800"><Icon name="download-simple" weight="bold"/> 엑셀 다운로드</button>
                         </div>
-                        
-                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-lg border dark:border-slate-700 text-center">
-                            <h2 className="font-bold mb-2 text-slate-800 dark:text-white">카톡 전송용 리스트</h2>
-                            <button onClick={handleExportKakao} className="w-full bg-[#FEE500] hover:bg-[#FADA0A] text-gray-900 font-bold py-3 rounded-lg transition-colors shadow-sm">엑셀 다운로드</button>
+                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-lg border dark:border-slate-700 text-center ring-2 ring-blue-100 dark:ring-blue-900/30">
+                            <h2 className="text-lg font-bold mb-2 text-blue-600 dark:text-blue-400 flex items-center justify-center gap-2"><Icon name="chat-circle-dots" weight="fill"/> 전체 카톡 전송 메시지</h2>
+                            <p className="text-slate-500 dark:text-slate-400 mb-4 text-xs">전체 고객 대상 카톡 메시지 (과납/미입금 표기)</p>
+                            <button onClick={handleExportAllMessages} className="w-full bg-blue-500 text-white font-bold py-3 rounded-lg transition-transform hover:scale-105 shadow-md flex items-center justify-center gap-2 hover:bg-blue-600"><Icon name="download-simple" weight="bold"/> 엑셀 다운로드</button>
                         </div>
-                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-lg border dark:border-slate-700 text-center">
-                            <h2 className="font-bold mb-2 text-slate-800 dark:text-white">포장 인쇄용 리스트 (합산)</h2>
-                            <button onClick={handleExportPrint} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-lg transition-colors shadow-sm">엑셀 다운로드</button>
+                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-lg border dark:border-slate-700 text-center ring-2 ring-slate-200 dark:ring-slate-900/30">
+                            <h2 className="text-lg font-bold mb-2 text-slate-700 dark:text-slate-300 flex items-center justify-center gap-2"><Icon name="printer" weight="fill"/> 포장 리스트 인쇄</h2>
+                            <p className="text-slate-500 dark:text-slate-400 mb-4 text-xs">감열지 10x15cm 세로 양식 (닉네임 오름차순 정렬)</p>
+                            <button onClick={handlePrintPackingList} className="w-full bg-slate-600 text-white font-bold py-3 rounded-lg transition-transform hover:scale-105 shadow-md flex items-center justify-center gap-2 hover:bg-slate-700"><Icon name="printer" weight="bold"/> 10x15cm 인쇄</button>
                         </div>
-
-                        <div className="col-span-2 bg-slate-100 dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 flex justify-between items-center">
-                            <div><h2 className="font-bold mb-2 text-slate-800 dark:text-white">전체 데이터 백업/복구</h2><p className="text-xs text-slate-500">(.json 전용)</p></div>
+                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-lg border dark:border-slate-700 text-center ring-2 ring-indigo-100 dark:ring-indigo-900/30">
+                            <h2 className="text-lg font-bold mb-2 text-indigo-600 dark:text-indigo-400 flex items-center justify-center gap-2"><Icon name="receipt" weight="fill"/> 현금영수증 요청 리스트</h2>
+                            <p className="text-slate-500 dark:text-slate-400 mb-4 text-xs">현영 체크된 고객의 (방송명/닉네임/금액/전화번호) 추출</p>
+                            <button onClick={handleExportCashReceipts} className="w-full bg-indigo-500 text-white font-bold py-3 rounded-lg transition-transform hover:scale-105 shadow-md flex items-center justify-center gap-2 hover:bg-indigo-600"><Icon name="download-simple" weight="bold"/> 엑셀 다운로드</button>
+                        </div>
+                        <div className="col-span-2 bg-slate-100 dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 flex flex-row items-center justify-between">
+                            <div className="text-left">
+                                <h2 className="text-lg font-bold mb-2 text-slate-800 dark:text-slate-200 flex items-center gap-2"><Icon name="database" weight="fill"/> 전체 데이터 백업 / 복구</h2>
+                                <p className="text-slate-500 dark:text-slate-400 text-xs">장소 이동 시 작업 내역을 파일로 저장하고 불러옵니다. (.json 전용)</p>
+                            </div>
                             <div className="flex gap-3 w-1/2">
-                                <button onClick={handleExportBackup} className="flex-1 bg-slate-700 hover:bg-slate-800 text-white py-3 rounded-lg transition-colors">파일로 저장</button>
-                                <input type="file" accept=".json" id="file-upload" onChange={handleImportBackup} className="hidden" />
-                                <button onClick={()=>document.getElementById('file-upload').click()} className="flex-1 bg-slate-500 hover:bg-slate-600 text-white py-3 rounded-lg transition-colors">파일 불러오기</button>
+                                <button onClick={handleExportBackup} className="flex-1 bg-slate-700 text-white font-bold py-3 rounded-lg transition-transform hover:scale-105 shadow-md flex items-center justify-center gap-1 hover:bg-slate-800"><Icon name="export" weight="bold"/> 파일로 저장</button>
+                                <input type="file" accept=".json" ref={fileInputRef} onChange={handleImportBackup} className="hidden" />
+                                <button onClick={() => fileInputRef.current.click()} className="flex-1 bg-slate-500 text-white font-bold py-3 rounded-lg transition-transform hover:scale-105 shadow-md flex items-center justify-center gap-1 hover:bg-slate-600"><Icon name="file-arrow-up" weight="bold"/> 파일 불러오기</button>
                             </div>
                         </div>
                     </div>
