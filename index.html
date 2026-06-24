@@ -1436,13 +1436,14 @@
                     const customerVal = o.customer || '';
                     
                     return { 
-                        '닉네임': customerVal, '상품명': o.product, '수량': o.quantity, '단가(제품금액)': o.price, '배송비': currentShipping, '입금액': o.deposit, '카드결제': isCard ? 'O' : '', '수령인명': addr.realname || '', '연락처': addr.phone ? "'" + addr.phone : '', '우편번호': addr.zipcode ? "'" + addr.zipcode : '', '주소': addr.address || '', '요청사항': addr.memo || ''
+                        '닉네임': customerVal, '주문자': customerVal, '고객명': customerVal, '아이디': customerVal, '유튜브닉네임': customerVal,
+                        '상품명': o.product, '수량': o.quantity, '단가(제품금액)': o.price, '배송비': currentShipping, '입금액': o.deposit, '카드결제': isCard ? 'O' : '', '수령인명': addr.realname || '', '연락처': addr.phone ? "'" + addr.phone : '', '우편번호': addr.zipcode ? "'" + addr.zipcode : '', '주소': addr.address || '', '요청사항': addr.memo || ''
                     }; 
                 }); 
                 if (broadcastName) { 
                     const bn = broadcastName;
                     const metaCustomer = '___WORKSPACE_META___';
-                    saveList.unshift({ '닉네임': metaCustomer, '상품명': bn, '수량': 0, '단가(제품금액)': 0, '배송비': 0, '입금액': 0, '카드결제': '', '수령인명': '', '연락처': '', '우편번호': '', '주소': '', '요청사항': '' }); 
+                    saveList.unshift({ '닉네임': metaCustomer, '주문자': metaCustomer, '고객명': metaCustomer, '아이디': metaCustomer, '유튜브닉네임': metaCustomer, '상품명': bn, '수량': 0, '단가(제품금액)': 0, '배송비': 0, '입금액': 0, '카드결제': '', '수령인명': '', '연락처': '', '우편번호': '', '주소': '', '요청사항': '' }); 
                 }
                 try { const actualSheetId = getCleanSheetId(masterSheetId); if(actualSheetId) { await fetchGas(googleScriptUrl, { action: 'save_orders', masterId: actualSheetId, data: saveList, nicknames: uniqueNicknames }); } } catch(e) {} finally { setIsSaving(false); } 
             }, [orders, cardPayments, getCalculatedShipping, googleScriptUrl, addressLookup, masterSheetId, broadcastName]);
@@ -2377,7 +2378,7 @@
             const [orders, setOrders] = useLocalStorage('youtubeOrders', []);
             const [activeTab, setActiveTab] = useState('live');
             
-            const [googleScriptUrl, setGoogleScriptUrl] = useLocalStorage('googleScriptUrl', 'https://script.google.com/macros/s/AKfycbxmzti9c3GQ1ON-xUDKE2Qf0Lm8o9-CB2bU3S3WoPRzbL0Zea07n5i3sF_ltWN7mJx8/exec');
+            const [googleScriptUrl, setGoogleScriptUrl] = useLocalStorage('googleScriptUrl', 'https://script.google.com/macros/s/AKfycbxEPHTNHSUHdYSlnz5vz9tfUx41VVjCmzFdzxnLQktibVohKQDcuqmlZf0Ok2YO5Bs/exec');
             const [chatSheetId, setChatSheetId] = useLocalStorage('chatSheetId', '199YCBXzInxmG8GforoRCNHNps21NhVIf9wHA6NXXhtg');
             const [depSheetId, setDepSheetId] = useLocalStorage('depSheetId', '14bx2HMd_NID3zQN-Hb0x0At2Qmti7-p1Zfx1ZadNScY');
             const [addrSheetId, setAddrSheetId] = useLocalStorage('addrSheetId', '1ywl4gRvswQpvIYtPVbSROzz7a5elbLieYhqMZmt191U');
@@ -2389,7 +2390,7 @@
                 setChatSheetId('199YCBXzInxmG8GforoRCNHNps21NhVIf9wHA6NXXhtg');
                 setDepSheetId('14bx2HMd_NID3zQN-Hb0x0At2Qmti7-p1Zfx1ZadNScY');
                 setAddrSheetId('1ywl4gRvswQpvIYtPVbSROzz7a5elbLieYhqMZmt191U');
-                setGoogleScriptUrl('https://script.google.com/macros/s/AKfycbxmzti9c3GQ1ON-xUDKE2Qf0Lm8o9-CB2bU3S3WoPRzbL0Zea07n5i3sF_ltWN7mJx8/exec');
+                setGoogleScriptUrl('https://script.google.com/macros/s/AKfycbxEPHTNHSUHdYSlnz5vz9tfUx41VVjCmzFdzxnLQktibVohKQDcuqmlZf0Ok2YO5Bs/exec');
                 setMasterSheetId('1B8SBMX18_Px1CpRHuDTxqodqudiTrf6NfVoptjHtnGQ');
             }, []);
 
