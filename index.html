@@ -874,7 +874,6 @@
             const [filterStatus, setFilterStatus] = useState('all');
             const [expandedInventoryItem, setExpandedInventoryItem] = useState(null);
             
-            // 신규: 장바구니 모달창 활성화 상태 관리 (열려있을 타겟 고객의 닉네임)
             const [multiAddNick, setMultiAddNick] = useState(null);
             
             const [chats, setChats] = useState([]);
@@ -2315,21 +2314,6 @@
                 downloadExcel(data, '전체고객_카톡메세지_리스트');
             };
 
-            const handleExportCashReceipts = () => {
-                const groups = {}; orders.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); });
-                const data = []; 
-                Object.entries(groups).forEach(([nick, items]) => {
-                    if (!cashReceipts || !cashReceipts[nick]) return;
-                    const activeItems = items.filter(i => !i.isCancelled); if (activeItems.length === 0) return;
-                    const depositTotal = items.reduce((sum, i) => sum + (i.deposit || 0), 0); const addrInfo = findAddress(nick) || {};
-                    let cleanPhone = String(addrInfo.phone || '').replace(/[^0-9]/g, ''); if (cleanPhone.length === 10 && !cleanPhone.startsWith('0')) cleanPhone = '0' + cleanPhone;
-                    data.push({ '방송명': broadcastName, '닉네임': nick, '금액': depositTotal, '전화번호': cleanPhone });
-                });
-                if (data.length === 0) { openModal("현금영수증 요청자로 체크(현영)된 고객이 없습니다.", "alert"); return; }
-                data.sort((a, b) => String(a['닉네임'] || '').localeCompare(String(b['닉네임'] || '')));
-                downloadExcel(data, '현금영수증_요청리스트');
-            };
-
            const handlePrintPackingList = () => {
                const groups = {}; orders.forEach(o => { if (o.isCancelled) return; if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); });
                if (Object.keys(groups).length === 0) { openModal("인쇄할 주문 내역이 없습니다.", "alert"); return; }
@@ -2372,11 +2356,7 @@
                             <p className="text-slate-500 dark:text-slate-400 mb-4 text-xs">감열지 10x15cm 세로 양식 (닉네임 오름차순 정렬)</p>
                             <button onClick={handlePrintPackingList} className="w-full bg-slate-600 text-white font-bold py-3 rounded-lg transition-transform hover:scale-105 shadow-md flex items-center justify-center gap-2 hover:bg-slate-700"><Icon name="printer" weight="bold"/> 10x15cm 인쇄</button>
                         </div>
-                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-lg border dark:border-slate-700 text-center ring-2 ring-indigo-100 dark:ring-indigo-900/30">
-                            <h2 className="text-lg font-bold mb-2 text-indigo-600 dark:text-indigo-400 flex items-center justify-center gap-2"><Icon name="receipt" weight="fill"/> 현금영수증 요청 리스트</h2>
-                            <p className="text-slate-500 dark:text-slate-400 mb-4 text-xs">현영 체크된 고객의 (방송명/닉네임/금액/전화번호) 추출</p>
-                            <button onClick={handleExportCashReceipts} className="w-full bg-indigo-500 text-white font-bold py-3 rounded-lg transition-transform hover:scale-105 shadow-md flex items-center justify-center gap-2 hover:bg-indigo-600"><Icon name="download-simple" weight="bold"/> 엑셀 다운로드</button>
-                        </div>
+                        
                         <div className="col-span-2 bg-slate-100 dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 flex flex-row items-center justify-between">
                             <div className="text-left">
                                 <h2 className="text-lg font-bold mb-2 text-slate-800 dark:text-slate-200 flex items-center gap-2"><Icon name="database" weight="fill"/> 전체 데이터 백업 / 복구</h2>
@@ -2405,11 +2385,9 @@
             const [broadcastName, setBroadcastName] = useLocalStorage('broadcastName', '오늘의방송');
             const [bankAccount, setBankAccount] = useLocalStorage('bankAccount', FIXED_BANK_ACCOUNT);
             
-            // 소리 알림 켜기/끄기 및 볼륨
             const [soundEnabled, setSoundEnabled] = useState(false);
             const [soundVolume, setSoundVolume] = useLocalStorage('soundVolume', 50);
             
-            // 주소록 수집 날짜 필터링
             const [addressStartDate, setAddressStartDate] = useLocalStorage('addressStartDate', '');
 
             useEffect(() => {
@@ -2470,9 +2448,13 @@
             const openModal = useCallback((msg, type = 'alert', onConfirm = null, onCancel = null, initVal = '') => { setModalConfig({ isOpen: true, type, message: msg, onConfirm: (val) => { setModalConfig(p => ({...p, isOpen: false})); if(onConfirm) onConfirm(val); }, onCancel: () => { setModalConfig(p => ({...p, isOpen: false})); if(onCancel) onCancel(); }, initialValue: initVal }); }, []);
 
             const handleResetAllData = () => {
-                openModal('정말 모든 데이터를 초기화하시겠습니까?\n(주문서, 입금 연결, 채팅 기록, 기타 설정이 모두 삭제됩니다)', 'confirm', () => {
+                openModal('정말 모든 데이터를 초기화하시겠습니까?\n(주문서, 입금 연결, 채팅 기록, 실시간 재고, 기타 설정이 모두 삭제됩니다)', 'confirm', () => {
                     setOrders([]); setProductHistory({}); setShippingOverrides({}); setCardPayments({}); setMatchedDeposits(new Set()); setDepositLinks({}); setDepositorNames({}); setClickedChats(new Set());
-                    setKeywords([]); setSentAddressRequests(new Set()); setDeletedDepositIds(new Set()); setCheckedOrders(new Set()); setAddressMapping({}); setCashReceipts({}); localStorage.removeItem(getLsKey('ignoredAutoMatch'));
+                    setKeywords([]); setSentAddressRequests(new Set()); setDeletedDepositIds(new Set()); setCheckedOrders(new Set()); setAddressMapping({}); setCashReceipts({}); setInventory([]); localStorage.removeItem(getLsKey('ignoredAutoMatch'));
+                    
+                    if (googleScriptUrl && masterSheetId) {
+                        fetchGas(googleScriptUrl, { action: 'save_inventory', masterId: getCleanSheetId(masterSheetId), data: [] }).catch(()=>{});
+                    }
                 });
             };
 
