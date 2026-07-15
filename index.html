@@ -1,17 +1,11 @@
-정말 죄송합니다 사장님. 확인해 보니 제가 이전에 드린 코드에 **치명적인 출력 오류**가 있었습니다.
-
-코드가 너무 길다 보니, AI 모델이 문장을 끝맺지 못하고 **똑같은 함수(`CustomerBlock`, `LiveTab` 등)를 3번씩 중복해서 출력하는 버그(무한 루프)가 발생**했습니다. 하나의 파일 안에 똑같은 이름의 기능이 여러 번 선언되니, 브라우저가 문법 에러(Syntax Error)를 일으켜서 스크립트를 아예 읽지 못하고 하얀 화면(White Screen)만 띄운 것입니다.
-
-이전처럼 코드가 중복 복사되는 현상이 절대 일어나지 않도록, 구조를 꽉 잡고 **단 하나의 완벽한 코드**로 압축해서 다시 작성했습니다.
-
-기존 메모장의 내용을 **전부 지우시고(Ctrl+A -> Delete)**, 아래 코드를 복사해서 다시 붙여넣기 후 저장해 주세요! (하얀 화면 없이 바로 뜰 겁니다.)
-
-```html
 <!DOCTYPE html>
 <html lang="ko" class="antialiased">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>주문서 관리 시스템</title>
     
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin="anonymous"></script>
@@ -57,42 +51,120 @@
         const getLsKey = (key) => `${WS_ID}_${key}`;
 
         const FIXED_BANK_ACCOUNT = "카카오뱅크 김선정\n7942 18 01611";
-        const EMOJI_LIST = [ "👗","👚","👕","👖","👔","👙","👘","👠","👡","👢","👞","👟","🥾","🧦","🧤","🧣","🎩","🧢","👒","👑","💍","👝","👛","👜","💼","🎒","🧳","👓","🕶","🌂", "💄","💅","💋","🎀","🛍️","🎁","💝","💎","🧴","🪞","🧼","🧽", "🌸","🌺","🌻","🌼","🌷","🌹","🥀","💐", "🍎","🍓","🍒","🍑","🍋","🍌","🍉","🍇","🥑","🥝", "💙","💖","💛","💚","💜","🤍","❤️","🖤","🤎","💕","💞","💗","💓","💘", "😍","🥰","😘","🤩","😎","🤗","😊","☺️","😉","😆","😁","😄","😃","😀", "⭐","🌟","✨","🔥","💥","💯","✅","✔️","❌","❗","❓","📢","🔔","🌈","💡","📌","📍", "💰","💸","💳","🧾","🪙","🛒","🚗","🚚","✈️","🚀","🛵","📱","💻","🎉","🎈","🎊", "🐻","🐰","🐱","🐶","🐼","🐯","🦊","🦁","🐮","🐷","🐸","🐒","🐥","🐧","🦋" ];
+        const EMOJI_LIST = [
+            "👗","👚","👕","👖","👔","👙","👘","👠","👡","👢","👞","👟","🥾","🧦","🧤","🧣","🎩","🧢","👒","👑","💍","👝","👛","👜","💼","🎒","🧳","👓","🕶","🌂",
+            "💄","💅","💋","🎀","🛍️","🎁","💝","💎","🧴","🪞","🧼","🧽",
+            "🌸","🌺","🌻","🌼","🌷","🌹","🥀","💐",
+            "🍎","🍓","🍒","🍑","🍋","🍌","🍉","🍇","🥑","🥝",
+            "💙","💖","💛","💚","💜","🤍","❤️","🖤","🤎","💕","💞","💗","💓","💘",
+            "😍","🥰","😘","🤩","😎","🤗","😊","☺️","😉","😆","😁","😄","😃","😀",
+            "⭐","🌟","✨","🔥","💥","💯","✅","✔️","❌","❗","❓","📢","🔔","🌈","💡","📌","📍",
+            "💰","💸","💳","🧾","🪙","🛒","🚗","🚚","✈️","🚀","🛵","📱","💻","🎉","🎈","🎊",
+            "🐻","🐰","🐱","🐶","🐼","🐯","🦊","🦁","🐮","🐷","🐸","🐒","🐥","🐧","🦋"
+        ];
 
         const Icon = ({ name, className="", weight="regular", size }) => <i className={`ph ph-${name} ${className}`} data-phosphor-icon-weight={weight} style={{fontSize: size}}></i>;
         
         const normalizeString = (str) => String(str || '').replace(/[\s\(\)\[\]\{\}\-\_\.\,\/]/g, '').toLowerCase();
-        const getCleanSheetId = (idOrUrl) => { if (!idOrUrl) return ''; const match = idOrUrl.match(/\/d\/([a-zA-Z0-9-_]+)/); return match ? match[1] : idOrUrl.trim(); };
-        const getChosung = (str) => { if (!str) return ''; const safeStr = String(str); const cho = ["ㄱ","ㄲ","ㄴ","ㄷ","ㄸ","ㄹ","ㅁ","ㅂ","ㅃ","ㅅ","ㅇ","ㅆ","ㅈ","ㅉ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"]; let result = ""; for (let i = 0; i < safeStr.length; i++) { const code = safeStr.charCodeAt(i) - 44032; if (code > -1 && code < 11172) result += cho[Math.floor(code / 588)]; else result += safeStr.charAt(i); } return result; };
-        const cleanForMatch = (str) => { if (!str) return ''; let s = String(str).toLowerCase().replace(/\s/g, '').replace(/[—–−_]/g, '-'); if (s.includes('-')) s = s.split('-')[0]; s = s.replace(/[\(\)\[\]\{\}\.\,\/]/g, ''); if (/[가-힣]/.test(s)) s = s.replace(/[a-z0-9]+$/, ''); return s; };
-        const extractKo = (str) => { if (!str) return ''; return String(str).replace(/[^가-힣]/g, ''); };
-        const parseSafeDate = (val) => { if (!val) return new Date(0); const s = String(val).trim(); const match = s.match(/(\d{4})[./-]\s*(\d{1,2})[./-]\s*(\d{1,2})/); if (match) return new Date(parseInt(match[1]), parseInt(match[2])-1, parseInt(match[3])); let d = new Date(s); if (!isNaN(d) && d.getTime() > 0) return d; return new Date(0); };
+
+        const getCleanSheetId = (idOrUrl) => {
+            if (!idOrUrl) return '';
+            const match = idOrUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
+            return match ? match[1] : idOrUrl.trim();
+        };
+
+        const getChosung = (str) => {
+            if (!str) return '';
+            const safeStr = String(str);
+            const cho = ["ㄱ","ㄲ","ㄴ","ㄷ","ㄸ","ㄹ","ㅁ","ㅂ","ㅃ","ㅅ","ㅇ","ㅆ","ㅈ","ㅉ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"];
+            let result = "";
+            for (let i = 0; i < safeStr.length; i++) {
+                const code = safeStr.charCodeAt(i) - 44032;
+                if (code > -1 && code < 11172) result += cho[Math.floor(code / 588)];
+                else result += safeStr.charAt(i);
+            }
+            return result;
+        };
+
+        const cleanForMatch = (str) => {
+            if (!str) return '';
+            let s = String(str).toLowerCase().replace(/\s/g, '');
+            s = s.replace(/[—–−_]/g, '-');
+            if (s.includes('-')) s = s.split('-')[0];
+            s = s.replace(/[\(\)\[\]\{\}\.\,\/]/g, '');
+            if (/[가-힣]/.test(s)) s = s.replace(/[a-z0-9]+$/, '');
+            return s;
+        };
+
+        const extractKo = (str) => {
+            if (!str) return '';
+            return String(str).replace(/[^가-힣]/g, '');
+        };
+
+        const parseSafeDate = (val) => {
+            if (!val) return new Date(0);
+            const s = String(val).trim();
+            const match = s.match(/(\d{4})[./-]\s*(\d{1,2})[./-]\s*(\d{1,2})/);
+            if (match) return new Date(parseInt(match[1]), parseInt(match[2])-1, parseInt(match[3]));
+            let d = new Date(s);
+            if (!isNaN(d) && d.getTime() > 0) return d;
+            return new Date(0);
+        };
 
         const fetchGas = async (url, payload = null) => {
             const options = { method: payload ? 'POST' : 'GET', redirect: "follow" };
-            if (payload) { options.headers = { 'Content-Type': 'text/plain;charset=utf-8' }; options.body = JSON.stringify(payload); }
+            if (payload) {
+                options.headers = { 'Content-Type': 'text/plain;charset=utf-8' };
+                options.body = JSON.stringify(payload);
+            }
             try {
-                const response = await fetch(url, options); const text = await response.text();
-                if (text.includes("<!DOCTYPE") || text.includes("<html")) return { status: "error", message: "앱스 스크립트 주소/권한 오류" };
+                const response = await fetch(url, options);
+                const text = await response.text();
+                
+                if (text.includes("<!DOCTYPE") || text.includes("<html")) {
+                    return { status: "error", message: "앱스 스크립트 주소/권한 오류" };
+                }
                 try { return JSON.parse(text); } catch(e) { return { status: "error", message: "데이터 변환 실패" }; }
             } catch (err) { return { status: "error", message: `통신 오류 (${err.message})` }; }
         };
 
         const useLocalStorage = (key, initialValue) => {
             const actualKey = getLsKey(key);
-            const [storedValue, setStoredValue] = useState(() => { try { const item = window.localStorage.getItem(actualKey); return item ? JSON.parse(item) : initialValue; } catch (error) { return initialValue; } });
-            useEffect(() => { const timer = setTimeout(() => { try { window.localStorage.setItem(actualKey, JSON.stringify(storedValue)); } catch(e) {} }, 800); return () => clearTimeout(timer); }, [actualKey, storedValue]);
+            const [storedValue, setStoredValue] = useState(() => {
+                try { const item = window.localStorage.getItem(actualKey); return item ? JSON.parse(item) : initialValue; } catch (error) { return initialValue; }
+            });
+            useEffect(() => {
+                const timer = setTimeout(() => { try { window.localStorage.setItem(actualKey, JSON.stringify(storedValue)); } catch(e) {} }, 800);
+                return () => clearTimeout(timer);
+            }, [actualKey, storedValue]);
             const setValue = useCallback((value) => { try { setStoredValue(prev => value instanceof Function ? value(prev) : value); } catch (error) {} }, []);
             return [storedValue, setValue];
         };
 
-        const downloadExcel = (data, fileName) => { const ws = XLSX.utils.json_to_sheet(data); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Sheet1"); XLSX.writeFile(wb, `${fileName}_${new Date().toLocaleDateString()}.xlsx`); };
+        const downloadExcel = (data, fileName) => {
+            const ws = XLSX.utils.json_to_sheet(data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+            XLSX.writeFile(wb, `${fileName}_${new Date().toLocaleDateString()}.xlsx`);
+        };
 
         const Modal = ({ isOpen, type, message, onConfirm, onCancel, initialValue }) => {
             const [inputValue, setInputValue] = useState(initialValue || '');
             const inputRef = useRef(null);
-            useEffect(() => { const handleKeyDown = (e) => { if (!isOpen) return; if (type !== 'confirm' && type !== 'alert') { if (e.key === 'Enter') onConfirm(inputValue); } else { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onConfirm(); } } if (e.key === 'Escape' && type !== 'alert') onCancel(); }; window.addEventListener('keydown', handleKeyDown); return () => window.removeEventListener('keydown', handleKeyDown); }, [isOpen, type, inputValue, onConfirm, onCancel]);
+            
+            useEffect(() => {
+                const handleKeyDown = (e) => {
+                    if (!isOpen) return;
+                    if (type !== 'confirm' && type !== 'alert') { if (e.key === 'Enter') onConfirm(inputValue); } 
+                    else { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onConfirm(); } }
+                    if (e.key === 'Escape' && type !== 'alert') onCancel();
+                };
+                window.addEventListener('keydown', handleKeyDown); 
+                return () => window.removeEventListener('keydown', handleKeyDown);
+            }, [isOpen, type, inputValue, onConfirm, onCancel]);
+            
             useEffect(() => { if (isOpen && type === 'prompt' && inputRef.current) { setInputValue(initialValue || ''); setTimeout(() => inputRef.current.focus(), 100); } }, [isOpen, type, initialValue]);
+            
             if (!isOpen) return null;
             return (
                 <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[9999] animate-pop" onClick={type === 'alert' ? () => onConfirm() : undefined}>
@@ -101,11 +173,192 @@
                             <h3 className="text-lg font-bold text-center text-slate-800 dark:text-slate-100 mb-2">{type === 'confirm' ? '확인' : type === 'prompt' ? '입력' : '알림'}</h3>
                             <p className="text-sm text-slate-600 dark:text-slate-400 text-center whitespace-pre-wrap leading-relaxed">{message}</p>
                         </div>
-                        {type === 'prompt' && <input ref={inputRef} type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)} className="w-full border dark:border-slate-600 rounded-lg px-3 py-2 mb-5 text-sm outline-none bg-slate-50 dark:bg-slate-900 dark:text-slate-100"/>}
+                        {type === 'prompt' && (
+                            <input ref={inputRef} type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)} className="w-full border dark:border-slate-600 rounded-lg px-3 py-2 mb-5 text-sm focus:ring-2 focus:ring-slate-500 outline-none bg-slate-50 dark:bg-slate-900 dark:text-slate-100"/>
+                        )}
                         <div className="flex gap-2">
-                            {type !== 'alert' && <button onClick={onCancel} className="flex-1 py-2.5 rounded-lg text-sm font-bold bg-slate-100 dark:bg-slate-700">취소</button>}
-                            <button onClick={() => type === 'prompt' ? onConfirm(inputValue) : onConfirm()} className="flex-1 py-2.5 rounded-lg text-sm font-bold text-white bg-slate-700 hover:bg-slate-800">확인</button>
+                            {type !== 'alert' && <button onClick={onCancel} className="flex-1 py-2.5 rounded-lg text-sm font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors">취소</button>}
+                            <button onClick={() => type === 'prompt' ? onConfirm(inputValue) : onConfirm()} className="flex-1 py-2.5 rounded-lg text-sm font-bold text-white bg-slate-700 hover:bg-slate-800 transition-colors shadow-sm">확인</button>
                         </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const MultiAddModal = ({ isOpen, nick, inventory, onClose, addOrderLogic }) => {
+            const [searchTerm, setSearchTerm] = useState('');
+            const deferredSearchTerm = React.useDeferredValue(searchTerm);
+            const [selectedItems, setSelectedItems] = useState({});
+
+            useEffect(() => {
+                if (isOpen) {
+                    setSearchTerm('');
+                    setSelectedItems({});
+                }
+            }, [isOpen]);
+
+            const handleKeyDown = useCallback((e) => {
+                if (isOpen && e.key === 'Escape') onClose();
+            }, [isOpen, onClose]);
+
+            useEffect(() => {
+                window.addEventListener('keydown', handleKeyDown);
+                return () => window.removeEventListener('keydown', handleKeyDown);
+            }, [handleKeyDown]);
+
+            if (!isOpen) return null;
+
+            const filteredInventory = (inventory || []).filter(i => 
+                String(i.name).toLowerCase().includes(deferredSearchTerm.toLowerCase())
+            );
+
+            const totalQty = Object.values(selectedItems).reduce((sum, qty) => sum + qty, 0);
+
+            const handleAdd = () => {
+                if (totalQty === 0) return;
+                Object.entries(selectedItems).forEach(([name, qty]) => {
+                    if (qty > 0) {
+                        addOrderLogic(nick, name, qty, false, null, null, false, false);
+                    }
+                });
+                onClose();
+            };
+
+            return (
+                <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[9999] animate-pop" onClick={onClose}>
+                    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl p-4 w-full max-w-md mx-4 flex flex-col max-h-[80vh]" onClick={e => e.stopPropagation()}>
+                        <div className="mb-3 border-b dark:border-slate-700 pb-2 flex justify-between items-center shrink-0">
+                            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                                <Icon name="shopping-cart" weight="fill" className="text-blue-500" /> '{nick}' 장바구니
+                            </h3>
+                            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><Icon name="x" weight="bold" size={20}/></button>
+                        </div>
+                        
+                        <div className="relative mb-3 shrink-0">
+                            <Icon name="magnifying-glass" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 size={14}"/>
+                            <input 
+                                type="text" 
+                                placeholder="상품명 검색..." 
+                                value={searchTerm}
+                                onChange={e => setSearchTerm(e.target.value)}
+                                autoFocus
+                                className="w-full border dark:border-slate-600 rounded-lg pl-8 pr-3 py-2 text-sm bg-slate-50 dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 pb-2">
+                            {filteredInventory.length === 0 ? (
+                                <div className="text-center py-6 text-slate-400 text-sm">검색 결과가 없습니다.</div>
+                            ) : (
+                                filteredInventory.map(item => {
+                                    const isSelected = selectedItems[item.name] > 0;
+                                    const qty = selectedItems[item.name] || 0;
+                                    return (
+                                        <div key={item.id || item.name} className={`flex items-center justify-between p-2 rounded-lg border transition-all ${isSelected ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-700 ring-1 ring-blue-200' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-blue-300'} ${item.isSoldOut ? 'opacity-60' : ''}`}>
+                                            <div className="flex-1 min-w-0 pr-2">
+                                                <div className={`font-bold text-sm truncate ${item.isSoldOut ? 'text-red-500 line-through' : (isSelected ? 'text-blue-700 dark:text-blue-300' : 'text-slate-800 dark:text-slate-200')}`}>
+                                                    {item.name} {item.isSoldOut && '(품절)'}
+                                                </div>
+                                                <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                                    단가: {Number(item.price).toLocaleString()}원 | 남은재고: {item.stock !== undefined && item.stock !== '' ? item.stock : '∞'}
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-2 shrink-0">
+                                                <button 
+                                                    onClick={() => setSelectedItems(prev => ({...prev, [item.name]: Math.max(0, (prev[item.name]||0)-1)}))}
+                                                    className="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 flex items-center justify-center font-bold transition-colors"
+                                                ><Icon name="minus" weight="bold"/></button>
+                                                <span className="w-4 text-center font-bold text-sm dark:text-white">{qty}</span>
+                                                <button 
+                                                    onClick={() => setSelectedItems(prev => ({...prev, [item.name]: (prev[item.name]||0)+1}))}
+                                                    className="w-7 h-7 rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-300 hover:bg-blue-200 flex items-center justify-center font-bold transition-colors"
+                                                ><Icon name="plus" weight="bold"/></button>
+                                            </div>
+                                        </div>
+                                    )
+                                })
+                            )}
+                        </div>
+
+                        <div className="mt-2 pt-3 border-t dark:border-slate-700 shrink-0">
+                            <button 
+                                onClick={handleAdd}
+                                disabled={totalQty === 0}
+                                className={`w-full py-3 rounded-lg font-bold text-sm transition-colors flex justify-center items-center gap-2 shadow-sm ${totalQty > 0 ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-400 dark:text-slate-500 cursor-not-allowed'}`}
+                            >
+                                {totalQty > 0 ? `총 ${totalQty}개 일괄 추가하기` : '상품을 선택해주세요'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const QuickAddressModal = ({ isOpen, nick, initialData, onClose, onSubmit, openModal }) => {
+            const [formData, setFormData] = useState({ realname: '', phone: '', zipcode: '', address: '', detailAddress: '', memo: '' });
+            const detailRef = useRef(null);
+
+            useEffect(() => {
+                if (isOpen) {
+                    if (initialData) { setFormData({ realname: initialData.realname || '', phone: initialData.phone || '', zipcode: initialData.zipcode || '', address: initialData.address || '', detailAddress: '', memo: initialData.memo || '' }); } 
+                    else { setFormData({ realname: '', phone: '', zipcode: '', address: '', detailAddress: '', memo: '' }); }
+                }
+            }, [isOpen, initialData]);
+
+            const handleSearch = () => {
+                try {
+                    new window.daum.Postcode({
+                        oncomplete: function(data) {
+                            let fullAddr = data.address; let extraAddr = '';
+                            if(data.addressType === 'R'){
+                                if(data.bname !== '') extraAddr += data.bname;
+                                if(data.buildingName !== '') extraAddr += (extraAddr !== '' ? ', ' + data.buildingName : data.buildingName);
+                                if(extraAddr !== '') fullAddr += ' (' + extraAddr + ')';
+                            }
+                            setFormData(prev => ({ ...prev, zipcode: data.zonecode, address: fullAddr }));
+                            setTimeout(() => detailRef.current?.focus(), 100);
+                        }
+                    }).open();
+                } catch (e) { if (openModal) openModal("주소 검색 오류가 발생했습니다.", "alert"); }
+            };
+
+            const handleSubmit = (e) => {
+                e.preventDefault(); 
+                const notify = (msg) => openModal ? openModal(msg, "alert") : alert(msg);
+                if (!formData.realname.trim()) return notify("수령인 이름을 입력해주세요.");
+                const cleanPhone = formData.phone.replace(/[^0-9]/g, '');
+                if (!cleanPhone) return notify("유효한 연락처(숫자)를 입력해주세요.");
+                if (!formData.address.trim()) return notify("배송 주소를 검색해서 입력해주세요.");
+                const zipStr = formData.zipcode ? `(${formData.zipcode}) ` : '';
+                const finalAddress = `${zipStr}${formData.address} ${formData.detailAddress}`.trim();
+                onSubmit({ ...formData, zipcode: '', address: finalAddress, phone: cleanPhone, nickname: initialData ? initialData.nickname : nick });
+            };
+
+            if (!isOpen) return null;
+            return (
+                <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[9999] animate-pop" onClick={onClose}>
+                    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl p-6 w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
+                        <div className="mb-4 border-b dark:border-slate-700 pb-3 flex justify-between items-center">
+                            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2"><Icon name="pencil-line" weight="fill" /> '{initialData ? initialData.nickname : nick}' 배송지 {initialData ? '수정' : '빠른 입력'}</h3>
+                            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><Icon name="x" weight="bold" size={20}/></button>
+                        </div>
+                        <form onSubmit={handleSubmit} className="space-y-3">
+                            <div className="grid grid-cols-2 gap-3">
+                                <div><label className="block text-[10px] font-bold text-slate-500 mb-1">수령인 이름 (필수)</label><input type="text" value={formData.realname} onChange={e=>setFormData({...formData, realname: e.target.value})} className="w-full border dark:border-slate-600 rounded px-3 py-2 text-sm bg-transparent dark:text-slate-100" placeholder="이름 입력" autoFocus /></div>
+                                <div><label className="block text-[10px] font-bold text-slate-500 mb-1">연락처 (숫자만)</label><input type="text" value={formData.phone} onChange={e=>setFormData({...formData, phone: e.target.value.replace(/[^0-9]/g, '')})} className="w-full border dark:border-slate-600 rounded px-3 py-2 text-sm bg-transparent dark:text-slate-100" placeholder="연락처" /></div>
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-500 mb-1">배송 주소 (필수)</label>
+                                <div className="flex gap-2 mb-2"><input type="text" value={formData.zipcode} readOnly placeholder="우편번호" className="w-24 border dark:border-slate-600 rounded px-3 py-2 text-sm bg-slate-50 dark:bg-slate-700 cursor-not-allowed" /><button type="button" onClick={handleSearch} className="bg-slate-600 text-white px-3 py-2 rounded text-sm font-bold shadow-sm">주소 검색</button></div>
+                                <input type="text" value={formData.address} readOnly placeholder="검색 버튼을 눌러 기본 주소를 찾아주세요" className="w-full border dark:border-slate-600 rounded px-3 py-2 text-sm bg-slate-50 dark:bg-slate-700 mb-2 cursor-not-allowed" />
+                                <input ref={detailRef} type="text" value={formData.detailAddress} onChange={e=>setFormData({...formData, detailAddress: e.target.value})} placeholder="상세 주소 (동, 호수 등)" className="w-full border dark:border-slate-600 rounded px-3 py-2 text-sm bg-transparent dark:text-slate-100" />
+                            </div>
+                            <div><label className="block text-[10px] font-bold text-slate-500 mb-1">배송 메모 (선택)</label><input type="text" value={formData.memo} onChange={e=>setFormData({...formData, memo: e.target.value})} className="w-full border dark:border-slate-600 rounded px-3 py-2 text-sm bg-transparent dark:text-slate-100" placeholder="배송 요청사항" /></div>
+                            <div className="pt-3 flex gap-2">
+                                <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded font-bold text-sm bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">취소</button>
+                                <button type="submit" className="flex-1 py-2.5 rounded font-bold text-sm bg-slate-700 text-white">저장 및 즉시 적용</button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             );
@@ -114,13 +367,320 @@
         const SettingsField = ({ label, value, onChange, placeholder, type="text" }) => (
             <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">{label}</label>
-                <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} className="w-full border dark:border-slate-600 rounded px-2 py-1.5 text-xs bg-slate-50 dark:bg-slate-900 dark:text-white outline-none" />
+                <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} className="w-full border dark:border-slate-600 rounded px-2 py-1.5 text-xs bg-slate-50 dark:bg-slate-900 dark:text-white focus:ring-1 focus:ring-slate-400 outline-none" />
             </div>
         );
 
-        /* -------------------------------------------------------------------------- */
-        /* 핵심 컴포넌트: 주문내역 1줄 */
-        /* -------------------------------------------------------------------------- */
+        const VipModal = ({ isOpen, onClose, specialCustomers, setSpecialCustomers }) => {
+            const [newVip, setNewVip] = useState('');
+            if (!isOpen) return null;
+            
+            const handleAdd = (e) => {
+                e.preventDefault();
+                if(!newVip.trim()) return;
+                const norm = normalizeString(newVip);
+                setSpecialCustomers(prev => ({...prev, [norm]: { type: 'vip', originalName: newVip.trim() }}));
+                setNewVip('');
+            };
+            const handleRemove = (key) => {
+                setSpecialCustomers(prev => { const next = {...prev}; delete next[key]; return next; });
+            };
+            
+            return (
+                <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[9999] animate-pop" onClick={onClose}>
+                    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl p-6 w-full max-w-sm mx-4" onClick={e => e.stopPropagation()}>
+                        <div className="mb-4 border-b dark:border-slate-700 pb-3 flex justify-between items-center">
+                            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2"><Icon name="crown" weight="fill" className="text-amber-500" /> VIP 관리대장</h3>
+                            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><Icon name="x" weight="bold" size={20}/></button>
+                        </div>
+                        <form onSubmit={handleAdd} className="flex gap-2 mb-4">
+                            <input type="text" value={newVip} onChange={e=>setNewVip(e.target.value)} placeholder="VIP 닉네임 입력" className="flex-1 border dark:border-slate-600 rounded px-3 py-2 text-sm bg-slate-50 dark:bg-slate-900 dark:text-slate-100 outline-none" autoFocus />
+                            <button type="submit" className="bg-slate-700 text-white px-3 py-2 rounded text-sm font-bold whitespace-nowrap shadow-sm hover:bg-slate-800">추가</button>
+                        </form>
+                        <div className="max-h-60 overflow-y-auto space-y-1">
+                            {Object.entries(specialCustomers || {}).map(([key, val]) => (
+                                <div key={key} className="flex justify-between items-center bg-slate-50 dark:bg-slate-700/50 p-2 rounded border dark:border-slate-600">
+                                    <span className="font-bold text-sm text-slate-800 dark:text-slate-200">{val.originalName || key}</span>
+                                    <button onClick={()=>handleRemove(key)} className="text-red-500 hover:text-red-700 text-xs font-bold px-2 py-1 bg-red-50 dark:bg-red-900/30 rounded transition-colors">삭제</button>
+                                </div>
+                            ))}
+                            {Object.keys(specialCustomers || {}).length === 0 && <div className="text-center text-slate-500 text-sm py-4">등록된 VIP가 없습니다.</div>}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const SettingsModalContent = ({ 
+            googleScriptUrl, setGoogleScriptUrl, 
+            chatSheetId, setChatSheetId, depSheetId, setDepSheetId, addrSheetId, setAddrSheetId, masterSheetId, setMasterSheetId, 
+            broadcastName, setBroadcastName,
+            quickShipping, setQuickShipping, jejuShipping, setJejuShipping, freeShippingThreshold, setFreeShippingThreshold, 
+            templateConfig, setTemplateConfig, bankAccount, setBankAccount, quickMessages, setQuickMessages, 
+            addressStartDate, setAddressStartDate, soundVolume, setSoundVolume,
+            setIsSettingsOpen
+        }) => {
+            return (
+                <div className="absolute top-12 right-4 bg-white dark:bg-slate-800 shadow-xl border dark:border-slate-700 rounded-lg p-4 w-[420px] z-50 animate-pop max-h-[85vh] overflow-y-auto">
+                    <h3 className="font-bold mb-4 flex items-center gap-2 border-b dark:border-slate-700 pb-2"><Icon name="gear" weight="fill" className="text-gray-500"/> 환경설정</h3>
+                    <div className="mb-4 space-y-4">
+                        <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg space-y-2">
+                            <SettingsField label="💡 방송명 (엑셀 제목용)" value={broadcastName} onChange={setBroadcastName} placeholder="예: 5월24일 오전방송" />
+                        </div>
+                        <SettingsField label="[필수] 통합 앱스 스크립트 URL (모든 사용자)" value={googleScriptUrl} onChange={setGoogleScriptUrl} placeholder="배포된 웹앱 URL 복사/붙여넣기" />
+                        
+                        <div className="p-3 bg-slate-100 dark:bg-slate-700/50 rounded-lg space-y-2 border border-slate-300 dark:border-slate-600">
+                            <SettingsField label="[읽기] 파이썬 채팅 시트 ID" value={chatSheetId} onChange={setChatSheetId} placeholder="시트 주소의 /d/ 뒷부분" />
+                            <SettingsField label="[읽기] 입금 시트 ID" value={depSheetId} onChange={setDepSheetId} placeholder="시트 주소의 /d/ 뒷부분" />
+                            <SettingsField label="[읽기] 외부 폼 주소록 시트 ID" value={addrSheetId} onChange={setAddrSheetId} placeholder="시트 주소의 /d/ 뒷부분" />
+                        </div>
+                        
+                        <div className="p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg space-y-2 border border-amber-200 dark:border-amber-800">
+                            <SettingsField label="[쓰기] 스마트오더 마스터 시트 ID" value={masterSheetId} onChange={setMasterSheetId} placeholder="새로 만든 백업 시트 ID" />
+                        </div>
+                        
+                        <div className="border-t dark:border-slate-700 pt-4">
+                            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">배송비 자동 계산 설정</label>
+                            <div className="flex gap-2 mb-2">
+                                <SettingsField label="기본 배송비" type="number" value={quickShipping} onChange={(v) => setQuickShipping(Number(v))} />
+                                <SettingsField label="제주 추가" type="number" value={jejuShipping} onChange={(v) => setJejuShipping(Number(v))} />
+                                <SettingsField label="무료 기준" type="number" value={freeShippingThreshold} onChange={(v) => setFreeShippingThreshold(v)} placeholder="예: 70000" />
+                            </div>
+                        </div>
+                        
+                        <div className="border-t dark:border-slate-700 pt-4">
+                            <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-2 flex items-center gap-1"><Icon name="chat-text" weight="fill"/> 주문서 멘트 설정</h4>
+                            <div className="space-y-3">
+                                <div>
+                                    <label className="block text-[10px] font-bold text-slate-500 mb-1">닉네임 이모지</label>
+                                    <input type="text" value={templateConfig.emoji} onChange={(e)=>setTemplateConfig(p => ({...p, emoji: e.target.value}))} className="w-full border dark:border-slate-600 rounded px-2 py-1.5 text-sm bg-slate-50 dark:bg-slate-900 dark:text-white mb-2 outline-none" />
+                                    <div className="flex flex-wrap gap-1 bg-slate-50 dark:bg-slate-900 p-2 rounded border dark:border-slate-700 max-h-32 overflow-y-auto">
+                                        {EMOJI_LIST.map(em => (<button type="button" key={em} onClick={() => setTemplateConfig(p => ({...p, emoji: em}))} className="w-7 h-7 flex items-center justify-center hover:bg-white dark:hover:bg-slate-700 rounded transition-all text-base">{em}</button>))}
+                                    </div>
+                                </div>
+                                <div><label className="block text-[10px] font-bold text-slate-500 mb-1">완납 메시지</label><input type="text" value={templateConfig.paidMsg} onChange={(e)=>setTemplateConfig(p => ({...p, paidMsg: e.target.value}))} className="w-full border dark:border-slate-600 rounded px-2 py-1.5 text-sm bg-slate-50 dark:bg-slate-900 dark:text-white outline-none" /></div>
+                                <div><label className="block text-[10px] font-bold text-slate-500 mb-1">미납 안내</label><textarea value={templateConfig.unpaidPrefix} onChange={(e)=>setTemplateConfig(p => ({...p, unpaidPrefix: e.target.value}))} className="w-full border dark:border-slate-600 rounded px-2 py-1.5 text-xs h-16 resize-none bg-slate-50 dark:bg-slate-900 dark:text-white outline-none" /></div>
+                                <div><label className="block text-[10px] font-bold text-slate-500 mb-1">과납 안내</label><textarea value={templateConfig.overpaidMsg} onChange={(e)=>setTemplateConfig(p => ({...p, overpaidMsg: e.target.value}))} className="w-full border dark:border-slate-600 rounded px-2 py-1.5 text-xs h-12 resize-none bg-slate-50 dark:bg-slate-900 dark:text-white outline-none" /></div>
+                                <div><label className="block text-[10px] font-bold text-slate-500 mb-1">계좌번호</label><textarea value={bankAccount} onChange={(e)=>setBankAccount(e.target.value)} className="w-full border dark:border-slate-600 rounded px-2 py-1.5 text-xs h-12 resize-none bg-slate-50 dark:bg-slate-900 dark:text-white outline-none" /></div>
+                                <div><label className="block text-[10px] font-bold text-slate-500 mb-1">주소 있음 안내</label><textarea value={templateConfig.addrNotice} onChange={(e)=>setTemplateConfig(p => ({...p, addrNotice: e.target.value}))} className="w-full border dark:border-slate-600 rounded px-2 py-1.5 text-xs h-12 resize-none bg-slate-50 dark:bg-slate-900 dark:text-white outline-none" /></div>
+                                <div><label className="block text-[10px] font-bold text-slate-500 mb-1">주소 없음 안내</label><textarea value={templateConfig.surveyNotice} onChange={(e)=>setTemplateConfig(p => ({...p, surveyNotice: e.target.value}))} className="w-full border dark:border-slate-600 rounded px-2 py-1.5 text-xs h-24 resize-none bg-slate-50 dark:bg-slate-900 dark:text-white outline-none" /></div>
+                                <div className="flex items-center justify-between bg-slate-100 dark:bg-slate-800 p-2 rounded border dark:border-slate-600">
+                                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer" onClick={() => setTemplateConfig(p => ({...p, alwaysRequestAddress: !p.alwaysRequestAddress}))}>주소록 무시하고 항상 새로 입력받기</label>
+                                    <input type="checkbox" checked={templateConfig.alwaysRequestAddress || false} onChange={(e)=>setTemplateConfig(p => ({...p, alwaysRequestAddress: e.target.checked}))} className="custom-checkbox" />
+                                </div>
+                            </div>
+                        </div>
+                        <div className="border-t dark:border-slate-700 pt-4">
+                            <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-2 flex items-center gap-1"><Icon name="lightning" weight="fill" className="text-slate-500"/> 빠른 댓글 설정</h4>
+                            <div className="space-y-2">
+                                {quickMessages.map((msg, idx) => (
+                                    <input key={idx} type="text" value={msg} onChange={(e) => { const v = e.target.value; setQuickMessages(prev => { const next = [...prev]; next[idx] = v; return next; }); }} className="w-full border dark:border-slate-600 rounded px-2 py-1.5 text-xs bg-slate-50 dark:bg-slate-900 dark:text-white outline-none" />
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="border-t dark:border-slate-700 pt-4 mt-4">
+                            <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-2 flex items-center gap-1"><Icon name="sliders" weight="fill" className="text-slate-500"/> 편의 기능 설정</h4>
+                            <div className="space-y-3">
+                                <SettingsField type="date" label="주소록 수집 시작일 (지정일 이전 수집건 무시)" value={addressStartDate} onChange={setAddressStartDate} />
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">알림음 볼륨 ({soundVolume}%)</label>
+                                    <input type="range" min="0" max="100" value={soundVolume} onChange={e => setSoundVolume(Number(e.target.value))} className="w-full accent-slate-600 cursor-pointer" />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <button onClick={()=>setIsSettingsOpen(false)} className="w-full bg-slate-800 text-white rounded py-2 text-sm font-bold hover:bg-slate-900 dark:bg-slate-700 shadow-sm mt-4">닫기</button>
+                </div>
+            );
+        };
+
+        const InventoryItemRow = memo(({ item, itemStats, setOrders, setInventory, setProductHistory, openModal, expandedInventoryItem, setExpandedInventoryItem, setManualProduct, setCurrentSearchTerm, setManualPrice, setIsFixedProductMode, customerPaidStatus, saveInventoryToServer, cardPayments }) => {
+            const [isEditing, setIsEditing] = useState(false);
+            const [localName, setLocalName] = useState(item.name);
+            const [localPrice, setLocalPrice] = useState(item.price === 0 || item.price === '' ? '' : Number(item.price).toLocaleString());
+            const [localStock, setLocalStock] = useState(item.stock === undefined || item.stock === '' ? '' : item.stock);
+
+            useEffect(() => { setLocalName(item.name); }, [item.name]);
+            useEffect(() => { setLocalPrice(item.price === 0 || item.price === '' ? '' : Number(item.price).toLocaleString()); }, [item.price]);
+            useEffect(() => { setLocalStock(item.stock === undefined || item.stock === '' ? '' : item.stock); }, [item.stock]);
+
+            const orderedCount = itemStats ? itemStats.count : 0;
+            const aggregatedOrders = itemStats ? itemStats.aggregated : [];
+
+            const isExpanded = expandedInventoryItem === item.name;
+
+            const handleSave = () => {
+                const newName = localName.trim();
+                const newPrice = Number(String(localPrice).replace(/,/g, ''));
+                const newStock = localStock === '' ? '' : parseInt(localStock);
+                if (!newName) { openModal('상품명을 입력해주세요.', 'alert'); return; }
+
+                let isDuplicate = false;
+                setInventory(prevInv => {
+                    if (newName !== item.name && prevInv.some(i => i.name === newName && i.name !== item.name)) { 
+                        isDuplicate = true;
+                        return prevInv; 
+                    }
+                    const newInv = prevInv.map(i => i.name === item.name ? { ...i, name: newName, price: newPrice, stock: newStock } : i);
+                    saveInventoryToServer(newInv); 
+                    return newInv;
+                });
+
+                if (isDuplicate) {
+                    openModal('이미 동일한 이름의 상품이 있습니다.', 'alert'); 
+                    setLocalName(item.name);
+                    return;
+                }
+                
+                if (newName !== item.name || newPrice !== item.price) {
+                    setOrders(prev => prev.map(o => { if (o.product === item.name) { return { ...o, product: newName, price: (Number(o.quantity) || 0) * newPrice }; } return o; }));
+                    setProductHistory(prev => { const next = {...prev}; if (newName !== item.name) { next[newName] = newPrice; } else { next[item.name] = newPrice; } return next; });
+                }
+                setIsEditing(false);
+            };
+
+            const handleDelete = () => { 
+                openModal(`'${item.name}' 항목을 재고 목록에서 삭제하시겠습니까?\n(기존 주문 내역은 유지됩니다)`, 'confirm', () => { 
+                    setInventory(prevInv => {
+                        const newInv = prevInv.filter(i => i.name !== item.name);
+                        saveInventoryToServer(newInv);
+                        return newInv;
+                    });
+                }); 
+            };
+
+            const handleToggleSoldOut = () => {
+                setInventory(prevInv => {
+                    const newInv = prevInv.map(i => i.name === item.name ? { ...i, isSoldOut: !i.isSoldOut } : i);
+                    saveInventoryToServer(newInv);
+                    return newInv;
+                });
+            };
+
+            const handleCopyNames = (e) => {
+                e.stopPropagation();
+                if(aggregatedOrders.length === 0) return;
+                let text = `[${item.name} ${Number(item.price).toLocaleString()}원 / ${aggregatedOrders.length}명]\n`;
+                const nameList = aggregatedOrders.map(agg => agg.quantity > 1 ? `${agg.customer}(${agg.quantity})` : agg.customer);
+                text += nameList.join(' ✦ ');
+                
+                const textArea = document.createElement("textarea"); textArea.value = text; document.body.appendChild(textArea); textArea.select();
+                try { document.execCommand('copy'); } catch (err) {} document.body.removeChild(textArea);
+                
+                const el = e.currentTarget;
+                const originalText = el.innerHTML;
+                const originalBg = el.className;
+                el.innerHTML = '복사 완료!';
+                el.className = 'text-[9px] bg-green-500 text-white px-1.5 py-0.5 rounded font-bold shadow-sm transition-colors';
+                setTimeout(() => {
+                    el.innerHTML = originalText;
+                    el.className = originalBg;
+                }, 1000);
+            };
+
+            return (
+                <div className="flex flex-col bg-white dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+                    <div className={`flex items-center justify-between p-1.5 text-[11px] hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors group ${item.isSoldOut ? 'bg-red-50/50 dark:bg-red-900/10' : ''}`}>
+                        {isEditing ? (
+                            <div className="flex-1 flex gap-1 items-center min-w-0 pr-1">
+                                <input autoFocus type="text" value={localName} onChange={e=>setLocalName(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')handleSave();}} className="w-full border dark:border-slate-600 bg-transparent dark:text-white px-1 py-0.5 rounded text-[10px] outline-none" placeholder="상품명" />
+                                <input type="text" value={localPrice} onChange={e=>{const v = e.target.value.replace(/,/g, ''); if (v === '' || v === '-') setLocalPrice(v); else if(!isNaN(v)) setLocalPrice(Number(v).toLocaleString());}} onKeyDown={e=>{if(e.key==='Enter')handleSave();}} className="w-12 border dark:border-slate-600 bg-transparent dark:text-white px-1 py-0.5 rounded text-[10px] text-right outline-none" placeholder="단가" />
+                                <input type="number" value={localStock} onChange={e=>setLocalStock(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')handleSave();}} className="w-10 border dark:border-slate-600 bg-transparent dark:text-white px-1 py-0.5 rounded text-[10px] text-right outline-none" placeholder="무한" />
+                                <button onClick={handleSave} className="bg-slate-600 hover:bg-slate-700 text-white px-1.5 py-0.5 rounded shadow-sm text-[10px]"><Icon name="check" weight="bold"/></button>
+                                <button onClick={()=>setIsEditing(false)} className="bg-slate-400 hover:bg-slate-500 text-white px-1.5 py-0.5 rounded shadow-sm text-[10px]"><Icon name="x" weight="bold"/></button>
+                            </div>
+                        ) : (
+                            <>
+                                <div className={`flex-1 font-bold truncate pr-1 cursor-pointer select-none ${item.isSoldOut ? 'text-red-500 dark:text-red-400' : 'text-slate-800 dark:text-slate-200'}`} title="클릭: 복사 / 더블클릭: 자동 고정 입력"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        const textArea = document.createElement("textarea"); textArea.value = item.name; document.body.appendChild(textArea); textArea.select();
+                                        try { document.execCommand('copy'); } catch (err) {} document.body.removeChild(textArea);
+                                        const el = e.currentTarget; el.classList.add('text-green-600', 'dark:text-green-400'); setTimeout(() => el.classList.remove('text-green-600', 'dark:text-green-400'), 500);
+                                    }}
+                                    onDoubleClick={(e) => {
+                                        e.stopPropagation(); setManualProduct(item.name); setManualPrice(item.price ? Number(item.price).toLocaleString() : '');
+                                        setIsFixedProductMode(true); document.getElementById('manual-prod-input')?.focus();
+                                    }}
+                                >
+                                    {item.name}
+                                </div>
+                                <div className="flex items-center justify-end w-16 shrink-0 gap-1 pr-1">
+                                    <button onClick={(e) => { e.stopPropagation(); handleToggleSoldOut(); }} className={`px-1 py-0.5 rounded text-[8px] font-bold shadow-sm transition-colors ${item.isSoldOut ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-slate-200 text-slate-600 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600'}`}>{item.isSoldOut ? '판매' : '품절'}</button>
+                                    <button onClick={(e) => { e.stopPropagation(); setIsEditing(true); }} className="text-slate-400 hover:text-blue-500 w-4 flex justify-center" title="수정"><Icon name="pencil-simple" weight="bold"/></button>
+                                    <button onClick={(e) => { e.stopPropagation(); handleDelete(); }} className="text-slate-400 hover:text-red-500 w-4 flex justify-center" title="삭제"><Icon name="trash" weight="bold"/></button>
+                                </div>
+                                <div className={`w-12 text-center text-[11px] font-bold shrink-0 ${item.isSoldOut ? 'text-red-400' : 'text-slate-800 dark:text-slate-300'}`}>{item.price ? Number(item.price).toLocaleString() : '0'}</div>
+                                <div className={`w-10 text-center font-bold text-[11px] shrink-0 ${item.stock !== undefined && item.stock !== '' && (item.stock - orderedCount <= 0) ? 'text-red-500' : 'text-blue-600 dark:text-blue-400'}`} title={`초기설정재고: ${item.stock !== undefined && item.stock !== '' ? item.stock : '무한'}`}>
+                                    {item.stock !== undefined && item.stock !== '' ? item.stock - orderedCount : '∞'}
+                                </div>
+                                <div className={`w-8 text-center font-bold shrink-0 ${item.isSoldOut ? 'text-red-400' : 'text-slate-600 dark:text-slate-400'}`}>{orderedCount}</div>
+                                <button onClick={(e) => { e.stopPropagation(); setExpandedInventoryItem(isExpanded ? null : item.name); }} className={`ml-1 p-0.5 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors shrink-0 w-5 flex justify-center ${isExpanded ? 'bg-slate-200 dark:bg-slate-600 text-slate-700' : ''}`}><Icon name="caret-down" weight="bold" className={`transition-transform ${isExpanded ? 'rotate-180' : ''}`} /></button>
+                            </>
+                        )}
+                    </div>
+                    {isExpanded && !isEditing && (
+                        <div className="bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-700 p-1.5 flex flex-col gap-1">
+                            <div className="flex justify-between items-center mb-1">
+                                <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1"><Icon name="users" weight="fill" /> 주문 고객 ({aggregatedOrders.length}명)</span>
+                                <button onClick={handleCopyNames} className="text-[9px] bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-600 hover:bg-slate-300 px-1.5 py-0.5 rounded font-bold shadow-sm transition-colors">명단 복사</button>
+                            </div>
+                            {aggregatedOrders.length === 0 ? (
+                                <div className="text-center text-[10px] text-slate-400 py-2">주문 내역이 없습니다.</div>
+                            ) : (
+                                <div className="grid grid-cols-2 gap-1 max-h-[160px] overflow-y-auto pr-1">
+                                    {aggregatedOrders.map(agg => {
+                                        const isPaid = customerPaidStatus && customerPaidStatus[agg.customer];
+                                        const isCard = cardPayments && cardPayments[agg.customer];
+                                        
+                                        let textColor = "text-slate-700 dark:text-slate-300";
+                                        if (isCard) textColor = "text-purple-600 font-bold dark:text-purple-400";
+                                        else if (!isPaid) textColor = "text-red-500 font-bold dark:text-red-400";
+                                        
+                                        return (
+                                            <div key={agg.customer} className="flex justify-between items-center bg-white dark:bg-slate-800 p-1 rounded border border-slate-200 dark:border-slate-700 shadow-sm text-[10px] group hover:border-slate-300 min-w-0">
+                                                <span className={`cursor-pointer hover:underline truncate flex-1 flex items-center gap-0.5 ${textColor}`} onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    const textArea = document.createElement("textarea"); textArea.value = agg.customer; document.body.appendChild(textArea); textArea.select();
+                                                    try { document.execCommand('copy'); } catch (err) {} document.body.removeChild(textArea);
+                                                    const el = e.currentTarget; el.classList.add('text-green-500'); setTimeout(() => el.classList.remove('text-green-500'), 500);
+                                                }} title="클릭하여 닉네임 복사">
+                                                    <span className="truncate">{agg.customer}</span> {agg.quantity > 1 && <span className="text-slate-500 ml-0.5 shrink-0">({agg.quantity}개)</span>}
+                                                    {isCard && <span className="text-[8px] bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-300 border border-purple-200 dark:border-purple-700 px-1 py-0.5 rounded shrink-0 leading-none">카드</span>}
+                                                </span>
+                                                <button onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    openModal(`'${agg.customer}'님의 '${item.name}' 주문을 삭제하시겠습니까?`, 'confirm', () => { setOrders(prev => prev.filter(order => !agg.orderIds.includes(order.id))); });
+                                                }} className="text-red-400 hover:text-red-600 bg-red-50 hover:bg-red-100 px-1.5 py-0.5 rounded font-bold shrink-0 ml-1 opacity-0 group-hover:opacity-100">삭제</button>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            );
+        }, (prev, next) => {
+            if (prev.item.name !== next.item.name || prev.item.price !== next.item.price || prev.item.isSoldOut !== next.item.isSoldOut || prev.item.stock !== next.item.stock) return false;
+            
+            const isExpandedPrev = prev.expandedInventoryItem === prev.item.name;
+            const isExpandedNext = next.expandedInventoryItem === next.item.name;
+            if (isExpandedPrev !== isExpandedNext) return false;
+            
+            if (isExpandedNext) {
+                if (prev.itemStats !== next.itemStats) return false;
+                if (prev.customerPaidStatus !== next.customerPaidStatus) return false;
+                if (prev.cardPayments !== next.cardPayments) return false;
+            } else {
+                const prevCount = prev.itemStats ? prev.itemStats.count : 0;
+                const nextCount = next.itemStats ? next.itemStats.count : 0;
+                if (prevCount !== nextCount) return false;
+            }
+            return true;
+        });
+
         const OrderItem = memo(({ item, nick, nextItemId, isLast, handleProductChange, handleQuantityUpdate, handleOrderCancel, handleOrderDelete, addOrderLogic, setSelectedNick, inventory, productHistory }) => {
             const [localProduct, setLocalProduct] = useState(item.product); 
             const [localQty, setLocalQty] = useState(item.quantity === '' ? '' : item.quantity); 
@@ -174,9 +734,6 @@
             );
         });
 
-        /* -------------------------------------------------------------------------- */
-        /* 핵심 컴포넌트: 고객 단위 블록 */
-        /* -------------------------------------------------------------------------- */
         const CustomerBlock = memo(({ nick, items, isSelected, currentShipping, isCard, isPaidState, grandTotal, depositTotal, balance, baseGrandTotal, baseBalance, addr, addrType, addrConflict, addressMapping, autoDepositorName, displayDepositorName, isAutoDepositor, depositorNames, copyStatus, isOrderConfirmed, isEditingShipping, setSelectedNick, addOrderLogic, handleNicknameEdit, toggleCardPayment, handleShippingChange, setEditingShippingNick, openModal, setDepositorNames, handleFullDepositToggle, copyOrderSheet, handleOrderCheckToggle, handleAddressUnmapping, handleAddressMapping, handlePromoteAddress, handleProductChange, handleQuantityUpdate, handleOrderCancel, handleOrderDelete, toggleVIP, specialCustomers, handleOpenQuickAddress, findAddressSuggestions, cashReceiptStatus, toggleCashReceipt, inventory, productHistory, customerDeposits, handleDepositUnmatch, handleMultiAddOpen, toggleNoShow, toggleWaitlist, noShowStatus, waitlistStatus }) => {
             let borderClass = 'border-transparent', headerBgClass = 'bg-white dark:bg-slate-800';
             if (isCard) { borderClass = 'border-slate-300 ring-1 ring-slate-300'; headerBgClass = 'bg-slate-50'; } 
@@ -263,6 +820,7 @@
                             <OrderItem key={item.id} item={item} nick={nick} nextItemId={items[idx + 1]?.id} isLast={idx === items.length - 1} handleProductChange={handleProductChange} handleQuantityUpdate={handleQuantityUpdate} handleOrderCancel={handleOrderCancel} handleOrderDelete={handleOrderDelete} addOrderLogic={addOrderLogic} setSelectedNick={setSelectedNick} inventory={inventory} productHistory={productHistory} />
                         ))}
                     </div>
+                    
                     {customerDeposits && customerDeposits.length > 0 && (
                         <div className="bg-blue-50 dark:bg-blue-900/20 border-t border-blue-100 dark:border-blue-800">
                             <div className="flex justify-between items-center p-1.5 px-2 cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors" onClick={(e) => { e.stopPropagation(); setShowDeposits(!showDeposits); }}>
@@ -280,6 +838,12 @@
                                             </div>
                                         </div>
                                     ))}
+                                    <div className="px-2 py-1.5 flex justify-between items-center bg-blue-200/50 dark:bg-blue-800/50 rounded shadow-sm mt-1 border border-blue-300 dark:border-blue-600">
+                                        <span className="text-[10px] font-black text-slate-700 dark:text-slate-200">총 입금매칭 합계</span>
+                                        <span className="text-[11px] font-black text-blue-700 dark:text-blue-300">
+                                            {customerDeposits.reduce((sum, d) => sum + Number(d.amount), 0).toLocaleString()}원
+                                        </span>
+                                    </div>
                                 </div>
                             )}
                         </div>
@@ -291,182 +855,27 @@
             if (prev.cashReceiptStatus !== next.cashReceiptStatus) return false;
             if (prev.noShowStatus !== next.noShowStatus) return false;
             if (prev.waitlistStatus !== next.waitlistStatus) return false;
+            
             const pVip = prev.specialCustomers && prev.specialCustomers[normalizeString(prev.nick)]?.type === 'vip';
             const nVip = next.specialCustomers && next.specialCustomers[normalizeString(next.nick)]?.type === 'vip';
             if (pVip !== nVip) return false;
+            
             if (prev.items.length !== next.items.length) return false;
             for (let i = 0; i < prev.items.length; i++) {
                 const pItem = prev.items[i], nItem = next.items[i];
                 if (pItem.id !== nItem.id || pItem.product !== nItem.product || pItem.quantity !== nItem.quantity || pItem.price !== nItem.price || pItem.isCancelled !== nItem.isCancelled || pItem.deposit !== nItem.deposit || pItem.isUnmodified !== nItem.isUnmodified) return false;
             }
+            
             if (prev.customerDeposits?.length !== next.customerDeposits?.length) return false;
             if (prev.customerDeposits && next.customerDeposits) {
-                for(let i=0; i<prev.customerDeposits.length; i++) { if (prev.customerDeposits[i].id !== next.customerDeposits[i].id) return false; }
+                for(let i=0; i<prev.customerDeposits.length; i++) {
+                    if (prev.customerDeposits[i].id !== next.customerDeposits[i].id) return false;
+                }
             }
             return true;
         });
 
-        /* -------------------------------------------------------------------------- */
-        /* 메인 앱 구조 및 조립 */
-        /* -------------------------------------------------------------------------- */
-        const App = () => {
-            const [orders, setOrders] = useLocalStorage('youtubeOrders', []);
-            const [activeTab, setActiveTab] = useState('live');
-            
-            const [googleScriptUrl, setGoogleScriptUrl] = useLocalStorage('googleScriptUrl', 'https://script.google.com/macros/s/AKfycby4mtwu7yRnnYpG0Srj0DupWEJAX-DF1HMfOXu5QrwZ8sUIpMwfYTUKRsG435E-aUB2/exec');
-            const [chatSheetId, setChatSheetId] = useLocalStorage('chatSheetId', '199YCBXzInxmG8GforoRCNHNps21NhVIf9wHA6NXXhtg');
-            const [depSheetId, setDepSheetId] = useLocalStorage('depSheetId', '14bx2HMd_NID3zQN-Hb0x0At2Qmti7-p1Zfx1ZadNScY');
-            const [addrSheetId, setAddrSheetId] = useLocalStorage('addrSheetId', '1ywl4gRvswQpvIYtPVbSROzz7a5elbLieYhqMZmt191U');
-            const [masterSheetId, setMasterSheetId] = useLocalStorage('masterSheetId', '1B8SBMX18_Px1CpRHuDTxqodqudiTrf6NfVoptjHtnGQ');
-            const [broadcastName, setBroadcastName] = useLocalStorage('broadcastName', '오늘의방송');
-            const [bankAccount, setBankAccount] = useLocalStorage('bankAccount', FIXED_BANK_ACCOUNT);
-            
-            const [soundEnabled, setSoundEnabled] = useState(false);
-            const [soundVolume, setSoundVolume] = useLocalStorage('soundVolume', 50);
-            const [addressStartDate, setAddressStartDate] = useLocalStorage('addressStartDate', '');
-
-            useEffect(() => {
-                const currentUrl = window.localStorage.getItem(getLsKey('googleScriptUrl'));
-                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycby4mtwu7yRnnYpG0Srj0DupWEJAX-DF1HMfOXu5QrwZ8sUIpMwfYTUKRsG435E-aUB2')) {
-                    setGoogleScriptUrl('https://script.google.com/macros/s/AKfycby4mtwu7yRnnYpG0Srj0DupWEJAX-DF1HMfOXu5QrwZ8sUIpMwfYTUKRsG435E-aUB2/exec');
-                    setChatSheetId('199YCBXzInxmG8GforoRCNHNps21NhVIf9wHA6NXXhtg');
-                    setDepSheetId('14bx2HMd_NID3zQN-Hb0x0At2Qmti7-p1Zfx1ZadNScY');
-                    setAddrSheetId('1ywl4gRvswQpvIYtPVbSROzz7a5elbLieYhqMZmt191U');
-                    setMasterSheetId('1B8SBMX18_Px1CpRHuDTxqodqudiTrf6NfVoptjHtnGQ');
-                }
-            }, []);
-
-            const [quickShipping, setQuickShipping] = useLocalStorage('quickShipping', 4000); 
-            const [jejuShipping, setJejuShipping] = useLocalStorage('jejuShipping', 8000);
-            const [freeShippingThreshold, setFreeShippingThreshold] = useLocalStorage('freeShippingThreshold', 70000);
-            const [templateConfig, setTemplateConfig] = useLocalStorage('templateConfig', { emoji: '💙', paidMsg: '😍 완납 확인! 감사합니다 😍', unpaidPrefix: '[미입금]\n총 입금하실 금액\n👉', overpaidMsg: '과납 금액이 있습니다.\n환불 또는 적립 여부를 알려주세요!', addrNotice: '※ 배송지 변경 시 채팅으로 변경할 주소를 남겨주세요!', surveyNotice: '방송마다 1회 하단의 주문서(배송지입력) 필수!!', alwaysRequestAddress: false });
-            const [isDarkMode, setIsDarkMode] = useLocalStorage('darkMode', false);
-            
-            const [productHistory, setProductHistory] = useLocalStorage('productHistory', {});
-            const [shippingOverrides, setShippingOverrides] = useLocalStorage('shippingOverrides', {});
-            const [addresses, setAddresses] = useLocalStorage('verifiedAddresses', []);
-            const [cardPayments, setCardPayments] = useLocalStorage('cardPayments', {});
-            const [cashReceipts, setCashReceipts] = useLocalStorage('cashReceipts', {});
-            const [manualDeposits, setManualDeposits] = useLocalStorage('manualDeposits', []);
-            
-            const [noShowCustomers, setNoShowCustomers] = useLocalStorage('noShowCustomers', {});
-            const [waitlistCustomers, setWaitlistCustomers] = useLocalStorage('waitlistCustomers', {});
-
-            const [matchedDeposits, setMatchedDeposits] = useState(() => { try { const s = localStorage.getItem(getLsKey('matchedDeposits')); const p = JSON.parse(s); return Array.isArray(p) ? new Set(p) : new Set(); } catch(e){ return new Set(); } });
-            const [depositLinks, setDepositLinks] = useLocalStorage('depositLinks', {});
-            const [depositorNames, setDepositorNames] = useLocalStorage('depositorNames', {});
-            const [clickedChats, setClickedChats] = useState(() => { try { const s = localStorage.getItem(getLsKey('clickedChats')); const p = JSON.parse(s); return Array.isArray(p) ? new Set(p) : new Set(); } catch(e){ return new Set(); } });
-            
-            const [keywords, setKeywords] = useLocalStorage('chatKeywords', []);
-            const [sentAddressRequests, setSentAddressRequests] = useState(() => { try { const s = localStorage.getItem(getLsKey('sentAddressRequests')); const p = JSON.parse(s); return Array.isArray(p) ? new Set(p) : new Set(); } catch(e){ return new Set(); } });
-            const [deletedDepositIds, setDeletedDepositIds] = useState(() => { try { const s = localStorage.getItem(getLsKey('deletedDepositIds')); const p = JSON.parse(s); return Array.isArray(p) ? new Set(p) : new Set(); } catch(e){ return new Set(); } });
-            const [checkedOrders, setCheckedOrders] = useState(() => { try { const s = localStorage.getItem(getLsKey('checkedOrders')); const p = JSON.parse(s); return Array.isArray(p) ? new Set(p) : new Set(); } catch(e){ return new Set(); } });
-            
-            const [addressMapping, setAddressMapping] = useLocalStorage('addressMapping', {});
-            const [specialCustomers, setSpecialCustomers] = useLocalStorage('specialCustomers', {});
-            const [inventory, setInventory] = useLocalStorage('inventory', []);
-            const [quickMessages, setQuickMessages] = useLocalStorage('quickMessages', ["잠시만요!", "확인해드릴게요", "품절입니다😭", "합배송 해드릴게요", "감사합니다❤️", "다시 말씀해주세요", "입금확인완료!"]);
-            
-            const [globalError, setGlobalError] = useState('');
-            const [modalConfig, setModalConfig] = useState({ isOpen: false, type: 'alert', message: '', onConfirm: null, onCancel: null, initialValue: '' });
-            const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-            const [isVipModalOpen, setIsVipModalOpen] = useState(false);
-
-            useEffect(() => {
-                if (isDarkMode) document.documentElement.classList.add('dark');
-                else document.documentElement.classList.remove('dark');
-                document.body.className = isDarkMode ? 'dark' : '';
-            }, [isDarkMode]);
-
-            useEffect(() => { localStorage.setItem(getLsKey('matchedDeposits'), JSON.stringify([...matchedDeposits])); }, [matchedDeposits]);
-            useEffect(() => { localStorage.setItem(getLsKey('clickedChats'), JSON.stringify([...clickedChats])); }, [clickedChats]);
-            useEffect(() => { localStorage.setItem(getLsKey('sentAddressRequests'), JSON.stringify([...sentAddressRequests])); }, [sentAddressRequests]);
-            useEffect(() => { localStorage.setItem(getLsKey('deletedDepositIds'), JSON.stringify([...deletedDepositIds])); }, [deletedDepositIds]);
-            useEffect(() => { localStorage.setItem(getLsKey('checkedOrders'), JSON.stringify([...checkedOrders])); }, [checkedOrders]);
-
-            const openModal = useCallback((msg, type = 'alert', onConfirm = null, onCancel = null, initVal = '') => { setModalConfig({ isOpen: true, type, message: msg, onConfirm: (val) => { setModalConfig(p => ({...p, isOpen: false})); if(onConfirm) onConfirm(val); }, onCancel: () => { setModalConfig(p => ({...p, isOpen: false})); if(onCancel) onCancel(); }, initialValue: initVal }); }, []);
-
-            const handleResetAllData = () => {
-                openModal('정말 모든 데이터를 초기화하시겠습니까?\n(주문서, 입금 연결, 채팅 기록, 실시간 재고, 기타 설정이 모두 삭제됩니다)', 'confirm', () => {
-                    setOrders([]); setProductHistory({}); setShippingOverrides({}); setCardPayments({}); setMatchedDeposits(new Set()); setDepositLinks({}); setDepositorNames({}); setClickedChats(new Set());
-                    setKeywords([]); setSentAddressRequests(new Set()); setDeletedDepositIds(new Set()); setCheckedOrders(new Set()); setAddressMapping({}); setCashReceipts({}); setInventory([]); setManualDeposits([]); localStorage.removeItem(getLsKey('ignoredAutoMatch'));
-                    setNoShowCustomers({}); setWaitlistCustomers({});
-                    
-                    if (googleScriptUrl && masterSheetId) {
-                        fetchGas(googleScriptUrl, { action: 'save_inventory', masterId: getCleanSheetId(masterSheetId), data: [] }).catch(()=>{});
-                    }
-                });
-            };
-
-            const handleExportBackup = () => {
-                const backupData = {
-                    orders, productHistory, shippingOverrides, addresses, cardPayments, cashReceipts, manualDeposits, matchedDeposits: [...matchedDeposits], depositLinks, depositorNames, clickedChats: [...clickedChats],
-                    keywords, sentAddressRequests: [...sentAddressRequests], deletedDepositIds: [...deletedDepositIds], checkedOrders: [...checkedOrders], addressMapping, specialCustomers, inventory,
-                    noShowCustomers, waitlistCustomers, quickMessages, settings: {
-                        googleScriptUrl, chatSheetId, depSheetId, addrSheetId, masterSheetId, broadcastName, quickShipping, jejuShipping, freeShippingThreshold, templateConfig, bankAccount, addressStartDate, soundVolume
-                    }, timestamp: new Date().toISOString()
-                };
-                const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a'); a.href = url; a.download = `주문관리_백업_${new Date().toLocaleDateString()}.json`;
-                document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
-            };
-
-            const handleImportBackup = (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                const reader = new FileReader();
-                reader.onload = (event) => {
-                    try {
-                        const data = JSON.parse(event.target.result);
-                        openModal('백업 데이터를 복구하시겠습니까?\n현재 데이터는 덮어씌워집니다.', 'confirm', () => {
-                            if (data.orders) setOrders(data.orders);
-                            if (data.productHistory) setProductHistory(data.productHistory);
-                            if (data.shippingOverrides) setShippingOverrides(data.shippingOverrides);
-                            if (data.addresses) setAddresses(data.addresses);
-                            if (data.cardPayments) setCardPayments(data.cardPayments);
-                            if (data.cashReceipts) setCashReceipts(data.cashReceipts);
-                            if (data.manualDeposits) setManualDeposits(data.manualDeposits);
-                            if (data.matchedDeposits) setMatchedDeposits(new Set(data.matchedDeposits));
-                            if (data.depositLinks) setDepositLinks(data.depositLinks);
-                            if (data.depositorNames) setDepositorNames(data.depositorNames);
-                            if (data.clickedChats) setClickedChats(new Set(data.clickedChats));
-                            if (data.keywords) setKeywords(data.keywords);
-                            if (data.sentAddressRequests) setSentAddressRequests(new Set(data.sentAddressRequests));
-                            if (data.deletedDepositIds) setDeletedDepositIds(new Set(data.deletedDepositIds));
-                            if (data.checkedOrders) setCheckedOrders(new Set(data.checkedOrders));
-                            if (data.addressMapping) setAddressMapping(data.addressMapping);
-                            if (data.specialCustomers) setSpecialCustomers(data.specialCustomers);
-                            if (data.inventory) setInventory(data.inventory);
-                            if (data.noShowCustomers) setNoShowCustomers(data.noShowCustomers);
-                            if (data.waitlistCustomers) setWaitlistCustomers(data.waitlistCustomers);
-                            if (data.quickMessages) setQuickMessages(data.quickMessages);
-                            
-                            if (data.settings) {
-                                if(data.settings.googleScriptUrl) setGoogleScriptUrl(data.settings.googleScriptUrl);
-                                if(data.settings.chatSheetId) setChatSheetId(data.settings.chatSheetId);
-                                if(data.settings.depSheetId) setDepSheetId(data.settings.depSheetId);
-                                if(data.settings.addrSheetId) setAddrSheetId(data.settings.addrSheetId);
-                                if(data.settings.masterSheetId) setMasterSheetId(data.settings.masterSheetId);
-                                if(data.settings.broadcastName) setBroadcastName(data.settings.broadcastName);
-                                if(data.settings.quickShipping !== undefined) setQuickShipping(data.settings.quickShipping);
-                                if(data.settings.jejuShipping !== undefined) setJejuShipping(data.settings.jejuShipping);
-                                if(data.settings.freeShippingThreshold !== undefined) setFreeShippingThreshold(data.settings.freeShippingThreshold);
-                                if(data.settings.templateConfig) setTemplateConfig(data.settings.templateConfig);
-                                if(data.settings.bankAccount) setBankAccount(data.settings.bankAccount);
-                                if(data.settings.addressStartDate) setAddressStartDate(data.settings.addressStartDate);
-                                if(data.settings.soundVolume !== undefined) setSoundVolume(data.settings.soundVolume);
-                            }
-                            openModal('백업 데이터 복구가 완료되었습니다.', 'alert');
-                        });
-                    } catch (error) {
-                        openModal('잘못된 백업 파일입니다.', 'alert');
-                    }
-                };
-                reader.readAsText(file);
-                e.target.value = '';
-            };
-
+        const LiveTab = ({ orders, setOrders, productHistory, setProductHistory, quickShipping, jejuShipping, freeShippingThreshold, shippingOverrides, setShippingOverrides, bankAccount, googleScriptUrl, chatSheetId, depSheetId, addrSheetId, masterSheetId, addresses, setAddresses, cardPayments, setCardPayments, manualDeposits, setManualDeposits, matchedDeposits, setMatchedDeposits, depositorNames, setDepositorNames, clickedChats, setClickedChats, openModal, keywords, setKeywords, sentAddressRequests, setSentAddressRequests, deletedDepositIds, setDeletedDepositIds, checkedOrders, setCheckedOrders, addressMapping, setAddressMapping, templateConfig, specialCustomers, setSpecialCustomers, inventory, setInventory, quickMessages, handleResetAllData, broadcastName, setGlobalError, cashReceipts, setCashReceipts, soundEnabled, soundVolume, depositLinks, setDepositLinks, noShowCustomers, setNoShowCustomers, waitlistCustomers, setWaitlistCustomers }) => {
             const [serverDeposits, setServerDeposits] = useState([]);
             const [selectedNick, setSelectedNick] = useState(null);
             
@@ -491,6 +900,7 @@
             
             const [filterStatus, setFilterStatus] = useState('all');
             const [expandedInventoryItem, setExpandedInventoryItem] = useState(null);
+            
             const [multiAddNick, setMultiAddNick] = useState(null);
             
             const [chats, setChats] = useState([]);
@@ -504,6 +914,7 @@
             const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
             
             const inventorySyncLock = useRef(0);
+            
             const prevChatsStr = useRef('');
             const prevDepsStr = useRef('');
             const prevAddrsStr = useRef('');
@@ -515,12 +926,16 @@
                     if (!o.isCancelled && o.product) {
                         if (!stats[o.product]) stats[o.product] = { count: 0, customers: {} };
                         stats[o.product].count += Number(o.quantity || 0);
-                        if (!stats[o.product].customers[o.customer]) { stats[o.product].customers[o.customer] = { customer: o.customer, quantity: 0, orderIds: [] }; }
+                        if (!stats[o.product].customers[o.customer]) {
+                            stats[o.product].customers[o.customer] = { customer: o.customer, quantity: 0, orderIds: [] };
+                        }
                         stats[o.product].customers[o.customer].quantity += Number(o.quantity || 0);
                         stats[o.product].customers[o.customer].orderIds.push(o.id);
                     }
                 });
-                for (let prod in stats) { stats[prod].aggregated = Object.values(stats[prod].customers).sort((a, b) => String(a.customer).localeCompare(String(b.customer), 'ko')); }
+                for (let prod in stats) {
+                    stats[prod].aggregated = Object.values(stats[prod].customers).sort((a, b) => String(a.customer).localeCompare(String(b.customer), 'ko'));
+                }
                 return stats;
             }, [orders]);
 
@@ -530,10 +945,13 @@
             const [editingShippingNick, setEditingShippingNick] = useState(null);
             const [currentSearchTerm, setCurrentSearchTerm] = useState('');
             const deferredSearchTerm = React.useDeferredValue(currentSearchTerm);
+            
             const [lastAddedOrderId, setLastAddedOrderId] = useState(null);
+            
             const [showNickSuggestions, setShowNickSuggestions] = useState(false);
             const [newDepositName, setNewDepositName] = useState('');
             const [newDepositAmount, setNewDepositAmount] = useState('');
+
             const [displayLimit, setDisplayLimit] = useState(30);
             const [quickAddrModal, setQuickAddrModal] = useState({ isOpen: false, nick: '', editData: null });
             const [syncStatus, setSyncStatus] = useState("대기중");
@@ -545,8 +963,23 @@
             const productHistoryRef = useRef(productHistory);
             const clickedChatsRef = useRef(clickedChats);
 
-            const playCoinSound = useCallback(() => { if (!soundEnabled || soundVolume === 0) return; try { const volDb = soundVolume === 100 ? 0 : 20 * Math.log10(soundVolume / 100); const synth = new Tone.Synth({ volume: volDb }).toDestination(); synth.triggerAttackRelease("C6", "16n"); } catch(e){} }, [soundEnabled, soundVolume]);
-            const playBellSound = useCallback(() => { if (!soundEnabled || soundVolume === 0) return; try { const volDb = soundVolume === 100 ? 0 : 20 * Math.log10(soundVolume / 100); const synth = new Tone.Synth({ volume: volDb }).toDestination(); synth.triggerAttackRelease("E5", "8n"); setTimeout(() => synth.triggerAttackRelease("C5", "4n"), 150); } catch(e){} }, [soundEnabled, soundVolume]);
+            const playCoinSound = useCallback(() => {
+                if (!soundEnabled || soundVolume === 0) return;
+                try { 
+                    const volDb = soundVolume === 100 ? 0 : 20 * Math.log10(soundVolume / 100);
+                    const synth = new Tone.Synth({ volume: volDb }).toDestination(); 
+                    synth.triggerAttackRelease("C6", "16n"); 
+                } catch(e){}
+            }, [soundEnabled, soundVolume]);
+
+            const playBellSound = useCallback(() => {
+                if (!soundEnabled || soundVolume === 0) return;
+                try { 
+                    const volDb = soundVolume === 100 ? 0 : 20 * Math.log10(soundVolume / 100);
+                    const synth = new Tone.Synth({ volume: volDb }).toDestination(); 
+                    synth.triggerAttackRelease("E5", "8n"); setTimeout(() => synth.triggerAttackRelease("C5", "4n"), 150); 
+                } catch(e){}
+            }, [soundEnabled, soundVolume]);
 
             const prevDepCount = useRef(0);
             const prevAddrCount = useRef(0);
@@ -631,15 +1064,21 @@
                     const cleanNick = normalizeString(a.nickname);
                     const ts = parseSafeDate(a.timestamp).getTime();
                     
-                    if (a._source === 'master') { if (!masterMap[cleanNick] || ts > parseSafeDate(masterMap[cleanNick].timestamp).getTime()) masterMap[cleanNick] = a; } 
-                    else { if (!rawMap[cleanNick] || ts > parseSafeDate(rawMap[cleanNick].timestamp).getTime()) rawMap[cleanNick] = a; }
+                    if (a._source === 'master') { 
+                        if (!masterMap[cleanNick] || ts > parseSafeDate(masterMap[cleanNick].timestamp).getTime()) masterMap[cleanNick] = a; 
+                    } else { 
+                        if (!rawMap[cleanNick] || ts > parseSafeDate(rawMap[cleanNick].timestamp).getTime()) rawMap[cleanNick] = a; 
+                    }
                     
                     const targetAddr = a;
                     if (!exactNickMap[cleanNick]) exactNickMap[cleanNick] = [];
                     exactNickMap[cleanNick].push(targetAddr);
                     
                     const cleanReal = normalizeString(a.realname);
-                    if (cleanReal) { if (!realNameMap[cleanReal]) realNameMap[cleanReal] = []; realNameMap[cleanReal].push(targetAddr); }
+                    if (cleanReal) { 
+                        if (!realNameMap[cleanReal]) realNameMap[cleanReal] = []; 
+                        realNameMap[cleanReal].push(targetAddr); 
+                    }
                 });
                 return {
                     get: (nick) => {
@@ -648,7 +1087,11 @@
                         const mappedTarget = addressMapping[nick] || addressMapping[cleanNick];
                         if (mappedTarget === '__UNMAPPED__') return { data: null, conflict: null, type: 'none' };
                         
-                        if (mappedTarget) { const mNick = normalizeString(mappedTarget); const mAddr = masterMap[mNick] || rawMap[mNick]; if (mAddr) return { data: mAddr, conflict: null, type: mAddr._source || 'mapped' }; }
+                        if (mappedTarget) { 
+                            const mNick = normalizeString(mappedTarget); 
+                            const mAddr = masterMap[mNick] || rawMap[mNick]; 
+                            if (mAddr) return { data: mAddr, conflict: null, type: mAddr._source || 'mapped' }; 
+                        }
                         
                         let matches = exactNickMap[cleanNick] || [];
                         if (matches.length === 0) matches = realNameMap[cleanNick] || [];
@@ -657,9 +1100,12 @@
                             matches.sort((a, b) => parseSafeDate(b.timestamp).getTime() - parseSafeDate(a.timestamp).getTime());
                             const addr = matches[0];
                             const mAddrNick = normalizeString(addr.nickname);
-                            const master = masterMap[mAddrNick]; const raw = rawMap[mAddrNick];
+                            const master = masterMap[mAddrNick]; 
+                            const raw = rawMap[mAddrNick];
                             let conflict = null;
-                            if (master && raw && parseSafeDate(raw.timestamp).getTime() > parseSafeDate(master.timestamp).getTime()) { if (raw.address !== master.address || raw.phone !== master.phone || raw.realname !== master.realname) conflict = raw; }
+                            if (master && raw && parseSafeDate(raw.timestamp).getTime() > parseSafeDate(master.timestamp).getTime()) { 
+                                if (raw.address !== master.address || raw.phone !== master.phone || raw.realname !== master.realname) conflict = raw; 
+                            }
                             return { data: master || raw || addr, conflict: conflict, type: master ? 'master' : 'raw' };
                         }
                         return { data: null, conflict: null, type: 'none' };
@@ -708,13 +1154,17 @@
             }, []);
 
             const fetchAllData = useCallback(async () => {
-                if (!googleScriptUrl) { setSyncStatus(prev => prev === "설정 ⚙️: 통합 앱스 스크립트 URL을 입력하세요!" ? prev : "설정 ⚙️: 통합 앱스 스크립트 URL을 입력하세요!"); return; }
+                if (!googleScriptUrl) { 
+                    setSyncStatus(prev => prev === "설정 ⚙️: 통합 앱스 스크립트 URL을 입력하세요!" ? prev : "설정 ⚙️: 통합 앱스 스크립트 URL을 입력하세요!"); 
+                    return; 
+                }
                 try {
                     const fetchUrl = `${googleScriptUrl}?action=get_all&chatId=${getCleanSheetId(chatSheetId)}&depId=${getCleanSheetId(depSheetId)}&addrId=${getCleanSheetId(addrSheetId)}&masterId=${getCleanSheetId(masterSheetId)}&t=${Date.now()}`;
                     const res = await fetchGas(fetchUrl);
                     
                     if (res && res.status === 'success') {
                         let statusMsg = "동기화: ";
+                        // 1. 채팅
                         if (res.chats && Array.isArray(res.chats)) {
                             let chatRows = res.chats;
                             if (chatRows.length > 0 && chatRows[0].some(c => typeof c === 'string' && (c.includes('날짜') || c.includes('닉네임') || c.includes('내용')))) chatRows = chatRows.slice(1);
@@ -729,10 +1179,16 @@
                             }).filter(c => c !== null && c.nickname && c.content);
                             
                             const chatIds = newChats.map(c => c.id).join(',');
-                            if(chatIds !== prevChatsStr.current) { setChats(newChats.reverse()); prevChatsStr.current = chatIds; }
-                            if(newChats.length > 0) statusMsg += `채팅(${newChats.length}) `; else statusMsg += `채팅(없음) `;
+                            if(chatIds !== prevChatsStr.current) {
+                                setChats(newChats.reverse());
+                                prevChatsStr.current = chatIds;
+                            }
+                            
+                            if(newChats.length > 0) statusMsg += `채팅(${newChats.length}) `; 
+                            else statusMsg += `채팅(없음) `;
                         } else { statusMsg += `채팅(연결실패) `; }
 
+                        // 2. 입금
                         if (res.deposits && Array.isArray(res.deposits)) {
                             let depRows = res.deposits;
                             if (depRows.length > 0 && depRows[0].some(c => typeof c === 'string' && (c.includes('이름') || c.includes('금액') || c.includes('닉네임')))) depRows = depRows.slice(1);
@@ -759,12 +1215,16 @@
                             const depIds = newDeps.map(d => d.id).join(',');
                             if(depIds !== prevDepsStr.current) {
                                 if (newDeps.length > prevDepCount.current && prevDepCount.current !== 0) playCoinSound();
-                                setServerDeposits(newDeps); prevDepsStr.current = depIds;
+                                setServerDeposits(newDeps);
+                                prevDepsStr.current = depIds;
                             }
                             prevDepCount.current = newDeps.length;
-                            if(newDeps.length > 0) statusMsg += `입금(${newDeps.length}) `; else statusMsg += `입금(없음) `;
+                            
+                            if(newDeps.length > 0) statusMsg += `입금(${newDeps.length}) `; 
+                            else statusMsg += `입금(없음) `;
                         } else { statusMsg += `입금(연결실패) `; }
 
+                        // 3. 새주소
                         let mergedAddr = [];
                         if (res.rawAddresses && Array.isArray(res.rawAddresses)) {
                             if (res.rawAddresses.length > 1) {
@@ -789,6 +1249,7 @@
                             } else { statusMsg += `주소(없음) `; }
                         } else { statusMsg += `주소(연결실패) `; }
                         
+                        // 4. 마스터 주소록
                         if (res.masterAddresses && Array.isArray(res.masterAddresses)) {
                             const masterAddrs = res.masterAddresses.map(a => ({...a, phone: fixPhoneNumber(String(a.phone || '').trim()), _source: 'master'}));
                             mergedAddr = [...mergedAddr, ...masterAddrs];
@@ -802,6 +1263,7 @@
                         }
                         prevAddrCount.current = mergedAddr.length;
 
+                        // 5. 마스터 재고
                         if (res.inventory && Array.isArray(res.inventory)) {
                             if (Date.now() - inventorySyncLock.current > 10000) {
                                 const invKeys = res.inventory.map(i => i.name + i.price + i.status).join(',');
@@ -809,11 +1271,19 @@
                                     setInventory(prevInv => {
                                         const prevArray = Array.isArray(prevInv) ? prevInv : [];
                                         const prevMap = new Map(prevArray.map(i => [i.name, i]));
+                                        
                                         const serverNames = new Set(res.inventory.map(i => i.name));
                                         const localOnly = prevArray.filter(i => !serverNames.has(i.name));
+
                                         const merged = res.inventory.map(i => {
                                             const existing = prevMap.get(i.name);
-                                            return { id: existing && existing.id ? existing.id : `inv_${Date.now()}_${Math.random()}`, name: i.name, price: Number(i.price), stock: existing && existing.stock !== undefined ? existing.stock : '', isSoldOut: i.status === '품절' || (existing && existing.isSoldOut) };
+                                            return {
+                                                id: existing && existing.id ? existing.id : `inv_${Date.now()}_${Math.random()}`, 
+                                                name: i.name, 
+                                                price: Number(i.price), 
+                                                stock: existing && existing.stock !== undefined ? existing.stock : '', 
+                                                isSoldOut: i.status === '품절' || (existing && existing.isSoldOut)
+                                            };
                                         });
                                         return [...localOnly, ...merged];
                                     });
@@ -824,20 +1294,30 @@
 
                         setSyncStatus(prev => prev === statusMsg ? prev : statusMsg);
                         setGlobalError('');
-                    } else { setSyncStatus(prev => prev === "통신 실패" ? prev : "통신 실패"); }
-                } catch(e) { setSyncStatus(prev => prev === "네트워크 에러 발생" ? prev : "네트워크 에러 발생"); }
+                    } else { 
+                        setSyncStatus(prev => prev === "통신 실패" ? prev : "통신 실패"); 
+                    }
+                } catch(e) { 
+                    setSyncStatus(prev => prev === "네트워크 에러 발생" ? prev : "네트워크 에러 발생"); 
+                }
             }, [googleScriptUrl, chatSheetId, depSheetId, addrSheetId, masterSheetId, setAddresses, setInventory, setGlobalError, playCoinSound, playBellSound]);
             
+            // 비동기식 폴링으로 변경 (이전 요청이 끝난 후 5초 대기)
             useEffect(() => { 
                 let isMounted = true;
                 let timerId = null;
                 const poll = async () => {
                     if (!isMounted) return;
                     await fetchAllData();
-                    if (isMounted) timerId = setTimeout(poll, 5000);
+                    if (isMounted) {
+                        timerId = setTimeout(poll, 5000);
+                    }
                 };
                 poll();
-                return () => { isMounted = false; if (timerId) clearTimeout(timerId); };
+                return () => {
+                    isMounted = false;
+                    if (timerId) clearTimeout(timerId);
+                };
             }, [fetchAllData]);
 
             const allDeposits = useMemo(() => [...manualDeposits, ...serverDeposits], [manualDeposits, serverDeposits]);
@@ -857,10 +1337,15 @@
                 
                 let targetNickClean = '', targetNickKo = '', targetRealClean = '', targetRealKo = '', addrRealClean = '', addrRealKo = '';
                 if (selectedNick) { 
-                    targetNickClean = cleanForMatch(selectedNick); targetNickKo = extractKo(selectedNick);
-                    const tReal = depositorNames[selectedNick]; targetRealClean = tReal ? cleanForMatch(tReal) : ''; targetRealKo = tReal ? extractKo(tReal) : ''; 
-                    const addrRes = addressLookup.get(selectedNick); const aReal = addrRes && addrRes.data ? addrRes.data.realname : '';
-                    addrRealClean = aReal ? cleanForMatch(aReal) : ''; addrRealKo = aReal ? extractKo(aReal) : '';
+                    targetNickClean = cleanForMatch(selectedNick); 
+                    targetNickKo = extractKo(selectedNick);
+                    const tReal = depositorNames[selectedNick];
+                    targetRealClean = tReal ? cleanForMatch(tReal) : ''; 
+                    targetRealKo = tReal ? extractKo(tReal) : ''; 
+                    const addrRes = addressLookup.get(selectedNick); 
+                    const aReal = addrRes && addrRes.data ? addrRes.data.realname : '';
+                    addrRealClean = aReal ? cleanForMatch(aReal) : '';
+                    addrRealKo = aReal ? extractKo(aReal) : '';
                 }
 
                 const checkMatch = (tClean, tKo, vClean, vKo) => {
@@ -874,19 +1359,35 @@
                 };
 
                 const decorated = result.map(d => {
-                    let isUsed = matchedDeposits?.has(d.id) ? 1 : 0; let score = 10;
+                    let isUsed = matchedDeposits?.has(d.id) ? 1 : 0; 
+                    let score = 10;
                     if (selectedNick) {
-                        const valClean = cleanForMatch(d.name); const valKo = extractKo(d.name);
-                        score = Math.min( checkMatch(targetNickClean, targetNickKo, valClean, valKo), checkMatch(targetRealClean, targetRealKo, valClean, valKo), checkMatch(addrRealClean, addrRealKo, valClean, valKo) );
+                        const valClean = cleanForMatch(d.name);
+                        const valKo = extractKo(d.name);
+                        score = Math.min(
+                            checkMatch(targetNickClean, targetNickKo, valClean, valKo),
+                            checkMatch(targetRealClean, targetRealKo, valClean, valKo),
+                            checkMatch(addrRealClean, addrRealKo, valClean, valKo)
+                        );
                     }
                     return { item: d, isUsed, score };
                 });
 
                 decorated.sort((a, b) => { 
-                    const aIsSimilar = a.score < 10; const bIsSimilar = b.score < 10;
-                    if (aIsSimilar && !bIsSimilar) return -1; if (!aIsSimilar && bIsSimilar) return 1;
-                    if (aIsSimilar && bIsSimilar) { if (a.score !== b.score) return a.score - b.score; if (a.isUsed !== b.isUsed) return a.isUsed - b.isUsed; return 0; }
-                    if (a.isUsed !== b.isUsed) return a.isUsed - b.isUsed; return 0; 
+                    const aIsSimilar = a.score < 10;
+                    const bIsSimilar = b.score < 10;
+                    
+                    if (aIsSimilar && !bIsSimilar) return -1;
+                    if (!aIsSimilar && bIsSimilar) return 1;
+                    
+                    if (aIsSimilar && bIsSimilar) {
+                        if (a.score !== b.score) return a.score - b.score;
+                        if (a.isUsed !== b.isUsed) return a.isUsed - b.isUsed;
+                        return 0;
+                    }
+                    
+                    if (a.isUsed !== b.isUsed) return a.isUsed - b.isUsed;
+                    return 0; 
                 });
                 return decorated.map(d => d.item); 
             }, [allDeposits, deferredDepositSearch, selectedNick, deletedDepositIds, matchedDeposits, depositorNames, addressLookup]);
@@ -901,16 +1402,19 @@
                     const isCard = cardPayments[nick]; const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0);
                     const shipping = getCalculatedShipping(nick, productTotal); const baseGrandTotal = productTotal + shipping; const baseBalance = baseGrandTotal - depositTotal;
                     const cardFee = (isCard && baseBalance > 0) ? baseBalance * 0.1 : 0; const finalGrandTotal = baseGrandTotal + cardFee; const finalBalance = baseBalance + cardFee;
+
                     totalSales += finalGrandTotal; 
                     if (finalBalance > 0) { if (isCard) totalCardExpected += finalBalance; else totalUnpaid += finalBalance; } else if (finalBalance < 0 && !isCard) { totalOverpaid += Math.abs(finalBalance); }
                 });
                 return { totalSales, totalDeposit, totalUnpaid, totalOverpaid, totalCardExpected, missingAddressCount };
             }, [orders, cardPayments, getCalculatedShipping, addressLookup]);
 
+            // 카톡없음 카운트 (상품줄 수 기준이 아닌 고객 수 기준으로 변경)
             const noKakaoCount = useMemo(() => {
                 const activeCustomers = new Set();
                 orders.forEach(o => { if (!o.isCancelled) activeCustomers.add(o.customer); });
-                let count = 0; activeCustomers.forEach(c => { if (!checkedOrders.has(c)) count++; });
+                let count = 0;
+                activeCustomers.forEach(c => { if (!checkedOrders.has(c)) count++; });
                 return count;
             }, [orders, checkedOrders]);
 
@@ -1042,6 +1546,7 @@
                 if (missing.length > 0) {
                     const text = "⚠️ 채널톡 안주신분 ⚠️\n" + missing.join('\n') + "\n\n👉 카톡채널 연락주세요!";
                     const t = document.createElement("textarea"); t.value = text; document.body.appendChild(t); t.select(); document.execCommand('copy'); document.body.removeChild(t);
+                    
                     const el = e.currentTarget; const originalClass = el.className;
                     el.className = 'bg-green-500 p-1 rounded border-2 cursor-pointer shadow-sm transition-colors flex flex-col justify-center overflow-hidden text-white font-bold';
                     setTimeout(() => { el.className = originalClass; }, 1000);
@@ -1090,7 +1595,9 @@
                         if (matchedCustomer) {
                             const cb = customerBalances[matchedCustomer];
                             if (cb.balance <= 0) { 
-                                newMatchedIds.add(deposit.id); newDepositLinks[deposit.id] = matchedCustomer; hasChanges = true; 
+                                newMatchedIds.add(deposit.id);
+                                newDepositLinks[deposit.id] = matchedCustomer;
+                                hasChanges = true; 
                             } else {
                                 let applied = false;
                                 updatedOrders = updatedOrders.map(o => { 
@@ -1098,7 +1605,9 @@
                                     return o; 
                                 });
                                 cb.depositTotal += depositAmount; cb.balance -= depositAmount; cb.isCloud = false; 
-                                newMatchedIds.add(deposit.id); newDepositLinks[deposit.id] = matchedCustomer; hasChanges = true;
+                                newMatchedIds.add(deposit.id);
+                                newDepositLinks[deposit.id] = matchedCustomer;
+                                hasChanges = true;
                             }
                         }
                     });
@@ -1110,6 +1619,7 @@
             const autoSaveToGoogleSheet = useCallback(async () => { 
                 if (!googleScriptUrl || !masterSheetId || Object.keys(orders).length === 0) return; setIsSaving(true); 
                 const customerTotals = {}; orders.filter(o => !o.isCancelled).forEach(o => { customerTotals[o.customer] = (customerTotals[o.customer] || 0) + Number(o.price); });
+                
                 const uniqueNicknames = Array.from(new Set(orders.filter(o => !o.isCancelled).map(o => o.customer)));
                 
                 const saveList = orders.filter(o=>!o.isCancelled).map(o => { 
@@ -1117,12 +1627,39 @@
                     const currentShipping = getCalculatedShipping(o.customer, customerTotals[o.customer] || 0); 
                     const isCard = cardPayments[o.customer] ? true : false; 
                     const customerVal = o.customer || '';
+                    
                     return { 
-                        '닉네임': customerVal, '상품명': o.product, '수량': o.quantity, '단가(제품금액)': o.price, '배송비': currentShipping, '입금액': o.deposit, '카드결제': isCard ? 'O' : '', '수령인명': addr.realname || '', '연락처': addr.phone ? "'" + addr.phone : '', '우편번호': addr.zipcode ? "'" + addr.zipcode : '', '주소': addr.address || '', '요청사항': addr.memo || ''
+                        '닉네임': customerVal,
+                        '상품명': o.product,
+                        '수량': o.quantity,
+                        '단가(제품금액)': o.price,
+                        '배송비': currentShipping,
+                        '입금액': o.deposit,
+                        '카드결제': isCard ? 'O' : '',
+                        '수령인명': addr.realname || '',
+                        '연락처': addr.phone ? "'" + addr.phone : '',
+                        '우편번호': addr.zipcode ? "'" + addr.zipcode : '',
+                        '주소': addr.address || '',
+                        '요청사항': addr.memo || ''
                     }; 
                 }); 
                 if (broadcastName) { 
-                    saveList.unshift({ '닉네임': '___WORKSPACE_META___', '상품명': broadcastName, '수량': 0, '단가(제품금액)': 0, '배송비': 0, '입금액': 0, '카드결제': '', '수령인명': '', '연락처': '', '우편번호': '', '주소': '', '요청사항': '' }); 
+                    const bn = broadcastName;
+                    const metaCustomer = '___WORKSPACE_META___';
+                    saveList.unshift({ 
+                        '닉네임': metaCustomer,
+                        '상품명': bn,
+                        '수량': 0,
+                        '단가(제품금액)': 0,
+                        '배송비': 0,
+                        '입금액': 0,
+                        '카드결제': '',
+                        '수령인명': '',
+                        '연락처': '',
+                        '우편번호': '',
+                        '주소': '',
+                        '요청사항': ''
+                    }); 
                 }
                 try { const actualSheetId = getCleanSheetId(masterSheetId); if(actualSheetId) { await fetchGas(googleScriptUrl, { action: 'save_orders', masterId: actualSheetId, data: saveList, nicknames: uniqueNicknames }); } } catch(e) {} finally { setIsSaving(false); } 
             }, [orders, cardPayments, getCalculatedShipping, googleScriptUrl, addressLookup, masterSheetId, broadcastName]);
@@ -1144,6 +1681,8 @@
 
             const toggleCardPayment = useCallback((nick) => setCardPayments(prev => ({ ...prev, [nick]: !prev[nick] })), [setCardPayments]);
             const toggleCashReceipt = useCallback((nick) => setCashReceipts(prev => ({ ...prev, [nick]: !prev[nick] })), [setCashReceipts]);
+            
+            // 신규: 노쇼 및 대기 기능 (버튼 토글)
             const toggleNoShow = useCallback((nick) => setNoShowCustomers(prev => ({ ...prev, [nick]: !prev[nick] })), [setNoShowCustomers]);
             const toggleWaitlist = useCallback((nick) => setWaitlistCustomers(prev => ({ ...prev, [nick]: !prev[nick] })), [setWaitlistCustomers]);
 
@@ -1155,13 +1694,22 @@
                     setAddressMapping(prev => ({ ...prev, [orderNick]: addressNick })); 
                     const addrData = addresses.find(a => normalizeString(a.nickname) === normalizeString(addressNick));
                     if (addrData && googleScriptUrl && masterSheetId) {
-                        const mappedData = { ...addrData, nickname: orderNick, '닉네임': orderNick, name: orderNick, nick: orderNick, '주문자': orderNick, '아이디': orderNick, '고객명': orderNick, phone: addrData.phone ? "'" + addrData.phone : '', _source: 'master' };
+                        const mappedData = { 
+                            ...addrData, 
+                            nickname: orderNick, '닉네임': orderNick, name: orderNick, nick: orderNick, '주문자': orderNick, '아이디': orderNick, '고객명': orderNick, 
+                            phone: addrData.phone ? "'" + addrData.phone : '', 
+                            _source: 'master' 
+                        };
                         try { await fetchGas(googleScriptUrl, { action: 'save_master_address', masterId: getCleanSheetId(masterSheetId), data: mappedData }); } catch (err) { setGlobalError("🚨 통신 에러: 주소 저장 실패"); }
                     }
                 }); 
             }, [openModal, setAddressMapping, addresses, googleScriptUrl, masterSheetId, setGlobalError]);
             
-            const handleAddressUnmapping = useCallback((orderNick) => { openModal(`매칭된 주소를 해제하시겠습니까?`, 'confirm', () => setAddressMapping(prev => { const next = { ...prev }; next[orderNick] = '__UNMAPPED__'; next[normalizeString(orderNick)] = '__UNMAPPED__'; return next; })); }, [openModal, setAddressMapping]);
+            const handleAddressUnmapping = useCallback((orderNick) => { 
+                openModal(`매칭된 주소를 해제하시겠습니까?`, 'confirm', () => setAddressMapping(prev => { 
+                    const next = { ...prev }; next[orderNick] = '__UNMAPPED__'; next[normalizeString(orderNick)] = '__UNMAPPED__'; return next; 
+                })); 
+            }, [openModal, setAddressMapping]);
 
             const handleProductChange = useCallback((id, field, value) => { 
                 setOrders(prev => prev.map(o => { 
@@ -1175,14 +1723,17 @@
                         } 
                         if (field === 'price' && o.product && String(o.product).trim() !== '') { 
                             const cleanProd = String(o.product).trim(); const valNum = String(value).replace(/,/g, '');
-                            const effQty = (o.quantity && o.quantity > 0) ? o.quantity : 1; const uPrice = Number(valNum) / effQty; 
+                            const effQty = (o.quantity && o.quantity > 0) ? o.quantity : 1;
+                            const uPrice = Number(valNum) / effQty; 
                             if (uPrice >= 1) {
                                 setInventory(prevInv => {
                                     if (!Array.isArray(prevInv)) return prevInv;
                                     const exists = prevInv.find(i => String(i.name).trim() === cleanProd);
                                     if (!exists) {
                                         const newInv = [{ id: `inv_${Date.now()}_${Math.random()}`, name: cleanProd, price: uPrice, isSoldOut: false }, ...prevInv];
-                                        saveInventoryToServer(newInv); setProductHistory(h => ({ ...h, [cleanProd]: uPrice })); return newInv;
+                                        saveInventoryToServer(newInv); 
+                                        setProductHistory(h => ({ ...h, [cleanProd]: uPrice }));
+                                        return newInv;
                                     }
                                     return prevInv;
                                 });
@@ -1221,7 +1772,8 @@
                     const cardBase = Math.max(0, grandTotal - depositTotal);
                     if (depositTotal > 0) { msg += `[카드결제]\n총 주문금액 ${grandTotal.toLocaleString()}원\n선입금 ${depositTotal.toLocaleString()}원\n수수료(10%) ${(cardBase * 0.1).toLocaleString()}원\n👉결제요청액 ${(cardBase * 1.1).toLocaleString()}원 예정\n\n핸드폰번호 남겨주세요🌸\n------------------\n\n`; } 
                     else { msg += `[카드결제]\n금액 ${cardBase.toLocaleString()}원\n수수료(10%) ${(cardBase * 0.1).toLocaleString()}원\n👉결제요청액 ${(cardBase * 1.1).toLocaleString()}원 예정\n\n핸드폰번호 남겨주세요🌸\n------------------\n\n`; }
-                } else { 
+                } 
+                else { 
                     const isPaid = (balance <= 0) && (grandTotal >= 0) && (activeItems.length > 0); 
                     if (depositTotal > 0 && balance <= 0) { msg += `[입금확인]\n${depositTotal.toLocaleString()}원\n------------------\n\n`; } 
                     else if (depositTotal > 0 && balance > 0) { msg += `[입금확인]\n${depositTotal.toLocaleString()}원 (일부 입금)\n------------------\n\n`; }
@@ -1233,15 +1785,43 @@
                 if (addr && addr.address && !alwaysRequestAddress) {
                     const dispPhone = fixPhoneNumber(addr.phone);
                     msg += `\n[배송지 확인]\n\n${addr.realname || nick}\n${dispPhone}\n${addr.address} ${addr.zipcode ? `(${addr.zipcode})` : ''}\n${addr.memo ? addr.memo + '\n' : ''}\n------------------\n${addrNotice}`;
-                } else if (!sentAddressRequests.has(nick) || alwaysRequestAddress) { msg += `\n${surveyNotice}`; setSentAddressRequests(prev => new Set(prev).add(nick)); }
+                } else if (!sentAddressRequests.has(nick) || alwaysRequestAddress) { 
+                    msg += `\n${surveyNotice}`; setSentAddressRequests(prev => new Set(prev).add(nick)); 
+                }
                 
-                const textArea = document.createElement("textarea"); textArea.value = msg; document.body.appendChild(textArea); textArea.select(); setCheckedOrders(prev => new Set(prev).add(nick));
-                try { document.execCommand('copy'); const el = e.currentTarget; const originalClass = el.className; el.className = 'ml-1 flex items-center gap-1 px-2 py-0.5 rounded border shrink-0 bg-green-500 border-green-600 text-white font-bold transition-colors'; setTimeout(() => { el.className = originalClass; }, 1000); } catch (err) { } document.body.removeChild(textArea);
+                const textArea = document.createElement("textarea"); textArea.value = msg; document.body.appendChild(textArea); textArea.select();
+                setCheckedOrders(prev => new Set(prev).add(nick));
+                try { 
+                    document.execCommand('copy'); 
+                    const el = e.currentTarget;
+                    const originalClass = el.className;
+                    el.className = 'ml-1 flex items-center gap-1 px-2 py-0.5 rounded border shrink-0 bg-green-500 border-green-600 text-white font-bold transition-colors';
+                    setTimeout(() => { el.className = originalClass; }, 1000);
+                } catch (err) { } document.body.removeChild(textArea);
             }, [addressLookup, getCalculatedShipping, templateConfig, bankAccount, sentAddressRequests, setSentAddressRequests, setCheckedOrders, broadcastName]);
 
+            // 완납 버튼 강제 중복 합산 방지 패치 완료
             const handleFullDepositToggle = useCallback((nick, grandTotal, currentDeposit) => { 
-                if (currentDeposit >= grandTotal) { setOrders(prev => prev.map(o => o.customer === nick ? { ...o, deposit: 0 } : o)); } 
-                else { setOrders(prev => { let done = false; return prev.map(o => { if (o.customer === nick) { if (!done) { done = true; return { ...o, deposit: grandTotal }; } return { ...o, deposit: 0 }; } return o; }); }); } 
+                if (currentDeposit >= grandTotal) { 
+                    // 완납 해제 시: 해당 고객의 모든 주문줄 입금액 0원 초기화
+                    setOrders(prev => prev.map(o => o.customer === nick ? { ...o, deposit: 0 } : o)); 
+                } 
+                else { 
+                    // 완납 처리 시: 첫 번째 줄에 총액 부여, 나머지 모든 줄은 0원 초기화!
+                    setOrders(prev => { 
+                        let done = false; 
+                        return prev.map(o => { 
+                            if (o.customer === nick) { 
+                                if (!done) {
+                                    done = true; 
+                                    return { ...o, deposit: grandTotal }; 
+                                }
+                                return { ...o, deposit: 0 };
+                            } 
+                            return o; 
+                        }); 
+                    }); 
+                } 
             }, [setOrders]);
 
             const addOrderLogic = useCallback((nick, content, qty = 1, force = false, afterId = null, customPrice = null, markAsModified = false, isAuto = false) => {
@@ -1255,15 +1835,26 @@
                 if (cContent !== '' && (isCustomPriceValid || price > 0)) {
                     const priceToSave = price || 0;
                     if (priceToSave >= 1) {
-                        setInventory(prevInv => { const invArr = Array.isArray(prevInv) ? prevInv : []; const exists = invArr.find(i => String(i.name).trim() === cContent); if (!exists) { const newInv = [{ id: `inv_${Date.now()}_${Math.random()}`, name: cContent, price: priceToSave, stock: '', isSoldOut: false }, ...invArr]; saveInventoryToServer(newInv); return newInv; } return invArr; });
+                        setInventory(prevInv => {
+                            const invArr = Array.isArray(prevInv) ? prevInv : []; const exists = invArr.find(i => String(i.name).trim() === cContent);
+                            if (!exists) {
+                                const newInv = [{ id: `inv_${Date.now()}_${Math.random()}`, name: cContent, price: priceToSave, stock: '', isSoldOut: false }, ...invArr]; 
+                                saveInventoryToServer(newInv); return newInv;
+                            }
+                            return invArr;
+                        });
                         setProductHistory(h => ({ ...h, [cContent]: priceToSave }));
                     }
                 }
 
                 if (!isAuto) { setCheckedOrders(prev => { const n = new Set(prev); n.delete(cNick); return n; }); setSelectedNick(cNick); }
+                
                 const newOrder = { id: Date.now() + Math.random(), customer: cNick, product: cContent, quantity: qty, price: Number(price) * qty, deposit: 0, isCancelled: false, isUnmodified: !markAsModified, isSentToEmp: false };
                 setOrders(prev => {
-                    if (!afterId && !force && cContent !== '') { const existIdx = prev.findIndex(o => o.customer === cNick && o.product === cContent && !o.isCancelled); if (existIdx !== -1) { const next = [...prev]; next[existIdx] = { ...next[existIdx], quantity: next[existIdx].quantity + qty, price: (next[existIdx].quantity + qty) * price, isUnmodified: !markAsModified }; return next; } }
+                    if (!afterId && !force && cContent !== '') {
+                        const existIdx = prev.findIndex(o => o.customer === cNick && o.product === cContent && !o.isCancelled);
+                        if (existIdx !== -1) { const next = [...prev]; next[existIdx] = { ...next[existIdx], quantity: next[existIdx].quantity + qty, price: (next[existIdx].quantity + qty) * price, isUnmodified: !markAsModified }; return next; }
+                    }
                     if (afterId) { const idx = prev.findIndex(o => o.id === afterId); if (idx !== -1) { const next = [...prev]; next.splice(idx + 1, 0, newOrder); return next; } }
                     return [newOrder, ...prev];
                 });
@@ -1272,28 +1863,69 @@
             const handleManualSubmit = (e) => { e.preventDefault(); if(!manualNick.trim()) return openModal("닉네임을 입력해주세요.", 'alert'); addOrderLogic(manualNick, manualProduct, 1, false, null, manualPrice, true); setManualNick(''); if (!isFixedProductMode) { setManualProduct(''); setManualPrice(''); } };
             
             const handleDepositClick = (dep, forceAction = null) => {
-                const isUsed = matchedDeposits?.has(dep.id); const action = forceAction || (isUsed ? 'unmatch' : 'match');
+                const isUsed = matchedDeposits?.has(dep.id);
+                const action = forceAction || (isUsed ? 'unmatch' : 'match');
+
                 if (action === 'unmatch') {
                     const targetNick = depositLinks[dep.id] || orders.find(o => !o.isCancelled && cleanForMatch(o.customer) === cleanForMatch(dep.name))?.customer || selectedNick;
                     openModal(`'${dep.name}' 님의 입금 매칭을 취소(해제)하시겠습니까?`, 'confirm', () => {
-                        if (targetNick) { setOrders(prev => { let done = false; return prev.map(o => { if (!done && o.customer === targetNick) { done = true; return { ...o, deposit: Math.max(0, (o.deposit || 0) - Number(dep.amount)) }; } return o; }); }); }
-                        setMatchedDeposits(p => { const next = new Set(p); next.delete(dep.id); return next; }); setDepositLinks(p => { const next = { ...p }; delete next[dep.id]; return next; }); setIgnoredAutoMatch(p => new Set(p).add(dep.id)); 
-                    }); return;
+                        if (targetNick) { 
+                            setOrders(prev => { let done = false; return prev.map(o => { if (!done && o.customer === targetNick) { done = true; return { ...o, deposit: Math.max(0, (o.deposit || 0) - Number(dep.amount)) }; } return o; }); }); 
+                        }
+                        setMatchedDeposits(p => { const next = new Set(p); next.delete(dep.id); return next; });
+                        setDepositLinks(p => { const next = { ...p }; delete next[dep.id]; return next; });
+                        setIgnoredAutoMatch(p => new Set(p).add(dep.id)); 
+                    });
+                    return;
                 }
+                
                 const targetNick = selectedNick || orders.find(o => !o.isCancelled && cleanForMatch(o.customer) === cleanForMatch(dep.name))?.customer;
                 if (!targetNick) return openModal("입금을 연결할 주문자(닉네임)를 먼저 클릭하여 노란색으로 선택해주세요.", "alert");
                 setOrders(prev => { let done = false; return prev.map(o => { if (!done && o.customer === targetNick) { done = true; return { ...o, deposit: (o.deposit || 0) + Number(dep.amount) }; } return o; }); });
-                setMatchedDeposits(p => new Set(p).add(dep.id)); setIgnoredAutoMatch(p => new Set(p).add(dep.id)); setDepositLinks(p => ({ ...p, [dep.id]: targetNick }));
+                setMatchedDeposits(p => new Set(p).add(dep.id)); setIgnoredAutoMatch(p => new Set(p).add(dep.id));
+                setDepositLinks(p => ({ ...p, [dep.id]: targetNick }));
             };
 
             const handleDepositUnmatch = useCallback((dep, nick) => {
-                setOrders(prev => { let done = false; return prev.map(o => { if (!done && o.customer === nick) { done = true; return { ...o, deposit: Math.max(0, (o.deposit || 0) - Number(dep.amount)) }; } return o; }); });
-                setMatchedDeposits(p => { const next = new Set(p); next.delete(dep.id); return next; }); setDepositLinks(p => { const next = { ...p }; delete next[dep.id]; return next; }); setIgnoredAutoMatch(p => new Set(p).add(dep.id));
+                setOrders(prev => {
+                    let done = false;
+                    return prev.map(o => {
+                        if (!done && o.customer === nick) { done = true; return { ...o, deposit: Math.max(0, (o.deposit || 0) - Number(dep.amount)) }; }
+                        return o;
+                    });
+                });
+                setMatchedDeposits(p => { const next = new Set(p); next.delete(dep.id); return next; });
+                setDepositLinks(p => { const next = { ...p }; delete next[dep.id]; return next; });
+                setIgnoredAutoMatch(p => new Set(p).add(dep.id));
             }, [setOrders, setMatchedDeposits, setDepositLinks, setIgnoredAutoMatch]);
 
-            const handleCopyDepositName = (e, name) => { e.stopPropagation(); const textArea = document.createElement("textarea"); textArea.value = name; document.body.appendChild(textArea); textArea.select(); try { document.execCommand('copy'); const el = e.currentTarget; const originalText = el.innerText; el.innerText = '✅ 복사완료'; el.classList.add('text-green-500'); setTimeout(() => { el.innerText = originalText; el.classList.remove('text-green-500'); }, 1000); } catch (err) {} document.body.removeChild(textArea); };
+            const handleCopyDepositName = (e, name) => {
+                e.stopPropagation();
+                const textArea = document.createElement("textarea"); textArea.value = name; document.body.appendChild(textArea); textArea.select();
+                try {
+                    document.execCommand('copy');
+                    const el = e.currentTarget;
+                    const originalText = el.innerText;
+                    el.innerText = '✅ 복사완료';
+                    el.classList.add('text-green-500');
+                    setTimeout(() => { el.innerText = originalText; el.classList.remove('text-green-500'); }, 1000);
+                } catch (err) {} document.body.removeChild(textArea);
+            };
+
             const handleAddressClick = (addr) => { if (!selectedNick) return openModal("주소를 수동 연결할 주문자를 노란색으로 선택해주세요.", "alert"); handleAddressMapping(selectedNick, addr.nickname); };
-            const handleCopyQuickMessage = (e, msg, idx) => { if (!msg || !msg.trim()) return; const textArea = document.createElement("textarea"); textArea.value = msg; document.body.appendChild(textArea); textArea.select(); try { document.execCommand('copy'); const el = e.currentTarget; const originalText = el.innerHTML; const originalClass = el.className; el.innerHTML = '✅ 복사완료'; el.className = 'text-[10px] border rounded py-1 truncate shadow-sm transition-colors bg-green-500 text-white font-bold'; setTimeout(() => { el.innerHTML = originalText; el.className = originalClass; }, 1000); } catch (err) {} document.body.removeChild(textArea); };
+            const handleCopyQuickMessage = (e, msg, idx) => { 
+                if (!msg || !msg.trim()) return; 
+                const textArea = document.createElement("textarea"); textArea.value = msg; document.body.appendChild(textArea); textArea.select(); 
+                try { 
+                    document.execCommand('copy'); 
+                    const el = e.currentTarget;
+                    const originalText = el.innerHTML;
+                    const originalClass = el.className;
+                    el.innerHTML = '✅ 복사완료';
+                    el.className = 'text-[10px] border rounded py-1 truncate shadow-sm transition-colors bg-green-500 text-white font-bold';
+                    setTimeout(() => { el.innerHTML = originalText; el.className = originalClass; }, 1000);
+                } catch (err) {} document.body.removeChild(textArea); 
+            };
             const handleDeleteDepositItem = (id) => { openModal("숨기시겠습니까?", 'confirm', () => { setManualDeposits(prev => prev.filter(d => d.id !== id)); setDeletedDepositIds(prev => new Set(prev).add(id)); setMatchedDeposits(prev => { const next = new Set(prev); next.delete(id); return next; }); }); };
             const handleAddManualDeposit = (e) => { e.preventDefault(); if (!newDepositName.trim() || !newDepositAmount) return openModal("입금자명/금액 필수", 'alert'); const newDep = { id: `manual_${Date.now()}`, name: newDepositName, amount: newDepositAmount, source: 'manual' }; setManualDeposits(prev => [newDep, ...prev]); setNewDepositName(''); setNewDepositAmount(''); };
 
@@ -1303,31 +1935,99 @@
                 return [...unmatched, ...matched];
             }, [filteredDeposits, deferredDepositSearch, matchedDeposits]);
 
-            const usedAddressNicks = useMemo(() => { const set = new Set(); orders.forEach(o => { if (!o.isCancelled) { const mappedTarget = addressMapping[o.customer]; if (mappedTarget === '__UNMAPPED__') return; if (mappedTarget) set.add(normalizeString(mappedTarget)); else set.add(normalizeString(o.customer)); } }); return set; }, [orders, addressMapping]);
+            const usedAddressNicks = useMemo(() => {
+                const set = new Set();
+                orders.forEach(o => { 
+                    if (!o.isCancelled) { 
+                        const mappedTarget = addressMapping[o.customer]; 
+                        if (mappedTarget === '__UNMAPPED__') return;
+                        if (mappedTarget) set.add(normalizeString(mappedTarget)); else set.add(normalizeString(o.customer)); 
+                    } 
+                });
+                return set;
+            }, [orders, addressMapping]);
 
             const visibleAddresses = useMemo(() => {
                 const latestMap = {};
-                addresses.forEach(a => { const cleanNick = normalizeString(a.nickname); if (addressMapping[a.nickname] === '__UNMAPPED__' || addressMapping[cleanNick] === '__UNMAPPED__') return; const ts = parseSafeDate(a.timestamp).getTime(); if (!latestMap[cleanNick] || ts > parseSafeDate(latestMap[cleanNick].timestamp).getTime()) latestMap[cleanNick] = a; });
+                addresses.forEach(a => {
+                    const cleanNick = normalizeString(a.nickname);
+                    if (addressMapping[a.nickname] === '__UNMAPPED__' || addressMapping[cleanNick] === '__UNMAPPED__') return;
+                    const ts = parseSafeDate(a.timestamp).getTime();
+                    if (!latestMap[cleanNick] || ts > parseSafeDate(latestMap[cleanNick].timestamp).getTime()) latestMap[cleanNick] = a;
+                });
                 let res = Object.values(latestMap);
                 if (deferredAddressSearch) { const term = String(deferredAddressSearch).toLowerCase(); res = res.filter(a => String(a.nickname).toLowerCase().includes(term) || String(a.realname).toLowerCase().includes(term) || String(a.phone).includes(term)); }
                 
                 if (selectedNick) {
-                    const targetNickClean = cleanForMatch(selectedNick); const targetNickKo = extractKo(selectedNick);
-                    const targetReal = depositorNames[selectedNick]; const targetRealClean = targetReal ? cleanForMatch(targetReal) : ''; const targetRealKo = targetReal ? extractKo(targetReal) : '';
+                    const targetNickClean = cleanForMatch(selectedNick);
+                    const targetNickKo = extractKo(selectedNick);
+                    const targetReal = depositorNames[selectedNick];
+                    const targetRealClean = targetReal ? cleanForMatch(targetReal) : '';
+                    const targetRealKo = targetReal ? extractKo(targetReal) : '';
+
                     const checkMatch = (tClean, tKo, vClean, vKo) => {
-                        if (!tClean && !tKo) return 10; if (tClean && vClean && tClean === vClean) return 0; if (tKo && vKo && tKo === vKo && tKo.length >= 2) return 0;
-                        if (tClean && vClean && (tClean.includes(vClean) || vClean.includes(tClean)) && Math.min(tClean.length, vClean.length) >= 2) return 1; if (tKo && vKo && (tKo.includes(vKo) || vKo.includes(tKo)) && Math.min(tKo.length, vKo.length) >= 2) return 1; if (tClean && vClean && (getChosung(tClean).includes(getChosung(vClean)) || getChosung(vClean).includes(getChosung(tClean))) && Math.min(tClean.length, vClean.length) >= 2) return 2; return 10;
+                        if (!tClean && !tKo) return 10;
+                        if (tClean && vClean && tClean === vClean) return 0;
+                        if (tKo && vKo && tKo === vKo && tKo.length >= 2) return 0;
+                        if (tClean && vClean && (tClean.includes(vClean) || vClean.includes(tClean)) && Math.min(tClean.length, vClean.length) >= 2) return 1;
+                        if (tKo && vKo && (tKo.includes(vKo) || vKo.includes(tKo)) && Math.min(tKo.length, vKo.length) >= 2) return 1;
+                        if (tClean && vClean && (getChosung(tClean).includes(getChosung(vClean)) || getChosung(vClean).includes(getChosung(tClean))) && Math.min(tClean.length, vClean.length) >= 2) return 2;
+                        return 10;
                     };
-                    res.forEach(a => { const aNickClean = cleanForMatch(a.nickname); const aNickKo = extractKo(a.nickname); const aRealClean = cleanForMatch(a.realname); const aRealKo = extractKo(a.realname); const scoreNick = Math.min( checkMatch(targetNickClean, targetNickKo, aNickClean, aNickKo), checkMatch(targetRealClean, targetRealKo, aNickClean, aNickKo) ); const scoreReal = Math.min( checkMatch(targetNickClean, targetNickKo, aRealClean, aRealKo), checkMatch(targetRealClean, targetRealKo, aRealClean, aRealKo) ); a._tempScore = Math.min(scoreNick, scoreReal); });
-                    res.sort((a, b) => { const aIsSimilar = a._tempScore < 10; const bIsSimilar = b._tempScore < 10; if (aIsSimilar && !bIsSimilar) return -1; if (!aIsSimilar && bIsSimilar) return 1; if (aIsSimilar && bIsSimilar) { if (a._tempScore !== b._tempScore) return a._tempScore - b._tempScore; return parseSafeDate(b.timestamp).getTime() - parseSafeDate(a.timestamp).getTime(); } return parseSafeDate(b.timestamp).getTime() - parseSafeDate(a.timestamp).getTime(); });
-                } else { res.sort((a, b) => { const tA = parseSafeDate(a.timestamp).getTime(); const tB = parseSafeDate(b.timestamp).getTime(); return tB - tA; }); }
+
+                    res.forEach(a => {
+                        const aNickClean = cleanForMatch(a.nickname);
+                        const aNickKo = extractKo(a.nickname);
+                        const aRealClean = cleanForMatch(a.realname);
+                        const aRealKo = extractKo(a.realname);
+                        
+                        const scoreNick = Math.min(
+                            checkMatch(targetNickClean, targetNickKo, aNickClean, aNickKo),
+                            checkMatch(targetRealClean, targetRealKo, aNickClean, aNickKo)
+                        );
+                        const scoreReal = Math.min(
+                            checkMatch(targetNickClean, targetNickKo, aRealClean, aRealKo),
+                            checkMatch(targetRealClean, targetRealKo, aRealClean, aRealKo)
+                        );
+
+                        a._tempScore = Math.min(scoreNick, scoreReal);
+                    });
+
+                    res.sort((a, b) => {
+                        const aIsSimilar = a._tempScore < 10;
+                        const bIsSimilar = b._tempScore < 10;
+                        
+                        if (aIsSimilar && !bIsSimilar) return -1;
+                        if (!aIsSimilar && bIsSimilar) return 1;
+                        
+                        if (aIsSimilar && bIsSimilar) {
+                            if (a._tempScore !== b._tempScore) return a._tempScore - b._tempScore;
+                            return parseSafeDate(b.timestamp).getTime() - parseSafeDate(a.timestamp).getTime();
+                        }
+                        
+                        return parseSafeDate(b.timestamp).getTime() - parseSafeDate(a.timestamp).getTime();
+                    });
+                } else {
+                    res.sort((a, b) => { const tA = parseSafeDate(a.timestamp).getTime(); const tB = parseSafeDate(b.timestamp).getTime(); return tB - tA; });
+                }
                 return res;
             }, [addresses, deferredAddressSearch, selectedNick, addressMapping, depositorNames]);
 
             const handleQuickAddProduct = async (e) => {
-                e.preventDefault(); const cleanName = String(newInvName).trim(); if(!cleanName) return openModal("상품명을 입력해주세요.", "alert"); const priceNum = Number(String(newInvPrice).replace(/,/g, '')) || 0; const stockNum = newInvStock === '' ? '' : parseInt(newInvStock); if(inventory.some(i => i.name === cleanName)) return openModal("이미 등록된 상품명입니다.", "alert");
-                setInventory(prev => { const newInv = [{ id: `inv_${Date.now()}_${Math.random()}`, name: cleanName, price: priceNum, stock: stockNum, isSoldOut: false }, ...prev]; saveInventoryToServer(newInv); return newInv; });
-                if(priceNum > 0) setProductHistory(prev => ({...prev, [cleanName]: priceNum})); setNewInvName(''); setNewInvPrice(''); setNewInvStock('');
+                e.preventDefault(); const cleanName = String(newInvName).trim();
+                if(!cleanName) return openModal("상품명을 입력해주세요.", "alert");
+                const priceNum = Number(String(newInvPrice).replace(/,/g, '')) || 0;
+                const stockNum = newInvStock === '' ? '' : parseInt(newInvStock);
+                if(inventory.some(i => i.name === cleanName)) return openModal("이미 등록된 상품명입니다.", "alert");
+                
+                setInventory(prev => {
+                    const newInv = [{ id: `inv_${Date.now()}_${Math.random()}`, name: cleanName, price: priceNum, stock: stockNum, isSoldOut: false }, ...prev];
+                    saveInventoryToServer(newInv);
+                    return newInv;
+                });
+                
+                if(priceNum > 0) setProductHistory(prev => ({...prev, [cleanName]: priceNum}));
+                setNewInvName(''); setNewInvPrice(''); setNewInvStock('');
             };
 
             return (
@@ -1343,7 +2043,14 @@
                                 <div className="space-y-3">
                                     <div><label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1">기본 상품명</label><input type="text" id="batch-base-name" placeholder="예: 나그랑 티셔츠" autoFocus className="w-full border dark:border-slate-600 rounded px-2 py-2 text-xs bg-slate-50 dark:bg-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-slate-500" /></div>
                                     <div><label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1">옵션 1: 색상 등 (쉼표로 구분)</label><input type="text" id="batch-options-1" placeholder="예: 블랙, 화이트, 레드" className="w-full border dark:border-slate-600 rounded px-2 py-2 text-xs bg-slate-50 dark:bg-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-slate-500" /></div>
-                                    <div><label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1">옵션 2: 사이즈 등 (쉼표로 구분)</label><input type="text" id="batch-options-2" placeholder="예: S, M, L, XL" className="w-full border dark:border-slate-600 rounded px-2 py-2 text-xs bg-slate-50 dark:bg-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-slate-500 mb-1" /><div className="flex gap-1 flex-wrap mt-1"><button type="button" onClick={()=>{document.getElementById('batch-options-2').value='XS, S, M, L, XL, XXL';}} className="bg-slate-200 text-slate-700 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600 px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors">XS~XXL</button><button type="button" onClick={()=>{document.getElementById('batch-options-2').value='44, 55, 66, 77, 88, 99';}} className="bg-slate-200 text-slate-700 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600 px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors">44~99</button></div></div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1">옵션 2: 사이즈 등 (쉼표로 구분)</label>
+                                        <input type="text" id="batch-options-2" placeholder="예: S, M, L, XL" className="w-full border dark:border-slate-600 rounded px-2 py-2 text-xs bg-slate-50 dark:bg-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-slate-500 mb-1" />
+                                        <div className="flex gap-1 flex-wrap mt-1">
+                                            <button type="button" onClick={()=>{document.getElementById('batch-options-2').value='XS, S, M, L, XL, XXL';}} className="bg-slate-200 text-slate-700 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600 px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors">XS~XXL</button>
+                                            <button type="button" onClick={()=>{document.getElementById('batch-options-2').value='44, 55, 66, 77, 88, 99';}} className="bg-slate-200 text-slate-700 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600 px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors">44~99</button>
+                                        </div>
+                                    </div>
                                     <div><label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1">일괄 단가 (선택)</label><input type="text" id="batch-price" placeholder="예: 15000" className="w-full border dark:border-slate-600 rounded px-2 py-2 text-xs bg-slate-50 dark:bg-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-slate-500 text-right font-bold" /></div>
                                     <div><label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1">일괄 재고 (선택, 비우면 무한)</label><input type="number" id="batch-stock" placeholder="예: 50" className="w-full border dark:border-slate-600 rounded px-2 py-2 text-xs bg-slate-50 dark:bg-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-slate-500 text-right font-bold" /></div>
                                 </div>
@@ -1354,10 +2061,18 @@
                                         const stockStr = document.getElementById('batch-stock').value.trim(); const stockNum = stockStr === '' ? '' : parseInt(stockStr);
                                         if(!baseName) return openModal("기본 상품명을 입력해주세요.", "alert");
                                         const list1 = optionsStr1.split(',').map(s => s.trim()).filter(Boolean); const list2 = optionsStr2.split(',').map(s => s.trim()).filter(Boolean);
-                                        let combinations = []; if (list1.length > 0 && list2.length > 0) { list1.forEach(c => { list2.forEach(s => { combinations.push(`${baseName} ${c} ${s}`); }); }); } else if (list1.length > 0) { list1.forEach(c => combinations.push(`${baseName} ${c}`)); } else if (list2.length > 0) { list2.forEach(s => combinations.push(`${baseName} ${s}`)); } else { combinations.push(baseName); }
+                                        let combinations = [];
+                                        if (list1.length > 0 && list2.length > 0) { list1.forEach(c => { list2.forEach(s => { combinations.push(`${baseName} ${c} ${s}`); }); }); } else if (list1.length > 0) { list1.forEach(c => combinations.push(`${baseName} ${c}`)); } else if (list2.length > 0) { list2.forEach(s => combinations.push(`${baseName} ${s}`)); } else { combinations.push(baseName); }
                                         let addedCount = 0; let newInvList = [...inventory];
-                                        combinations.reverse().forEach(opt => { if(!newInvList.some(i => i.name === opt)) { newInvList.unshift({ id: `inv_${Date.now()}_${Math.random()}`, name: opt, price: priceNum, stock: stockNum, isSoldOut: false }); if (priceNum > 0) setProductHistory(h => ({...h, [opt]: priceNum})); addedCount++; } });
-                                        setInventory(newInvList); saveInventoryToServer(newInvList); setIsBatchModalOpen(false); openModal(`${addedCount}개의 상품이 일괄 등록되었습니다.`, "alert");
+                                        combinations.reverse().forEach(opt => {
+                                            if(!newInvList.some(i => i.name === opt)) {
+                                                newInvList.unshift({ id: `inv_${Date.now()}_${Math.random()}`, name: opt, price: priceNum, stock: stockNum, isSoldOut: false });
+                                                if (priceNum > 0) setProductHistory(h => ({...h, [opt]: priceNum}));
+                                                addedCount++;
+                                            }
+                                        });
+                                        setInventory(newInvList); saveInventoryToServer(newInvList); setIsBatchModalOpen(false); 
+                                        openModal(`${addedCount}개의 상품이 일괄 등록되었습니다.`, "alert");
                                     }} className="flex-1 py-2 rounded bg-slate-800 text-white font-bold text-xs shadow-sm hover:bg-slate-900">일괄 생성</button>
                                 </div>
                             </div>
@@ -1397,37 +2112,25 @@
                         </div>
                     </div>
 
-                    <div className="flex flex-col bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg shadow-sm resizable-panel" style={{ width: '34%', minWidth: '300px' }}>
-                        <div className="flex flex-col gap-1 p-2 bg-slate-100 dark:bg-slate-800 border-b dark:border-slate-700 text-center text-[10px] shrink-0">
-                            <div className="grid grid-cols-5 gap-1">
-                                {[{id:'all', label:'총매출', val:dashboardStats.totalSales, isCurrency:true}, 
-                                  {id:'no-address', label:'주소없음', val:dashboardStats.missingAddressCount, isCurrency:false, onClick:handleNoAddressClick},
-                                  {id:'no-kakao', label:'카톡없음', val:noKakaoCount, isCurrency:false},
-                                  {id:'noshow', label:'노쇼', val:Object.values(noShowCustomers).filter(Boolean).length, isCurrency:false},
-                                  {id:'waitlist', label:'대기', val:Object.values(waitlistCustomers).filter(Boolean).length, isCurrency:false}
-                                ].map(s => (
-                                    <div key={s.id} onClick={s.onClick || (()=>setFilterStatus(s.id))} className={`bg-white dark:bg-slate-800 p-1 rounded border-2 cursor-pointer shadow-sm transition-colors flex flex-col justify-center overflow-hidden ${filterStatus===s.id ? 'border-slate-600 dark:border-slate-400' : 'border-transparent hover:border-slate-300 dark:hover:border-slate-600'}`}>
-                                        <div className="text-[9px] text-slate-500">{s.label}</div>
-                                        <div className={`font-bold truncate text-[11px] ${s.id==='no-address'?'text-amber-600 dark:text-amber-400':s.id==='noshow'?'text-red-600 dark:text-red-400':s.id==='waitlist'?'text-orange-500 dark:text-orange-400':'text-slate-800 dark:text-slate-200'}`}>
-                                            {s.val.toLocaleString()}{s.isCurrency?'원':'명'}
-                                        </div>
+                    <div className="flex flex-col bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg flex flex-col shadow-sm resizable-panel" style={{ width: '34%', minWidth: '300px' }}>
+                        <div className="grid grid-cols-5 gap-1 p-2 bg-slate-100 dark:bg-slate-800 border-b dark:border-slate-700 text-center text-[10px] shrink-0">
+                            {[{id:'all', label:'총매출', val:dashboardStats.totalSales, isCurrency:true, colSpan:2}, 
+                              {id:'no-address', label:'주소없음', val:dashboardStats.missingAddressCount, isCurrency:false, onClick:handleNoAddressClick},
+                              {id:'no-kakao', label:'카톡없음', val:noKakaoCount, isCurrency:false},
+                              {id:'noshow', label:'노쇼', val:Object.values(noShowCustomers).filter(Boolean).length, isCurrency:false},
+                              {id:'waitlist', label:'대기', val:Object.values(waitlistCustomers).filter(Boolean).length, isCurrency:false},
+                              {id:'paid', label:'완납', val:dashboardStats.totalDeposit, isCurrency:true}, 
+                              {id:'unpaid', label:'미수금', val:dashboardStats.totalUnpaid, isCurrency:true}, 
+                              {id:'overpaid', label:'과납', val:dashboardStats.totalOverpaid, isCurrency:true},
+                              {id:'card', label:'카드예정', val:dashboardStats.totalCardExpected, isCurrency:true}
+                            ].map(s => (
+                                <div key={s.id} onClick={s.onClick || (()=>setFilterStatus(s.id))} className={`bg-white dark:bg-slate-800 p-1 rounded border-2 cursor-pointer shadow-sm transition-colors flex flex-col justify-center overflow-hidden ${s.colSpan === 2 ? 'col-span-2' : ''} ${filterStatus===s.id ? 'border-slate-600 dark:border-slate-400' : 'border-transparent hover:border-slate-300 dark:hover:border-slate-600'}`}>
+                                    <div className="text-[9px] text-slate-500">{s.label}</div>
+                                    <div className={`font-bold truncate ${s.colSpan ? 'text-[13px]' : 'text-[10px]'} ${s.id==='paid'?'text-green-600 dark:text-green-400':s.id==='unpaid'?'text-red-500 dark:text-red-400':s.id==='overpaid'?'text-orange-500 dark:text-orange-400':s.id==='card'?'text-purple-600 dark:text-purple-400':s.id==='no-address'?'text-amber-600 dark:text-amber-400':s.id==='noshow'?'text-red-600 dark:text-red-400':s.id==='waitlist'?'text-orange-500 dark:text-orange-400':'text-slate-800 dark:text-slate-200'}`}>
+                                        {s.val.toLocaleString()}{s.isCurrency?'원':'명'}
                                     </div>
-                                ))}
-                            </div>
-                            <div className="grid grid-cols-4 gap-1">
-                                {[{id:'paid', label:'완납', val:dashboardStats.totalDeposit, isCurrency:true}, 
-                                  {id:'unpaid', label:'미수금', val:dashboardStats.totalUnpaid, isCurrency:true}, 
-                                  {id:'overpaid', label:'과납', val:dashboardStats.totalOverpaid, isCurrency:true},
-                                  {id:'card', label:'카드예정', val:dashboardStats.totalCardExpected, isCurrency:true}
-                                ].map(s => (
-                                    <div key={s.id} onClick={s.onClick || (()=>setFilterStatus(s.id))} className={`bg-white dark:bg-slate-800 p-1 rounded border-2 cursor-pointer shadow-sm transition-colors flex flex-col justify-center overflow-hidden ${filterStatus===s.id ? 'border-slate-600 dark:border-slate-400' : 'border-transparent hover:border-slate-300 dark:hover:border-slate-600'}`}>
-                                        <div className="text-[9px] text-slate-500">{s.label}</div>
-                                        <div className={`font-bold truncate text-[11px] ${s.id==='paid'?'text-green-600 dark:text-green-400':s.id==='unpaid'?'text-red-500 dark:text-red-400':s.id==='overpaid'?'text-orange-500 dark:text-orange-400':s.id==='card'?'text-purple-600 dark:text-purple-400':'text-slate-800 dark:text-slate-200'}`}>
-                                            {s.val.toLocaleString()}{s.isCurrency?'원':'명'}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
+                                </div>
+                            ))}
                         </div>
                         <div className="p-2 flex flex-col gap-2 bg-white dark:bg-slate-800 border-b dark:border-slate-700 z-20 shadow-sm shrink-0">
                             <div className="flex justify-between items-center">
@@ -1536,8 +2239,7 @@
                         </div>
                         <div className="p-1 bg-white dark:bg-slate-800 text-center font-bold text-[10px] border-t dark:border-slate-700 shrink-0">총: <span className="text-slate-800 dark:text-slate-200 text-xs">{totalDepositAmount.toLocaleString()}</span>원</div>
                     </div>
-
-                    <div className="flex flex-col bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg shadow-sm resizable-panel" style={{ width: '13%', minWidth: '130px' }}>
+<div className="flex flex-col bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg shadow-sm resizable-panel" style={{ width: '13%', minWidth: '130px' }}>
                         <div className="p-2 bg-slate-100 dark:bg-slate-800 border-b dark:border-slate-700 flex flex-col gap-2 shrink-0">
                             <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between">
                                 <span className="flex items-center gap-1"><Icon name="address-book" weight="fill"/> 실시간 주소록</span>
@@ -1793,10 +2495,209 @@
             );
         };
 
+        const App = () => {
+            const [orders, setOrders] = useLocalStorage('youtubeOrders', []);
+            const [activeTab, setActiveTab] = useState('live');
+            
+            const [googleScriptUrl, setGoogleScriptUrl] = useLocalStorage('googleScriptUrl', 'https://script.google.com/macros/s/AKfycby4mtwu7yRnnYpG0Srj0DupWEJAX-DF1HMfOXu5QrwZ8sUIpMwfYTUKRsG435E-aUB2/exec');
+            const [chatSheetId, setChatSheetId] = useLocalStorage('chatSheetId', '199YCBXzInxmG8GforoRCNHNps21NhVIf9wHA6NXXhtg');
+            const [depSheetId, setDepSheetId] = useLocalStorage('depSheetId', '14bx2HMd_NID3zQN-Hb0x0At2Qmti7-p1Zfx1ZadNScY');
+            const [addrSheetId, setAddrSheetId] = useLocalStorage('addrSheetId', '1ywl4gRvswQpvIYtPVbSROzz7a5elbLieYhqMZmt191U');
+            const [masterSheetId, setMasterSheetId] = useLocalStorage('masterSheetId', '1B8SBMX18_Px1CpRHuDTxqodqudiTrf6NfVoptjHtnGQ');
+            const [broadcastName, setBroadcastName] = useLocalStorage('broadcastName', '오늘의방송');
+            const [bankAccount, setBankAccount] = useLocalStorage('bankAccount', FIXED_BANK_ACCOUNT);
+            
+            const [soundEnabled, setSoundEnabled] = useState(false);
+            const [soundVolume, setSoundVolume] = useLocalStorage('soundVolume', 50);
+            
+            const [addressStartDate, setAddressStartDate] = useLocalStorage('addressStartDate', '');
+
+            useEffect(() => {
+                const currentUrl = window.localStorage.getItem(getLsKey('googleScriptUrl'));
+                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycby4mtwu7yRnnYpG0Srj0DupWEJAX-DF1HMfOXu5QrwZ8sUIpMwfYTUKRsG435E-aUB2')) {
+                    setGoogleScriptUrl('https://script.google.com/macros/s/AKfycby4mtwu7yRnnYpG0Srj0DupWEJAX-DF1HMfOXu5QrwZ8sUIpMwfYTUKRsG435E-aUB2/exec');
+                    setChatSheetId('199YCBXzInxmG8GforoRCNHNps21NhVIf9wHA6NXXhtg');
+                    setDepSheetId('14bx2HMd_NID3zQN-Hb0x0At2Qmti7-p1Zfx1ZadNScY');
+                    setAddrSheetId('1ywl4gRvswQpvIYtPVbSROzz7a5elbLieYhqMZmt191U');
+                    setMasterSheetId('1B8SBMX18_Px1CpRHuDTxqodqudiTrf6NfVoptjHtnGQ');
+                }
+            }, []);
+
+            const [quickShipping, setQuickShipping] = useLocalStorage('quickShipping', 4000); 
+            const [jejuShipping, setJejuShipping] = useLocalStorage('jejuShipping', 8000);
+            const [freeShippingThreshold, setFreeShippingThreshold] = useLocalStorage('freeShippingThreshold', 70000);
+            const [templateConfig, setTemplateConfig] = useLocalStorage('templateConfig', { emoji: '💙', paidMsg: '😍 완납 확인! 감사합니다 😍', unpaidPrefix: '[미입금]\n총 입금하실 금액\n👉', overpaidMsg: '과납 금액이 있습니다.\n환불 또는 적립 여부를 알려주세요!', addrNotice: '※ 배송지 변경 시 채팅으로 변경할 주소를 남겨주세요!', surveyNotice: '방송마다 1회 하단의 주문서(배송지입력) 필수!!', alwaysRequestAddress: false });
+            const [isDarkMode, setIsDarkMode] = useLocalStorage('darkMode', false);
+            
+            const [productHistory, setProductHistory] = useLocalStorage('productHistory', {});
+            const [shippingOverrides, setShippingOverrides] = useLocalStorage('shippingOverrides', {});
+            const [addresses, setAddresses] = useLocalStorage('verifiedAddresses', []);
+            const [cardPayments, setCardPayments] = useLocalStorage('cardPayments', {});
+            const [cashReceipts, setCashReceipts] = useLocalStorage('cashReceipts', {});
+            const [manualDeposits, setManualDeposits] = useLocalStorage('manualDeposits', []);
+            
+            // 신규 노쇼/대기 상태 추가
+            const [noShowCustomers, setNoShowCustomers] = useLocalStorage('noShowCustomers', {});
+            const [waitlistCustomers, setWaitlistCustomers] = useLocalStorage('waitlistCustomers', {});
+
+            const [matchedDeposits, setMatchedDeposits] = useState(() => { try { const s = localStorage.getItem(getLsKey('matchedDeposits')); const p = JSON.parse(s); return Array.isArray(p) ? new Set(p) : new Set(); } catch(e){ return new Set(); } });
+            const [depositLinks, setDepositLinks] = useLocalStorage('depositLinks', {});
+            const [depositorNames, setDepositorNames] = useLocalStorage('depositorNames', {});
+            const [clickedChats, setClickedChats] = useState(() => { try { const s = localStorage.getItem(getLsKey('clickedChats')); const p = JSON.parse(s); return Array.isArray(p) ? new Set(p) : new Set(); } catch(e){ return new Set(); } });
+            
+            const [keywords, setKeywords] = useLocalStorage('chatKeywords', []);
+            const [sentAddressRequests, setSentAddressRequests] = useState(() => { try { const s = localStorage.getItem(getLsKey('sentAddressRequests')); const p = JSON.parse(s); return Array.isArray(p) ? new Set(p) : new Set(); } catch(e){ return new Set(); } });
+            const [deletedDepositIds, setDeletedDepositIds] = useState(() => { try { const s = localStorage.getItem(getLsKey('deletedDepositIds')); const p = JSON.parse(s); return Array.isArray(p) ? new Set(p) : new Set(); } catch(e){ return new Set(); } });
+            const [checkedOrders, setCheckedOrders] = useState(() => { try { const s = localStorage.getItem(getLsKey('checkedOrders')); const p = JSON.parse(s); return Array.isArray(p) ? new Set(p) : new Set(); } catch(e){ return new Set(); } });
+            
+            const [addressMapping, setAddressMapping] = useLocalStorage('addressMapping', {});
+            const [specialCustomers, setSpecialCustomers] = useLocalStorage('specialCustomers', {});
+            const [inventory, setInventory] = useLocalStorage('inventory', []);
+            const [quickMessages, setQuickMessages] = useLocalStorage('quickMessages', ["잠시만요!", "확인해드릴게요", "품절입니다😭", "합배송 해드릴게요", "감사합니다❤️", "다시 말씀해주세요", "입금확인완료!"]);
+            
+            const [globalError, setGlobalError] = useState('');
+            const [modalConfig, setModalConfig] = useState({ isOpen: false, type: 'alert', message: '', onConfirm: null, onCancel: null, initialValue: '' });
+            const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+            const [isVipModalOpen, setIsVipModalOpen] = useState(false);
+
+            useEffect(() => {
+                if (isDarkMode) document.documentElement.classList.add('dark');
+                else document.documentElement.classList.remove('dark');
+                document.body.className = isDarkMode ? 'dark' : '';
+            }, [isDarkMode]);
+
+            useEffect(() => { localStorage.setItem(getLsKey('matchedDeposits'), JSON.stringify([...matchedDeposits])); }, [matchedDeposits]);
+            useEffect(() => { localStorage.setItem(getLsKey('clickedChats'), JSON.stringify([...clickedChats])); }, [clickedChats]);
+            useEffect(() => { localStorage.setItem(getLsKey('sentAddressRequests'), JSON.stringify([...sentAddressRequests])); }, [sentAddressRequests]);
+            useEffect(() => { localStorage.setItem(getLsKey('deletedDepositIds'), JSON.stringify([...deletedDepositIds])); }, [deletedDepositIds]);
+            useEffect(() => { localStorage.setItem(getLsKey('checkedOrders'), JSON.stringify([...checkedOrders])); }, [checkedOrders]);
+
+            const openModal = useCallback((msg, type = 'alert', onConfirm = null, onCancel = null, initVal = '') => { setModalConfig({ isOpen: true, type, message: msg, onConfirm: (val) => { setModalConfig(p => ({...p, isOpen: false})); if(onConfirm) onConfirm(val); }, onCancel: () => { setModalConfig(p => ({...p, isOpen: false})); if(onCancel) onCancel(); }, initialValue: initVal }); }, []);
+
+            const handleResetAllData = () => {
+                openModal('정말 모든 데이터를 초기화하시겠습니까?\n(주문서, 입금 연결, 채팅 기록, 실시간 재고, 기타 설정이 모두 삭제됩니다)', 'confirm', () => {
+                    setOrders([]); setProductHistory({}); setShippingOverrides({}); setCardPayments({}); setMatchedDeposits(new Set()); setDepositLinks({}); setDepositorNames({}); setClickedChats(new Set());
+                    setKeywords([]); setSentAddressRequests(new Set()); setDeletedDepositIds(new Set()); setCheckedOrders(new Set()); setAddressMapping({}); setCashReceipts({}); setInventory([]); setManualDeposits([]); localStorage.removeItem(getLsKey('ignoredAutoMatch'));
+                    setNoShowCustomers({}); setWaitlistCustomers({});
+                    
+                    if (googleScriptUrl && masterSheetId) {
+                        fetchGas(googleScriptUrl, { action: 'save_inventory', masterId: getCleanSheetId(masterSheetId), data: [] }).catch(()=>{});
+                    }
+                });
+            };
+
+            const handleExportBackup = () => {
+                const backupData = {
+                    orders, productHistory, shippingOverrides, addresses, cardPayments, cashReceipts, manualDeposits, matchedDeposits: [...matchedDeposits], depositLinks, depositorNames, clickedChats: [...clickedChats],
+                    keywords, sentAddressRequests: [...sentAddressRequests], deletedDepositIds: [...deletedDepositIds], checkedOrders: [...checkedOrders], addressMapping, specialCustomers, inventory,
+                    noShowCustomers, waitlistCustomers, quickMessages, settings: {
+                        googleScriptUrl, chatSheetId, depSheetId, addrSheetId, masterSheetId, broadcastName, quickShipping, jejuShipping, freeShippingThreshold, templateConfig, bankAccount, addressStartDate, soundVolume
+                    }, timestamp: new Date().toISOString()
+                };
+                const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a'); a.href = url; a.download = `주문관리_백업_${new Date().toLocaleDateString()}.json`;
+                document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+            };
+
+            const handleImportBackup = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    try {
+                        const data = JSON.parse(event.target.result);
+                        openModal('백업 데이터를 복구하시겠습니까?\n현재 데이터는 덮어씌워집니다.', 'confirm', () => {
+                            if (data.orders) setOrders(data.orders);
+                            if (data.productHistory) setProductHistory(data.productHistory);
+                            if (data.shippingOverrides) setShippingOverrides(data.shippingOverrides);
+                            if (data.addresses) setAddresses(data.addresses);
+                            if (data.cardPayments) setCardPayments(data.cardPayments);
+                            if (data.cashReceipts) setCashReceipts(data.cashReceipts);
+                            if (data.manualDeposits) setManualDeposits(data.manualDeposits);
+                            if (data.matchedDeposits) setMatchedDeposits(new Set(data.matchedDeposits));
+                            if (data.depositLinks) setDepositLinks(data.depositLinks);
+                            if (data.depositorNames) setDepositorNames(data.depositorNames);
+                            if (data.clickedChats) setClickedChats(new Set(data.clickedChats));
+                            if (data.keywords) setKeywords(data.keywords);
+                            if (data.sentAddressRequests) setSentAddressRequests(new Set(data.sentAddressRequests));
+                            if (data.deletedDepositIds) setDeletedDepositIds(new Set(data.deletedDepositIds));
+                            if (data.checkedOrders) setCheckedOrders(new Set(data.checkedOrders));
+                            if (data.addressMapping) setAddressMapping(data.addressMapping);
+                            if (data.specialCustomers) setSpecialCustomers(data.specialCustomers);
+                            if (data.inventory) setInventory(data.inventory);
+                            if (data.noShowCustomers) setNoShowCustomers(data.noShowCustomers);
+                            if (data.waitlistCustomers) setWaitlistCustomers(data.waitlistCustomers);
+                            if (data.quickMessages) setQuickMessages(data.quickMessages);
+                            
+                            if (data.settings) {
+                                if(data.settings.googleScriptUrl) setGoogleScriptUrl(data.settings.googleScriptUrl);
+                                if(data.settings.chatSheetId) setChatSheetId(data.settings.chatSheetId);
+                                if(data.settings.depSheetId) setDepSheetId(data.settings.depSheetId);
+                                if(data.settings.addrSheetId) setAddrSheetId(data.settings.addrSheetId);
+                                if(data.settings.masterSheetId) setMasterSheetId(data.settings.masterSheetId);
+                                if(data.settings.broadcastName) setBroadcastName(data.settings.broadcastName);
+                                if(data.settings.quickShipping !== undefined) setQuickShipping(data.settings.quickShipping);
+                                if(data.settings.jejuShipping !== undefined) setJejuShipping(data.settings.jejuShipping);
+                                if(data.settings.freeShippingThreshold !== undefined) setFreeShippingThreshold(data.settings.freeShippingThreshold);
+                                if(data.settings.templateConfig) setTemplateConfig(data.settings.templateConfig);
+                                if(data.settings.bankAccount) setBankAccount(data.settings.bankAccount);
+                                if(data.settings.addressStartDate) setAddressStartDate(data.settings.addressStartDate);
+                                if(data.settings.soundVolume !== undefined) setSoundVolume(data.settings.soundVolume);
+                            }
+                            openModal('백업 데이터 복구가 완료되었습니다.', 'alert');
+                        });
+                    } catch (error) {
+                        openModal('잘못된 백업 파일입니다.', 'alert');
+                    }
+                };
+                reader.readAsText(file);
+                e.target.value = '';
+            };
+
+            return (
+                <div className={`h-screen flex flex-col ${isDarkMode ? 'dark' : ''} text-slate-800 dark:text-slate-100 bg-slate-50 dark:bg-slate-900 overflow-hidden`}>
+                    {globalError && (
+                        <div className="bg-red-500 text-white text-xs py-1 px-4 text-center font-bold shadow-md relative z-50 flex items-center justify-center gap-2">
+                            <span>{globalError}</span>
+                            <button onClick={()=>setGlobalError('')} className="ml-2 bg-red-700 px-2 py-0.5 rounded hover:bg-red-800 transition-colors">닫기</button>
+                        </div>
+                    )}
+                    
+                    <div className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 shadow-sm px-4 py-2 flex justify-between items-center z-10 shrink-0">
+                        <div className="flex items-center gap-3">
+                            <h1 className="text-xl font-black tracking-tight text-slate-800 dark:text-white flex items-center gap-2"><Icon name="shopping-bag" weight="fill" className="text-blue-500" /> 주문서 관리 시스템</h1>
+                            <div className="flex bg-slate-100 dark:bg-slate-900 rounded-lg p-1 ml-4 shadow-inner border dark:border-slate-700">
+                                <button onClick={() => setActiveTab('live')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${activeTab === 'live' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-600 dark:text-blue-400 border border-slate-200 dark:border-slate-600' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}><Icon name="broadcast" weight={activeTab === 'live' ? 'fill' : 'regular'} className="inline-block mr-1"/> 라이브</button>
+                                <button onClick={() => setActiveTab('management')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${activeTab === 'management' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-600 dark:text-blue-400 border border-slate-200 dark:border-slate-600' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}><Icon name="kanban" weight={activeTab === 'management' ? 'fill' : 'regular'} className="inline-block mr-1"/> 정산 / 내보내기</button>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button onClick={() => setSoundEnabled(!soundEnabled)} className={`p-2 rounded-full transition-colors flex items-center justify-center border shadow-sm ${soundEnabled ? 'bg-blue-50 border-blue-200 text-blue-600 dark:bg-blue-900/30 dark:border-blue-700/50 dark:text-blue-400' : 'bg-slate-100 border-slate-200 text-slate-400 dark:bg-slate-800 dark:border-slate-700'}`} title={soundEnabled ? "알림음 켜짐" : "알림음 꺼짐"}><Icon name={soundEnabled ? "speaker-high" : "speaker-slash"} weight="fill" size={18} /></button>
+                            <button onClick={() => setIsVipModalOpen(true)} className="p-2 bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800/50 hover:bg-amber-100 dark:hover:bg-amber-900/40 rounded-full transition-colors flex items-center justify-center shadow-sm" title="VIP 관리"><Icon name="crown" weight="fill" size={18} /></button>
+                            <button onClick={() => setIsSettingsOpen(!isSettingsOpen)} className="p-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors flex items-center justify-center shadow-sm" title="환경설정"><Icon name="gear" weight="fill" size={18} /></button>
+                            <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors flex items-center justify-center shadow-sm" title={isDarkMode ? "라이트 모드로 전환" : "다크 모드로 전환"}><Icon name={isDarkMode ? "sun" : "moon"} weight="fill" size={18} /></button>
+                        </div>
+                    </div>
+
+                    {isSettingsOpen && <SettingsModalContent googleScriptUrl={googleScriptUrl} setGoogleScriptUrl={setGoogleScriptUrl} chatSheetId={chatSheetId} setChatSheetId={setChatSheetId} depSheetId={depSheetId} setDepSheetId={setDepSheetId} addrSheetId={addrSheetId} setAddrSheetId={setAddrSheetId} masterSheetId={masterSheetId} setMasterSheetId={setMasterSheetId} broadcastName={broadcastName} setBroadcastName={setBroadcastName} quickShipping={quickShipping} setQuickShipping={setQuickShipping} jejuShipping={jejuShipping} setJejuShipping={setJejuShipping} freeShippingThreshold={freeShippingThreshold} setFreeShippingThreshold={setFreeShippingThreshold} templateConfig={templateConfig} setTemplateConfig={setTemplateConfig} bankAccount={bankAccount} setBankAccount={setBankAccount} quickMessages={quickMessages} setQuickMessages={setQuickMessages} addressStartDate={addressStartDate} setAddressStartDate={setAddressStartDate} soundVolume={soundVolume} setSoundVolume={setSoundVolume} setIsSettingsOpen={setIsSettingsOpen} />}
+
+                    <div className="flex-1 overflow-hidden">
+                        {activeTab === 'live' ? (
+                            <LiveTab orders={orders} setOrders={setOrders} productHistory={productHistory} setProductHistory={setProductHistory} quickShipping={quickShipping} jejuShipping={jejuShipping} freeShippingThreshold={freeShippingThreshold} shippingOverrides={shippingOverrides} setShippingOverrides={setShippingOverrides} bankAccount={bankAccount} googleScriptUrl={googleScriptUrl} chatSheetId={chatSheetId} depSheetId={depSheetId} addrSheetId={addrSheetId} masterSheetId={masterSheetId} addresses={addresses} setAddresses={setAddresses} cardPayments={cardPayments} setCardPayments={setCardPayments} manualDeposits={manualDeposits} setManualDeposits={setManualDeposits} matchedDeposits={matchedDeposits} setMatchedDeposits={setMatchedDeposits} depositLinks={depositLinks} setDepositLinks={setDepositLinks} depositorNames={depositorNames} setDepositorNames={setDepositorNames} clickedChats={clickedChats} setClickedChats={setClickedChats} openModal={openModal} keywords={keywords} setKeywords={setKeywords} sentAddressRequests={sentAddressRequests} setSentAddressRequests={setSentAddressRequests} deletedDepositIds={deletedDepositIds} setDeletedDepositIds={setDeletedDepositIds} checkedOrders={checkedOrders} setCheckedOrders={setCheckedOrders} addressMapping={addressMapping} setAddressMapping={setAddressMapping} templateConfig={templateConfig} specialCustomers={specialCustomers} setSpecialCustomers={setSpecialCustomers} inventory={inventory} setInventory={setInventory} quickMessages={quickMessages} handleResetAllData={handleResetAllData} broadcastName={broadcastName} setGlobalError={setGlobalError} cashReceipts={cashReceipts} setCashReceipts={setCashReceipts} soundEnabled={soundEnabled} soundVolume={soundVolume} noShowCustomers={noShowCustomers} setNoShowCustomers={setNoShowCustomers} waitlistCustomers={waitlistCustomers} setWaitlistCustomers={setWaitlistCustomers} />
+                        ) : (
+                            <OrderManagementTab orders={orders} shippingOverrides={shippingOverrides} quickShipping={quickShipping} jejuShipping={jejuShipping} freeShippingThreshold={freeShippingThreshold} broadcastName={broadcastName} addresses={addresses} handleExportBackup={handleExportBackup} handleImportBackup={handleImportBackup} addressMapping={addressMapping} cardPayments={cardPayments} specialCustomers={specialCustomers} openModal={openModal} cashReceipts={cashReceipts} inventory={inventory} productHistory={productHistory} />
+                        )}
+                    </div>
+
+                    <Modal isOpen={modalConfig.isOpen} type={modalConfig.type} message={modalConfig.message} onConfirm={modalConfig.onConfirm} onCancel={modalConfig.onCancel} initialValue={modalConfig.initialValue} />
+                    <VipModal isOpen={isVipModalOpen} onClose={() => setIsVipModalOpen(false)} specialCustomers={specialCustomers} setSpecialCustomers={setSpecialCustomers} />
+                </div>
+            );
+        };
+
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
     </script>
 </body>
 </html>
-
-```
