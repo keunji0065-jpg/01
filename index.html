@@ -1334,7 +1334,7 @@ useEffect(() => {
                                 combined.forEach(c => {
                                     if (!deduplicatedMap.has(c.id)) deduplicatedMap.set(c.id, c);
                                 });
-                                return Array.from(deduplicatedMap.values()).slice(0, 1000); 
+                                return Array.from(deduplicatedMap.values()).slice(0, 50000); 
                             });
                             statusMsg += `채팅(${newChats.length}) `;
                         } else {
