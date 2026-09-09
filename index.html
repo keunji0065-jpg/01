@@ -1413,7 +1413,7 @@ useEffect(() => {
             const unsavedChatsRef = useRef([]);
 
             // ✨ 추가: 유튜브 요구 폴링 간격 및 GAS 중복 실행 방지 락
-            const chatPollingIntervalRef = useRef(2000);
+            const chatPollingIntervalRef = useRef(6000); // ✨ 기본값을 6초로 늘려 API 쿼터 폭발 방지
             const isGasFetchingRef = useRef(false);
 
           const inventoryStats = useMemo(() => {
@@ -1707,9 +1707,9 @@ useEffect(() => {
                         } else {
                             if (data.nextPageToken) chatNextPageTokenRef.current = data.nextPageToken;
                             
-                            // ✨ 핵심 픽스 1: 유튜브 서버가 요구하는 폴링 간격(pollingIntervalMillis) 캡처 (최소 2초 유지)
+                            // ✨ 핵심 픽스 1: 유튜브 서버가 요구하는 폴링 간격 캡처 (최소 6초로 제한하여 쿼터 소모 1/3로 감소)
                             if (data.pollingIntervalMillis) {
-                                chatPollingIntervalRef.current = Math.max(2000, data.pollingIntervalMillis);
+                                chatPollingIntervalRef.current = Math.max(6000, data.pollingIntervalMillis);
                             }
                             
                             if (data.items && data.items.length > 0) {
@@ -1912,17 +1912,14 @@ useEffect(() => {
         useEffect(() => { 
             let isMounted = true;
             let timerId = null;
-            let tick = 0;
             
             const poll = async () => {
                 if (!isMounted) return;
                 
-                const isHeavyFetch = (tick % 3 === 0);
-                await fetchAllDataRef.current(isHeavyFetch);
-                tick++;
+                // ✨ 유튜브 폴링 주기가 6초로 길어졌으므로, 구글시트도 매 틱마다(6초마다) 안정적으로 동기화
+                await fetchAllDataRef.current(true);
 
                 if (isMounted) {
-                    // ✨ 핵심 픽스 3: 동적으로 캡처한 폴링 간격을 적용하여 API 차단 방지 (기본 2초 이상)
                     timerId = setTimeout(poll, chatPollingIntervalRef.current); 
                 }
             };
