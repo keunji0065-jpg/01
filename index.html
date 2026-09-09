@@ -1413,7 +1413,7 @@ useEffect(() => {
             const unsavedChatsRef = useRef([]);
 
             // ✨ 추가: 유튜브 요구 폴링 간격 및 GAS 중복 실행 방지 락
-            const chatPollingIntervalRef = useRef(6000); // ✨ 기본값을 6초로 늘려 API 쿼터 폭발 방지
+            const chatPollingIntervalRef = useRef(4000);
             const isGasFetchingRef = useRef(false);
 
           const inventoryStats = useMemo(() => {
@@ -1707,9 +1707,9 @@ useEffect(() => {
                         } else {
                             if (data.nextPageToken) chatNextPageTokenRef.current = data.nextPageToken;
                             
-                            // ✨ 핵심 픽스 1: 유튜브 서버가 요구하는 폴링 간격 캡처 (최소 6초로 제한하여 쿼터 소모 1/3로 감소)
+                            // ✨ 핵심 픽스 1: 유튜브 서버가 요구하는 폴링 간격(pollingIntervalMillis) 캡처 (최소 4초 유지)
                             if (data.pollingIntervalMillis) {
-                                chatPollingIntervalRef.current = Math.max(6000, data.pollingIntervalMillis);
+                                chatPollingIntervalRef.current = Math.max(4000, data.pollingIntervalMillis);
                             }
                             
                             if (data.items && data.items.length > 0) {
