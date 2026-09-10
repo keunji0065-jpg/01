@@ -851,11 +851,23 @@ useEffect(() => {
                         ) : (
                             <div className="flex flex-col gap-1.5">
                                 <div className="flex justify-between items-start gap-2">
-                                    <div className={`flex-1 font-bold text-[13px] leading-snug break-all cursor-pointer select-none ${item.isSoldOut ? 'text-red-500 dark:text-red-400 line-through opacity-80' : 'text-slate-800 dark:text-slate-200 hover:text-blue-600 dark:hover:text-blue-400'}`} title="1번 클릭: 제품명 복사 / 2번 클릭: 상단 고정 / 3번 클릭(또는 우클릭): 메뉴판 요약 복사"
-                                        onClick={handleMultiClick}
-                                        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); executeSmartCopy(e.currentTarget); }}
-                                    >
-                                        {item.name}
+                                    <div className="flex-1 flex items-start gap-1.5 min-w-0">
+                                        {/* ✨ 핀 버튼 추가: 클릭 시 수동 입력창에 고정 */}
+                                        <button onClick={(e) => {
+                                            e.stopPropagation();
+                                            setManualProduct(item.name); 
+                                            setManualPrice(item.price ? Number(item.price).toLocaleString() : '');
+                                            setIsFixedProductMode(true); 
+                                            document.getElementById('manual-prod-input')?.focus();
+                                        }} className="mt-0.5 text-slate-400 hover:text-blue-500 shrink-0 transition-colors" title="수동 입력창에 상품 고정">
+                                            <Icon name="push-pin" weight="fill" size={14}/>
+                                        </button>
+                                        <div className={`flex-1 font-bold text-[13px] leading-snug break-all cursor-pointer select-none ${item.isSoldOut ? 'text-red-500 dark:text-red-400 line-through opacity-80' : 'text-slate-800 dark:text-slate-200 hover:text-blue-600 dark:hover:text-blue-400'}`} title="1번 클릭: 제품명 복사 / 2번 클릭: 상단 고정 / 3번 클릭(우클릭): 메뉴판 요약 복사"
+                                            onClick={handleMultiClick}
+                                            onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); executeSmartCopy(e.currentTarget); }}
+                                        >
+                                            {item.name}
+                                        </div>
                                     </div>
                                     <div className="flex items-center justify-end shrink-0 gap-1 mt-0.5">
                                         <button onClick={(e) => { e.stopPropagation(); handleToggleSoldOut(); }} className={`px-1.5 py-0.5 rounded text-[9px] font-bold shadow-sm transition-colors ${item.isSoldOut ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-slate-200 text-slate-600 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600'}`}>{item.isSoldOut ? '판매' : '품절'}</button>
@@ -997,7 +1009,7 @@ useEffect(() => {
                         {/* ✨ 대기 상태 뱃지 추가 */}
                         {!item.isCancelled && item.isWaitlist && <span className="text-[9px] text-orange-500 font-bold shrink-0">[대기]</span>}
                         
-                        <input id={`prod-input-${item.id}`} type="text" list="product-list" value={localProduct} 
+                        <input id={`prod-input-${item.id}`} type="text" list="product-list" autoComplete="off" value={localProduct} 
                             onChange={(e) => {
                                 const val = e.target.value; setLocalProduct(val);
                                 const invItem = Array.isArray(inventory) ? inventory.find(i => String(i.name).trim() === String(val).trim()) : null;
@@ -2897,6 +2909,7 @@ const dashboardStats = useMemo(() => {
                                                 id="manual-prod-input" 
                                                 type="text" 
                                                 list="product-list" 
+                                                autoComplete="off"
                                                 placeholder="상품명" 
                                                 value={manualProduct} 
                                                 onChange={e => {
