@@ -1928,7 +1928,7 @@ useEffect(() => {
             const poll = async () => {
                 if (!isMounted) return;
                 
-                // ✨ 유튜브 폴링 주기가 6초로 길어졌으므로, 구글시트도 매 틱마다(6초마다) 안정적으로 동기화
+                // ✨ 구글 시트 동기화 속도 대폭 향상: 채팅 폴링 주기(4초)마다 입금내역도 항상 가져옴!
                 await fetchAllDataRef.current(true);
 
                 if (isMounted) {
@@ -2375,9 +2375,19 @@ const dashboardStats = useMemo(() => {
                     if (googleScriptUrl && masterSheetId) {
                         fetchGas(googleScriptUrl, { action: 'save_customer_management', masterId: getCleanSheetId(masterSheetId), data: { nickname: nick, type: nextStatus ? 'noshow' : '' } }).catch(()=>{});
                     }
+                    
+                    // ✨ 노쇼 등록 시 해당 고객의 모든 주문을 자동으로 취소 처리
+                    if (nextStatus) {
+                        setTimeout(() => {
+                            setOrders(prevOrders => prevOrders.map(o => 
+                                o.customer === nick ? { ...o, isCancelled: true } : o
+                            ));
+                        }, 0);
+                    }
+                    
                     return { ...prev, [nick]: nextStatus };
                 });
-            }, [setNoShowCustomers, googleScriptUrl, masterSheetId]);
+            }, [setNoShowCustomers, googleScriptUrl, masterSheetId, setOrders]);
             
             const toggleWaitlist = useCallback((nick) => {
                 setWaitlistCustomers(prev => {
