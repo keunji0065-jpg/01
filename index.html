@@ -814,6 +814,21 @@ useEffect(() => {
                     setLocalName(item.name);
                     return;
                 }
+                
+                // ✨ 추가: 상품명이 변경된 경우, 기존에 해당 상품을 주문한 모든 내역의 상품명도 일괄 업데이트
+                if (newName !== item.name) {
+                    setOrders(prevOrders => prevOrders.map(o => o.product === item.name ? { ...o, product: newName } : o));
+                    
+                    // 주문 입력시 불러오는 가격 히스토리 데이터도 새 이름으로 복사해 둡니다.
+                    setProductHistory(prevHist => {
+                        const next = { ...prevHist };
+                        if (next[item.name] !== undefined) {
+                            next[newName] = next[item.name];
+                        }
+                        return next;
+                    });
+                }
+
                 setIsEditing(false);
             };
 
@@ -837,7 +852,9 @@ useEffect(() => {
 
             const handleCopyNames = () => {
                 if (aggregatedOrders.length === 0) return;
-                const text = aggregatedOrders.map(a => a.customer).join(', ');
+                const title = `🔹 ${item.name} (총 ${orderedCount}개)\n`;
+                const names = aggregatedOrders.map(a => a.quantity > 1 ? `${a.customer}(${a.quantity})` : a.customer).join(', ');
+                const text = title + names;
                 const textArea = document.createElement("textarea"); textArea.value = text; document.body.appendChild(textArea); textArea.select();
                 try { document.execCommand('copy'); openModal('명단이 복사되었습니다.', 'alert'); } catch (err) {} document.body.removeChild(textArea);
             };
@@ -1065,11 +1082,19 @@ useEffect(() => {
 
         const CustomerBlock = memo(({ nick, items, isSelected, currentShipping, isCard, isPaidState, grandTotal, depositTotal, balance, baseGrandTotal, baseBalance, addr, addrType, addrConflict, addressMapping, autoDepositorName, displayDepositorName, isAutoDepositor, depositorNames, copyStatus, isOrderConfirmed, isEditingShipping, setSelectedNick, addOrderLogic, handleNicknameEdit, toggleCardPayment, handleShippingChange, setEditingShippingNick, openModal, setDepositorNames, handleFullDepositToggle, copyOrderSheet, handleOrderCheckToggle, handleAddressUnmapping, handleAddressMapping, handlePromoteAddress, handleProductChange, handleQuantityUpdate, handleOrderCancel, handleOrderDelete, toggleVIP, specialCustomers, handleOpenQuickAddress, findAddressSuggestions, cashReceiptStatus, toggleCashReceipt, inventory, productHistory, customerDeposits, handleDepositUnmatch, handleMultiAddOpen, toggleNoShow, toggleWaitlist, noShowStatus, waitlistStatus }) => {
             let borderClass = 'border-transparent', headerBgClass = 'bg-white dark:bg-slate-800';
-            if (isCard) { borderClass = 'border-slate-300 ring-1 ring-slate-300'; headerBgClass = 'bg-slate-50'; } 
-            else if (!isPaidState && balance > 0) { borderClass = 'border-red-200 ring-1 ring-red-200'; headerBgClass = 'bg-red-50'; } 
-            else if (balance < 0 && !isCard) { borderClass = 'border-slate-300 ring-1 ring-slate-300'; headerBgClass = 'bg-slate-100'; } 
-            else if (isPaidState) { borderClass = 'border-slate-200'; headerBgClass = 'bg-white'; } 
-            if (isSelected) { headerBgClass = 'bg-slate-100'; borderClass = 'border-slate-500 ring-2 ring-slate-400 shadow-lg relative z-10'; }
+            
+            // ✨ 미납/과납 시 카드 전체 테두리와 배경색을 강력하게 변경
+            if (isSelected) { 
+                headerBgClass = 'bg-slate-100 dark:bg-slate-700'; borderClass = 'border-slate-500 ring-2 ring-slate-500 shadow-lg relative z-10'; 
+            } else if (isCard) { 
+                borderClass = 'border-slate-300 ring-1 ring-slate-300'; headerBgClass = 'bg-slate-50 dark:bg-slate-800/80'; 
+            } else if (!isPaidState && balance > 0) { 
+                borderClass = 'border-red-500 ring-2 ring-red-500 shadow-md'; headerBgClass = 'bg-red-50 dark:bg-red-900/20'; // 🔥 미납 시 강력한 빨간색
+            } else if (balance < 0 && !isCard) { 
+                borderClass = 'border-blue-500 ring-2 ring-blue-500 shadow-md'; headerBgClass = 'bg-blue-50 dark:bg-blue-900/20'; // 💧 과납 시 강력한 파란색
+            } else if (isPaidState) { 
+                borderClass = 'border-slate-200 dark:border-slate-700'; headerBgClass = 'bg-white dark:bg-slate-800'; 
+            }
             
             const suggestions = useMemo(() => findAddressSuggestions ? findAddressSuggestions(nick) : [], [nick, findAddressSuggestions]);
             const isVip = useMemo(() => { const nickNorm = normalizeString(nick); const key = Object.keys(specialCustomers || {}).find(k => normalizeString(k) === nickNorm); return key && specialCustomers[key].type === 'vip'; }, [specialCustomers, nick]);
@@ -1128,14 +1153,16 @@ useEffect(() => {
                             </div>
                         </div>
                         <div className="flex flex-col items-end justify-start gap-0.5 text-xs shrink-0 whitespace-nowrap ml-2 mt-0.5">
-                            <div className={`font-bold text-sm text-right ${isPaidState && balance === 0 ? 'text-green-600' : (balance < 0 ? 'text-slate-600' : 'text-slate-800')}`}>{grandTotal.toLocaleString()}원</div>
+                            {/* ✨ 총 주문금액 숫자 자체도 금액이 안 맞으면 크기를 키우고 빨간/파란색으로 강조 */}
+                            <div className={`font-black text-right ${isPaidState && balance === 0 ? 'text-green-600 text-sm' : (balance < 0 ? 'text-blue-600 text-[15px]' : (balance > 0 ? 'text-red-600 text-[15px]' : 'text-slate-800 text-sm'))}`}>{grandTotal.toLocaleString()}원</div>
                             {isCard ? (
                                 <div className="flex flex-col items-end"><div className="text-[10px] text-slate-600 font-bold text-right leading-tight mt-0.5">입금: {depositTotal.toLocaleString()}<br/>카드: {Math.max(0, balance).toLocaleString()}</div></div>
                             ) : (
                                 <>
-                                    {balance !== 0 && depositTotal > 0 && (<div className="text-[10px] text-slate-500 text-right mt-0.5">입금: {depositTotal.toLocaleString()}</div>)}
-                                    {balance > 0 && (<div className="text-[10px] font-bold text-red-500 text-right mt-0.5">미납: {balance.toLocaleString()}</div>)}
-                                    {balance < 0 && (<div className="text-[10px] font-bold text-slate-600 text-right mt-0.5">과납: {Math.abs(balance).toLocaleString()}</div>)}
+                                    {/* ✨ 미납/과납 발생 시 입금액과 미납액을 색상 박스와 굵은 폰트로 확 띄게 처리 */}
+                                    {balance !== 0 && depositTotal > 0 && (<div className={`text-[11px] font-black text-right mt-0.5 ${balance > 0 ? 'text-red-500' : 'text-blue-500'}`}>입금: {depositTotal.toLocaleString()}</div>)}
+                                    {balance > 0 && (<div className="text-[12px] font-black text-red-600 bg-red-100 dark:bg-red-900/40 px-1.5 py-0.5 rounded text-right mt-0.5">미납: {balance.toLocaleString()}</div>)}
+                                    {balance < 0 && (<div className="text-[12px] font-black text-blue-600 bg-blue-100 dark:bg-blue-900/40 px-1.5 py-0.5 rounded text-right mt-0.5">과납: {Math.abs(balance).toLocaleString()}</div>)}
                                 </>
                             )}
                         </div>
@@ -1681,257 +1708,267 @@ useEffect(() => {
                 getChatId();
             }, [activeApiKey, youtubeVideoId, setGlobalError, handleKeySwitch]);
 
-            const fetchAllData = useCallback(async (isHeavyFetch = true) => {
-                let statusMsg = "동기화: ";
+        const [youtubeStatus, setYoutubeStatus] = useState("채팅(대기)");
+        const [gasStatus, setGasStatus] = useState("입금(대기)");
 
-                if (activeApiKey && liveChatId) {
-                    try {
-                        let url = `https://www.googleapis.com/youtube/v3/liveChat/messages?liveChatId=${liveChatId}&part=snippet,authorDetails&maxResults=200&key=${activeApiKey}`;
-                        if (chatNextPageTokenRef.current) url += `&pageToken=${chatNextPageTokenRef.current}`;
-                        
-                        const res = await fetch(url);
-                        const data = await res.json();
-                        
-                        if (!res.ok) {
-                            if (res.status === 403) {
-                                // ✨ 403이면 빨간 에러 배너 띄우지 않고 조용히 키 교체
-                                handleKeySwitch();
-                                statusMsg += `채팅(키교체중⚡) `;
-                            } else {
-                                statusMsg += `채팅(에러:${res.status}) `;
-                                // ✨ 수정: 404, 500, 503 등 기타 서버 오류가 나도 작업 방해를 막기 위해 setGlobalError(빨간 창)를 띄우지 않고 상태메시지만 남김
-                            }
-                        } else {
-                            if (data.nextPageToken) chatNextPageTokenRef.current = data.nextPageToken;
-                            
-                            // ✨ 핵심 픽스 1: 유튜브 서버가 요구하는 폴링 간격(pollingIntervalMillis) 캡처 (최소 4초 유지)
-                            if (data.pollingIntervalMillis) {
-                                chatPollingIntervalRef.current = Math.max(4000, data.pollingIntervalMillis);
-                            }
-                            
-                            if (data.items && data.items.length > 0) {
-                                const newChats = data.items.map(item => ({
-                                    id: item.id,
-                                    time: new Date(item.snippet.publishedAt).toLocaleTimeString('ko-KR', {hour12: false, hour:'2-digit', minute:'2-digit', second:'2-digit'}),
-                                    nickname: item.authorDetails.displayName.replace(/@/g, '').trim(),
-                                    content: item.snippet.displayMessage
-                                }));
-                                
-                                setChats(prev => {
-                                    const deduplicatedMap = new Map();
-                                    [...prev, ...newChats].forEach(c => deduplicatedMap.set(c.id, c));
-                                    return Array.from(deduplicatedMap.values()); 
-                                });
-                                
-                                if (googleScriptUrl && masterSheetId && broadcastName) {
-                                    unsavedChatsRef.current.push(...newChats);
-                                }
-                                
-                                statusMsg += `채팅(${newChats.length}) `;
-                            } else {
-                                statusMsg += `채팅(없음) `;
-                            }
-                        }
-                    } catch (e) {
-                        statusMsg += `채팅(오류) `;
+        const fetchYoutubeData = useCallback(async () => {
+            if (!activeApiKey || !liveChatId) {
+                setYoutubeStatus("채팅(대기)");
+                return;
+            }
+            try {
+                let url = `https://www.googleapis.com/youtube/v3/liveChat/messages?liveChatId=${liveChatId}&part=snippet,authorDetails&maxResults=200&key=${activeApiKey}`;
+                if (chatNextPageTokenRef.current) url += `&pageToken=${chatNextPageTokenRef.current}`;
+                
+                const res = await fetch(url);
+                const data = await res.json();
+                
+                if (!res.ok) {
+                    if (res.status === 403) {
+                        handleKeySwitch();
+                        setYoutubeStatus(`채팅(키교체중⚡)`);
+                    } else {
+                        setYoutubeStatus(`채팅(에러:${res.status})`);
                     }
                 } else {
-                    statusMsg += `채팅(대기) `;
+                    if (data.nextPageToken) chatNextPageTokenRef.current = data.nextPageToken;
+                    if (data.pollingIntervalMillis) {
+                        chatPollingIntervalRef.current = Math.max(4000, data.pollingIntervalMillis);
+                    }
+                    if (data.items && data.items.length > 0) {
+                        const newChats = data.items.map(item => ({
+                            id: item.id,
+                            time: new Date(item.snippet.publishedAt).toLocaleTimeString('ko-KR', {hour12: false, hour:'2-digit', minute:'2-digit', second:'2-digit'}),
+                            nickname: item.authorDetails.displayName.replace(/@/g, '').trim(),
+                            content: item.snippet.displayMessage
+                        }));
+                        
+                        setChats(prev => {
+                            const deduplicatedMap = new Map();
+                            [...prev, ...newChats].forEach(c => deduplicatedMap.set(c.id, c));
+                            return Array.from(deduplicatedMap.values()); 
+                        });
+                        
+                        if (googleScriptUrl && masterSheetId && broadcastName) {
+                            unsavedChatsRef.current.push(...newChats);
+                        }
+                        setYoutubeStatus(`채팅(${newChats.length})`);
+                    } else {
+                        setYoutubeStatus(`채팅(없음)`);
+                    }
                 }
-
-                if (!isHeavyFetch) {
-                setSyncStatus(prev => prev === statusMsg + " (채팅 쾌속 모드⚡)" ? prev : statusMsg + " (채팅 쾌속 모드⚡)");
-                return;
+            } catch (e) {
+                setYoutubeStatus(`채팅(오류)`);
             }
+        }, [activeApiKey, liveChatId, handleKeySwitch, setChats, googleScriptUrl, masterSheetId, broadcastName]);
 
+        const fetchGasData = useCallback(async () => {
             if (!googleScriptUrl) {
-                setSyncStatus("설정 ⚙️: 통합 앱스 스크립트 URL을 입력하세요!");
+                setGasStatus("설정 ⚙️: 스크립트 URL 입력!");
                 return;
             }
-
-            // ✨ 핵심 픽스 2: GAS(구글시트) 연동 로직이 유튜브 채팅 폴링을 블로킹(먹통)시키지 않도록 백그라운드로 분리
-            if (isGasFetchingRef.current) {
-                setSyncStatus(statusMsg + " (구글시트 로딩중...⏳)");
-                return;
-            }
+            if (isGasFetchingRef.current) return;
 
             isGasFetchingRef.current = true;
+            
+            // ✨ 추가: 8초 이상 응답이 없을 경우 지연 경고 표시 (빈 행 삭제 유도)
+            const slowWarningTimer = setTimeout(() => {
+                setGasStatus("⏳ 시트 로딩 지연 (빈 행/열을 삭제해주세요!)");
+            }, 8000);
 
-            // async 래퍼로 감싸서 백그라운드로 던져버리고 즉시 함수를 반환(return)합니다.
-            (async () => {
+            try {
                 let gasMsg = "";
-                try {
-                    const fetchUrl = `${googleScriptUrl}?action=get_all&depId=${getCleanSheetId(depSheetId)}&addrId=${getCleanSheetId(addrSheetId)}&masterId=${getCleanSheetId(masterSheetId)}&skipHeavy=false&t=${Date.now()}`;
-                    const res = await fetchGas(fetchUrl);
+                const fetchUrl = `${googleScriptUrl}?action=get_all&depId=${getCleanSheetId(depSheetId)}&addrId=${getCleanSheetId(addrSheetId)}&masterId=${getCleanSheetId(masterSheetId)}&skipHeavy=false&t=${Date.now()}`;
+                const res = await fetchGas(fetchUrl);
+                
+                clearTimeout(slowWarningTimer); // ✨ 정상 응답 시 경고 타이머 해제
+                
+                if (res && res.status === 'success') {
+                    if (res.deposits && Array.isArray(res.deposits)) {
+                        let depRows = res.deposits;
+                        if (depRows.length > 0 && depRows[0].some(c => typeof c === 'string' && (c.includes('이름') || c.includes('금액') || c.includes('닉네임')))) depRows = depRows.slice(1);
+                        const newDeps = depRows.map((row, idx) => {
+                            const validCells = row.filter(cell => cell !== null && cell !== undefined && String(cell).trim() !== '');
+                            if (validCells.length < 2) return null;
+                            let amountIdx = -1;
+                            for (let i = 0; i < validCells.length; i++) {
+                                const val = String(validCells[i]).trim(); const num = Number(val.replace(/,/g, ''));
+                                if (!isNaN(num) && num > 0 && val.match(/^[0-9,]+$/)) { amountIdx = i; break; }
+                            }
+                            if (amountIdx === -1) return null;
+                            let nameIdx = amountIdx > 0 ? amountIdx - 1 : amountIdx + 1;
+                            let timeIdx = -1;
+                            if (amountIdx === 2 && String(validCells[0]).match(/[0-9]/)) { timeIdx = 0; nameIdx = 1; } 
+                            else if (amountIdx === 1 && validCells.length > 2) { nameIdx = 0; timeIdx = 2; }
+                            let rawName = String(validCells[nameIdx] || '').trim();
+                            let name = rawName.replace(/^[:"'\-\s]+/, '').replace(/^입\s+/, '').trim();
+                            let amount = Number(String(validCells[amountIdx]).replace(/,/g, ''));
+                            let time = timeIdx !== -1 ? String(validCells[timeIdx]).trim() : '';
+                            return { id: `d_${idx}_${time}_${name}_${amount}`, time, name, amount };
+                        }).filter(d => d !== null && d.name && d.amount > 0).reverse();
+                        
+                        const depIds = newDeps.map(d => d.id).join(',');
+                        if(depIds !== prevDepsStr.current) {
+                            if (newDeps.length > prevDepCount.current && prevDepCount.current !== 0) playCoinSound();
+                            setServerDeposits(newDeps);
+                            prevDepsStr.current = depIds;
+                        }
+                        prevDepCount.current = newDeps.length;
+                        if(newDeps.length > 0) gasMsg += `입금(${newDeps.length}) `; 
+                        else gasMsg += `입금(없음) `;
+                    } else { gasMsg += `입금(연결실패) `; }
+
+                    let mergedAddr = [];
+                    if (res.rawAddresses && Array.isArray(res.rawAddresses)) {
+                        if (res.rawAddresses.length > 1) {
+                            const headers = res.rawAddresses[0].map(h => String(h || '').trim());
+                            const addrRows = res.rawAddresses.slice(1);
+                            const mappedRaw = addrRows.map(row => {
+                                let obj = {}; headers.forEach((h, i) => { obj[h] = row[i]; });
+                                const getVal = (...keys) => { for (let k of keys) { if (obj[k]) return String(obj[k]).trim(); } return ''; };
+                                return {
+                                    nickname: getVal('닉네임', '아이디', '주문자', '유튜브닉네임'),
+                                    realname: getVal('이름', '수령인', '입금자명', '입금자'),
+                                    phone: fixPhoneNumber(getVal('연락처', '전화번호', '휴대폰')),
+                                    address: getVal('주소', '전체주소', '배송지', '주소(동,호수 필수)'),
+                                    zipcode: getVal('우편번호', '우편', '우편 번호'),
+                                    memo: getVal('배송메모', '메모', '요청사항'),
+                                    timestamp: getVal('타임스탬프', '날짜', '시간', '제출시간'),
+                                    _source: 'raw'
+                                };
+                            }).filter(a => a.nickname || a.realname);
+                            mergedAddr = [...mergedAddr, ...mappedRaw];
+                            gasMsg += `주소(${mappedRaw.length}) `;
+                        } else { gasMsg += `주소(없음) `; }
+                    } else { gasMsg += `주소(연결실패) `; }
                     
-                    if (res && res.status === 'success') {
-                        if (res.deposits && Array.isArray(res.deposits)) {
-                            let depRows = res.deposits;
-                            if (depRows.length > 0 && depRows[0].some(c => typeof c === 'string' && (c.includes('이름') || c.includes('금액') || c.includes('닉네임')))) depRows = depRows.slice(1);
-                            const newDeps = depRows.map((row, idx) => {
-                                const validCells = row.filter(cell => cell !== null && cell !== undefined && String(cell).trim() !== '');
-                                if (validCells.length < 2) return null;
-                                let amountIdx = -1;
-                                for (let i = 0; i < validCells.length; i++) {
-                                    const val = String(validCells[i]).trim(); const num = Number(val.replace(/,/g, ''));
-                                    if (!isNaN(num) && num > 0 && val.match(/^[0-9,]+$/)) { amountIdx = i; break; }
-                                }
-                                if (amountIdx === -1) return null;
-                                let nameIdx = amountIdx > 0 ? amountIdx - 1 : amountIdx + 1;
-                                let timeIdx = -1;
-                                if (amountIdx === 2 && String(validCells[0]).match(/[0-9]/)) { timeIdx = 0; nameIdx = 1; } 
-                                else if (amountIdx === 1 && validCells.length > 2) { nameIdx = 0; timeIdx = 2; }
-                                let rawName = String(validCells[nameIdx] || '').trim();
-                                let name = rawName.replace(/^[:"'\-\s]+/, '').replace(/^입\s+/, '').trim();
-                                let amount = Number(String(validCells[amountIdx]).replace(/,/g, ''));
-                                let time = timeIdx !== -1 ? String(validCells[timeIdx]).trim() : '';
-                                return { id: `d_${idx}_${time}_${name}_${amount}`, time, name, amount };
-                            }).filter(d => d !== null && d.name && d.amount > 0).reverse();
-                            
-                            const depIds = newDeps.map(d => d.id).join(',');
-                            if(depIds !== prevDepsStr.current) {
-                                if (newDeps.length > prevDepCount.current && prevDepCount.current !== 0) playCoinSound();
-                                setServerDeposits(newDeps);
-                                prevDepsStr.current = depIds;
-                            }
-                            prevDepCount.current = newDeps.length;
-                            if(newDeps.length > 0) gasMsg += `입금(${newDeps.length}) `; 
-                            else gasMsg += `입금(없음) `;
-                        } else { gasMsg += `입금(연결실패) `; }
-
-                        let mergedAddr = [];
-                        if (res.rawAddresses && Array.isArray(res.rawAddresses)) {
-                            if (res.rawAddresses.length > 1) {
-                                const headers = res.rawAddresses[0].map(h => String(h || '').trim());
-                                const addrRows = res.rawAddresses.slice(1);
-                                const mappedRaw = addrRows.map(row => {
-                                    let obj = {}; headers.forEach((h, i) => { obj[h] = row[i]; });
-                                    const getVal = (...keys) => { for (let k of keys) { if (obj[k]) return String(obj[k]).trim(); } return ''; };
-                                    return {
-                                        nickname: getVal('닉네임', '아이디', '주문자', '유튜브닉네임'),
-                                        realname: getVal('이름', '수령인', '입금자명', '입금자'),
-                                        phone: fixPhoneNumber(getVal('연락처', '전화번호', '휴대폰')),
-                                        address: getVal('주소', '전체주소', '배송지', '주소(동,호수 필수)'),
-                                        zipcode: getVal('우편번호', '우편', '우편 번호'),
-                                        memo: getVal('배송메모', '메모', '요청사항'),
-                                        timestamp: getVal('타임스탬프', '날짜', '시간', '제출시간'),
-                                        _source: 'raw'
-                                    };
-                                }).filter(a => a.nickname || a.realname);
-                                mergedAddr = [...mergedAddr, ...mappedRaw];
-                                gasMsg += `주소(${mappedRaw.length}) `;
-                            } else { gasMsg += `주소(없음) `; }
-                        } else { gasMsg += `주소(연결실패) `; }
-                        
-                        if (res.masterAddresses && Array.isArray(res.masterAddresses)) {
-                            const masterAddrs = res.masterAddresses.map(a => ({...a, phone: fixPhoneNumber(String(a.phone || '').trim()), _source: 'master'}));
-                            mergedAddr = [...mergedAddr, ...masterAddrs];
-                        }
-                        
-                        const addrKeys = mergedAddr.map(a => a.nickname + (a.timestamp||'')).join(',');
-                        if (addrKeys !== prevAddrsStr.current) {
-                            if (mergedAddr.length > prevAddrCount.current && prevAddrCount.current !== 0) playBellSound();
-                            if (mergedAddr.length > 0) setAddresses(mergedAddr);
-                            prevAddrsStr.current = addrKeys;
-                        }
-                        prevAddrCount.current = mergedAddr.length;
-
-                        if (res.inventory && Array.isArray(res.inventory)) {
-                            if (Date.now() - inventorySyncLock.current > 10000) {
-                                const invKeys = res.inventory.map(i => i.name + i.price + i.status).join(',');
-                                if (invKeys !== prevInvStr.current) {
-                                    setInventory(prevInv => {
-                                        const prevArray = Array.isArray(prevInv) ? prevInv : [];
-                                        const prevMap = new Map(prevArray.map(i => [i.name, i]));
-                                        
-                                        const serverNames = new Set(res.inventory.map(i => i.name));
-                                        const localOnly = prevArray.filter(i => !serverNames.has(i.name));
-
-                                        const merged = res.inventory.map(i => {
-                                            const existing = prevMap.get(i.name);
-                                            return {
-                                                id: existing && existing.id ? existing.id : `inv_${Date.now()}_${Math.random()}`, 
-                                                name: i.name, price: Number(i.price), 
-                                                stock: existing && existing.stock !== undefined ? existing.stock : '', 
-                                                isSoldOut: i.status === '품절' || (existing && existing.isSoldOut)
-                                            };
-                                        });
-                                        return [...localOnly, ...merged];
-                                    });
-                                    prevInvStr.current = invKeys;
-                                }
-                            }
-                        }
-
-                        if (res.customerDb && Array.isArray(res.customerDb)) {
-                            const parsedSpecial = {};
-                            const parsedNoShow = {};
-                            const parsedWaitlist = {};
-                            
-                            res.customerDb.forEach(row => {
-                                const nick = String(row['닉네임'] || '').trim();
-                                const status = String(row['고객상태'] || '').trim();
-                                const ts = row['저장시간'] || '';
-                                if (nick) {
-                                    if (status === 'vip' || status === 'manager') {
-                                        parsedSpecial[normalizeString(nick)] = { type: status, originalName: nick, timestamp: ts };
-                                    } else if (status === 'noshow') {
-                                        parsedNoShow[nick] = true;
-                                    } else if (status === 'waitlist') {
-                                        parsedWaitlist[nick] = true;
-                                    }
-                                }
-                            });
-                            
-                            setSpecialCustomers(prev => JSON.stringify(prev) !== JSON.stringify(parsedSpecial) ? parsedSpecial : prev);
-                            setNoShowCustomers(prev => JSON.stringify(prev) !== JSON.stringify(parsedNoShow) ? parsedNoShow : prev);
-                            setWaitlistCustomers(prev => JSON.stringify(prev) !== JSON.stringify(parsedWaitlist) ? parsedWaitlist : prev);
-                        }
-
-                        setSyncStatus(statusMsg + gasMsg);
-                        setGlobalError('');
-                    } else { 
-                        const errMsg = res ? (res.message || res.error || "서버 응답 오류") : "서버 응답 없음";
-                        setSyncStatus(`통신 실패: ${errMsg}`); 
+                    if (res.masterAddresses && Array.isArray(res.masterAddresses)) {
+                        const masterAddrs = res.masterAddresses.map(a => ({...a, phone: fixPhoneNumber(String(a.phone || '').trim()), _source: 'master'}));
+                        mergedAddr = [...mergedAddr, ...masterAddrs];
                     }
-                } catch(e) { 
-                    setSyncStatus("네트워크 에러 발생"); 
-                } finally {
-                    isGasFetchingRef.current = false;
+                    
+                    const addrKeys = mergedAddr.map(a => a.nickname + (a.timestamp||'')).join(',');
+                    if (addrKeys !== prevAddrsStr.current) {
+                        if (mergedAddr.length > prevAddrCount.current && prevAddrCount.current !== 0) playBellSound();
+                        if (mergedAddr.length > 0) setAddresses(mergedAddr);
+                        prevAddrsStr.current = addrKeys;
+                    }
+                    prevAddrCount.current = mergedAddr.length;
+
+                    if (res.inventory && Array.isArray(res.inventory)) {
+                        if (Date.now() - inventorySyncLock.current > 10000) {
+                            const invKeys = res.inventory.map(i => i.name + i.price + i.status).join(',');
+                            if (invKeys !== prevInvStr.current) {
+                                setInventory(prevInv => {
+                                    const prevArray = Array.isArray(prevInv) ? prevInv : [];
+                                    const prevMap = new Map(prevArray.map(i => [i.name, i]));
+                                    
+                                    const serverNames = new Set(res.inventory.map(i => i.name));
+                                    const localOnly = prevArray.filter(i => !serverNames.has(i.name));
+
+                                    const merged = res.inventory.map(i => {
+                                        const existing = prevMap.get(i.name);
+                                        return {
+                                            id: existing && existing.id ? existing.id : `inv_${Date.now()}_${Math.random()}`, 
+                                            name: i.name, price: Number(i.price), 
+                                            stock: existing && existing.stock !== undefined ? existing.stock : '', 
+                                            isSoldOut: i.status === '품절' || (existing && existing.isSoldOut)
+                                        };
+                                    });
+                                    return [...localOnly, ...merged];
+                                });
+                                prevInvStr.current = invKeys;
+                            }
+                        }
+                    }
+
+                    if (res.customerDb && Array.isArray(res.customerDb)) {
+                        const parsedSpecial = {};
+                        const parsedNoShow = {};
+                        const parsedWaitlist = {};
+                        
+                        res.customerDb.forEach(row => {
+                            const nick = String(row['닉네임'] || '').trim();
+                            const status = String(row['고객상태'] || '').trim();
+                            const ts = row['저장시간'] || '';
+                            if (nick) {
+                                if (status === 'vip' || status === 'manager') {
+                                    parsedSpecial[normalizeString(nick)] = { type: status, originalName: nick, timestamp: ts };
+                                } else if (status === 'noshow') {
+                                    parsedNoShow[nick] = true;
+                                } else if (status === 'waitlist') {
+                                    parsedWaitlist[nick] = true;
+                                }
+                            }
+                        });
+                        
+                        setSpecialCustomers(prev => JSON.stringify(prev) !== JSON.stringify(parsedSpecial) ? parsedSpecial : prev);
+                        setNoShowCustomers(prev => JSON.stringify(prev) !== JSON.stringify(parsedNoShow) ? parsedNoShow : prev);
+                        setWaitlistCustomers(prev => JSON.stringify(prev) !== JSON.stringify(parsedWaitlist) ? parsedWaitlist : prev);
+                    }
+
+                    setGasStatus(gasMsg);
+                    setGlobalError('');
+                } else { 
+                    const errMsg = res ? (res.message || res.error || "서버 응답 오류") : "서버 응답 없음";
+                    setGasStatus(`통신 실패: ${errMsg}`); 
                 }
-            })();
-        }, [googleScriptUrl, activeApiKey, liveChatId, depSheetId, addrSheetId, masterSheetId, broadcastName, setAddresses, setInventory, setSpecialCustomers, setNoShowCustomers, setWaitlistCustomers, setGlobalError, playCoinSound, playBellSound, setChats, handleKeySwitch]);
+            } catch(e) { 
+                clearTimeout(slowWarningTimer); // ✨ 에러 시에도 경고 타이머 해제
+                setGasStatus("네트워크 에러 발생"); 
+            } finally {
+                isGasFetchingRef.current = false;
+            }
+        }, [googleScriptUrl, depSheetId, addrSheetId, masterSheetId, setAddresses, setInventory, setSpecialCustomers, setNoShowCustomers, setWaitlistCustomers, setGlobalError, playCoinSound, playBellSound]);
 
-        // ✨ 핵심 픽스 4: 리액트 렌더링으로 인해 타이머가 초기화되어 무한 루프 폭격을 하는 것을 방지하기 위해 Ref 사용
-        const fetchAllDataRef = useRef(fetchAllData);
-        useEffect(() => { fetchAllDataRef.current = fetchAllData; }, [fetchAllData]);
+        const fetchYoutubeDataRef = useRef(fetchYoutubeData);
+        const fetchGasDataRef = useRef(fetchGasData);
+        useEffect(() => { fetchYoutubeDataRef.current = fetchYoutubeData; }, [fetchYoutubeData]);
+        useEffect(() => { fetchGasDataRef.current = fetchGasData; }, [fetchGasData]);
 
+        // ✨ 1. YOUTUBE POLLING (유튜브 규칙에 맞춘 유동적 딜레이)
         useEffect(() => { 
             let isMounted = true;
             let timerId = null;
             
-            const poll = async () => {
+            const pollYoutube = async () => {
                 if (!isMounted) return;
-                
-                // ✨ 구글 시트 동기화 속도 대폭 향상: 채팅 폴링 주기(4초)마다 입금내역도 항상 가져옴!
-                await fetchAllDataRef.current(true);
-
+                await fetchYoutubeDataRef.current();
                 if (isMounted) {
-                    timerId = setTimeout(poll, chatPollingIntervalRef.current); 
+                    timerId = setTimeout(pollYoutube, chatPollingIntervalRef.current); 
                 }
             };
-            poll();
+            pollYoutube();
             return () => {
                 isMounted = false;
                 if (timerId) clearTimeout(timerId);
             };
-        }, []); // 빈 배열로 두어 컴포넌트 리렌더링 시 타이머가 파괴되고 다시 시작되는 현상을 원천 차단
+        }, []); 
+
+        // ✨ 2. GAS POLLING (무조건 3초 고정 초고속 동기화)
+        useEffect(() => { 
+            let isMounted = true;
+            let timerId = null;
+            
+            const pollGas = async () => {
+                if (!isMounted) return;
+                await fetchGasDataRef.current();
+                if (isMounted) {
+                    timerId = setTimeout(pollGas, 3000); // 3초마다 고정 갱신!
+                }
+            };
+            pollGas();
+            return () => {
+                isMounted = false;
+                if (timerId) clearTimeout(timerId);
+            };
+        }, []); 
 
         useEffect(() => {
-                const handleForceSync = () => { fetchAllData(true); };
-                window.addEventListener('force-sync', handleForceSync);
-                return () => window.removeEventListener('force-sync', handleForceSync);
-            }, [fetchAllData]);
+            const handleForceSync = () => { fetchYoutubeDataRef.current(); fetchGasDataRef.current(); };
+            window.addEventListener('force-sync', handleForceSync);
+            return () => window.removeEventListener('force-sync', handleForceSync);
+        }, []);
 
             // 🔥 구글 시트 쓰기 한도 초과(차단) 방지를 위한 10초 단위 일괄(Batch) 저장 로직
             useEffect(() => {
@@ -2045,8 +2082,11 @@ const dashboardStats = useMemo(() => {
                     if (activeItems.length > 0) {
                         const addr = addressLookup.get(nick); if (!addr || !addr.data || !addr.data.address) missingAddressCount++;
                     }
-                    const isCard = cardPayments[nick]; const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0);
-                    const shipping = getCalculatedShipping(nick, productTotal); const baseGrandTotal = productTotal + shipping; const baseBalance = baseGrandTotal - depositTotal;
+                    const isCard = cardPayments[nick]; 
+                    const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0);
+                    const productTotalForShipping = activeItems.reduce((sum, i) => sum + (Number(i.price) > 0 ? Number(i.price) : 0), 0);
+                    const shipping = getCalculatedShipping(nick, productTotalForShipping); 
+                    const baseGrandTotal = productTotal + shipping; const baseBalance = baseGrandTotal - depositTotal;
                     const cardFee = (isCard && baseBalance > 0) ? baseBalance * 0.1 : 0; const finalGrandTotal = baseGrandTotal + cardFee; const finalBalance = baseBalance + cardFee;
 
                     totalSales += finalGrandTotal; 
@@ -2069,8 +2109,11 @@ const dashboardStats = useMemo(() => {
                 Object.entries(groups).forEach(([nick, items]) => {
                     const activeItems = items.filter(i => !i.isCancelled && !i.isWaitlist);
                     if (activeItems.length === 0) { status[nick] = true; return; }
-                    const isCard = cardPayments[nick]; const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0);
-                    const shipping = getCalculatedShipping(nick, productTotal); const baseGrandTotal = productTotal + shipping;
+                    const isCard = cardPayments[nick]; 
+                    const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0);
+                    const productTotalForShipping = activeItems.reduce((sum, i) => sum + (Number(i.price) > 0 ? Number(i.price) : 0), 0);
+                    const shipping = getCalculatedShipping(nick, productTotalForShipping); 
+                    const baseGrandTotal = productTotal + shipping;
                     const depositTotal = items.reduce((sum, i) => sum + (i.deposit || 0), 0); const baseBalance = baseGrandTotal - depositTotal;
                     status[nick] = isCard || (baseBalance <= 0);
                 });
@@ -2097,8 +2140,11 @@ const dashboardStats = useMemo(() => {
                     }
                     if (filterStatus === 'card') return cardPayments[nick];
                     
-                    const activeItems = items.filter(i => !i.isCancelled && !i.isWaitlist); const activeProd = activeItems.reduce((s,i) => s + Number(i.price), 0);
-                    const currentDep = items.reduce((s,i) => s + (i.deposit || 0), 0); const currentShip = getCalculatedShipping(nick, activeProd);
+                    const activeItems = items.filter(i => !i.isCancelled && !i.isWaitlist); 
+                    const activeProd = activeItems.reduce((s,i) => s + Number(i.price), 0);
+                    const activeProdForShipping = activeItems.reduce((s,i) => s + (Number(i.price) > 0 ? Number(i.price) : 0), 0);
+                    const currentDep = items.reduce((s,i) => s + (i.deposit || 0), 0); 
+                    const currentShip = getCalculatedShipping(nick, activeProdForShipping);
                     const baseBal = activeProd + (activeItems.length > 0 ? currentShip : 0) - currentDep; const isCard = cardPayments[nick];
                     const finalBal = baseBal + (isCard && baseBal > 0 ? baseBal * 0.1 : 0);
                     
@@ -2157,6 +2203,69 @@ const dashboardStats = useMemo(() => {
                 return res; 
             }, [chats, hiddenChatIds, deferredChatSearch, showKeywordOnly, keywords]);
 
+            // ✨ 키보드 네비게이션을 위한 상태 및 로직 추가 시작
+            const reversedChats = useMemo(() => [...filteredChats].reverse(), [filteredChats]);
+            const [focusedChatIndex, setFocusedChatIndex] = useState(-1);
+
+            const stateRef = useRef({ reversedChats, isFixedProductMode, focusedChatIndex, manualProduct, manualPrice });
+            useEffect(() => { 
+                stateRef.current = { reversedChats, isFixedProductMode, focusedChatIndex, manualProduct, manualPrice }; 
+            }, [reversedChats, isFixedProductMode, focusedChatIndex, manualProduct, manualPrice]);
+
+            useEffect(() => {
+                const handleKeyDown = (e) => {
+                    const { reversedChats, isFixedProductMode, focusedChatIndex, manualProduct, manualPrice } = stateRef.current;
+                    
+                    // 고정 모드가 아닐 때는 화살표 기능 작동 안 함
+                    if (!isFixedProductMode) return;
+
+                    const isInputActive = document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA');
+
+                    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                        // 입력창에 커서가 있어도 강제로 포커스를 해제하고 채팅창 이동
+                        if (isInputActive) {
+                            document.activeElement.blur();
+                        }
+                        e.preventDefault(); // 스크롤 이동 방지
+                        
+                        let nextIndex = focusedChatIndex;
+                        if (e.key === 'ArrowDown') {
+                            nextIndex = focusedChatIndex < 0 ? 0 : Math.min(focusedChatIndex + 1, reversedChats.length - 1);
+                        } else if (e.key === 'ArrowUp') {
+                            nextIndex = focusedChatIndex < 0 ? reversedChats.length - 1 : Math.max(focusedChatIndex - 1, 0);
+                        }
+                            
+                        setFocusedChatIndex(nextIndex);
+                        document.getElementById(`chat-item-${nextIndex}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    } 
+                    else if ((e.key === 'Enter' || e.key === ' ' || e.code === 'Space') && focusedChatIndex >= 0) {
+                        // 타이핑 중일 때(검색창, 상품명 창 등)는 단축키 작동 방지 (글씨 써지도록)
+                        if (isInputActive) return;
+
+                        e.preventDefault();
+                        const chat = reversedChats[focusedChatIndex];
+                        if (chat) {
+                            // 마우스 클릭과 완벽하게 동일한 로직 실행
+                            bringToTopAndScroll(chat.nickname);
+                            setClickedChats(prev => new Set(prev).add(chat.id));
+                            const finalProduct = manualProduct.trim() !== '' ? manualProduct.trim() : String(chat.content || '');
+                            addOrderLogic(chat.nickname, finalProduct, 1, true, null, manualPrice, true, true);
+                            
+                            // ✨ 추가 후 자동으로 넘어가지 않음 (제자리 유지)
+                        }
+                    }
+                };
+                
+                window.addEventListener('keydown', handleKeyDown);
+                return () => window.removeEventListener('keydown', handleKeyDown);
+            }, [addOrderLogic, bringToTopAndScroll, setClickedChats]);
+
+            // 고정 모드가 풀리면 포커스 초기화
+            useEffect(() => { 
+                if (!isFixedProductMode) setFocusedChatIndex(-1); 
+            }, [isFixedProductMode]);
+            // ✨ 키보드 네비게이션 로직 종료
+
             const renderChatContent = useCallback((content, keywordsArr) => {
                 const safeContent = String(content || ''); if (!keywordsArr || keywordsArr.length === 0) return safeContent; const kwArray = keywordsArr.filter(k => k.trim()); if (!kwArray.length) return safeContent;
                 const pattern = new RegExp(`(${kwArray.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi');
@@ -2209,15 +2318,18 @@ const dashboardStats = useMemo(() => {
                     
                     updatedOrders.forEach(o => {
                         if (o.isCancelled) return;
-                        if (!customerBalances[o.customer]) { customerBalances[o.customer] = { productTotal: 0, depositTotal: 0, activeItemsCount: 0, isCloud: false }; }
-                        customerBalances[o.customer].productTotal += Number(o.price); customerBalances[o.customer].depositTotal += (o.deposit || 0); customerBalances[o.customer].activeItemsCount += 1;
+                        if (!customerBalances[o.customer]) { customerBalances[o.customer] = { productTotal: 0, productTotalForShipping: 0, depositTotal: 0, activeItemsCount: 0, isCloud: false }; }
+                        customerBalances[o.customer].productTotal += Number(o.price); 
+                        if (!o.isWaitlist && Number(o.price) > 0) customerBalances[o.customer].productTotalForShipping += Number(o.price);
+                        customerBalances[o.customer].depositTotal += (o.deposit || 0); 
+                        if (!o.isWaitlist) customerBalances[o.customer].activeItemsCount += 1;
                         if (o.loadedFromCloud) customerBalances[o.customer].isCloud = true;
                     });
 
                     const matchLookup = {};
                     Object.keys(customerBalances).forEach(nick => {
                         const cb = customerBalances[nick];
-                        const currentShipping = getCalculatedShipping(nick, cb.productTotal);
+                        const currentShipping = getCalculatedShipping(nick, cb.productTotalForShipping);
                         cb.grandTotal = cb.productTotal + (cb.activeItemsCount > 0 ? currentShipping : 0); cb.balance = cb.grandTotal - cb.depositTotal;
                         const savedRealName = depositorNames[nick] ? cleanForMatch(depositorNames[nick]) : '';
                         const addrRes = addressLookup.get(nick); const addressRealName = addrRes && addrRes.data ? cleanForMatch(addrRes.data.realname) : '';
@@ -2267,13 +2379,16 @@ const dashboardStats = useMemo(() => {
             const autoSaveToGoogleSheet = useCallback(async () => { 
                 if (!googleScriptUrl || !masterSheetId || Object.keys(orders).length === 0) return; 
                 
-                const customerTotals = {}; orders.filter(o => !o.isCancelled).forEach(o => { customerTotals[o.customer] = (customerTotals[o.customer] || 0) + Number(o.price); });
+                const customerTotalsForShipping = {}; 
+                orders.filter(o => !o.isCancelled && !o.isWaitlist).forEach(o => { 
+                    customerTotalsForShipping[o.customer] = (customerTotalsForShipping[o.customer] || 0) + (Number(o.price) > 0 ? Number(o.price) : 0); 
+                });
                 
                 const uniqueNicknames = Array.from(new Set(orders.filter(o => !o.isCancelled).map(o => o.customer)));
                 
                 const saveList = orders.filter(o=>!o.isCancelled).map(o => { 
                     let addrRes = addressLookup.get(o.customer); let addr = addrRes.data || {}; 
-                    const currentShipping = getCalculatedShipping(o.customer, customerTotals[o.customer] || 0); 
+                    const currentShipping = getCalculatedShipping(o.customer, customerTotalsForShipping[o.customer] || 0); 
                     const isCard = cardPayments[o.customer] ? true : false; 
                     const customerVal = o.customer || '';
                     
@@ -2413,16 +2528,25 @@ const dashboardStats = useMemo(() => {
                 setOrders(prev => prev.map(o => { 
                     if (o.id === id) { 
                         const newOrder = { ...o, [field]: value, isUnmodified: false }; 
+                        const isDiscount = (name) => {
+                            const n = String(name || '');
+                            return n.includes('적립금') || n.includes('기납금') || n.includes('선결제') || n.includes('선입금') || n.includes('과납') || n.includes('예치금') || n.includes('쿠폰') || n.includes('할인') || n.includes('포인트');
+                        };
+
                         if(field === 'product') { 
                             const cleanVal = String(value).trim(); const inv = inventoryRef.current; const hist = productHistoryRef.current;
                             const invItem = Array.isArray(inv) ? inv.find(i => String(i.name).trim() === cleanVal) : null;
-                            const uPrice = invItem ? Number(invItem.price) : (hist[cleanVal] || 0);
+                            let uPrice = invItem ? Number(invItem.price) : (hist[cleanVal] || 0);
+                            if (isDiscount(cleanVal) && uPrice > 0) uPrice = -Math.abs(uPrice);
                             newOrder.price = (Number(newOrder.quantity) || 0) * uPrice; 
                         } 
                         if (field === 'price' && o.product && String(o.product).trim() !== '') { 
-                            const cleanProd = String(o.product).trim(); const valNum = String(value).replace(/,/g, '');
+                            const cleanProd = String(o.product).trim(); let valNum = Number(String(value).replace(/,/g, ''));
+                            if (isDiscount(cleanProd) && valNum > 0) valNum = -Math.abs(valNum);
+                            newOrder.price = valNum;
+                            
                             const effQty = (o.quantity && o.quantity > 0) ? o.quantity : 1;
-                            const uPrice = Number(valNum) / effQty; 
+                            const uPrice = valNum / effQty; 
                             if (uPrice >= 1) {
                                 setInventory(prevInv => {
                                     if (!Array.isArray(prevInv)) return prevInv;
@@ -2448,7 +2572,9 @@ const dashboardStats = useMemo(() => {
                     if (o.id === itemId) { 
                         const cleanProd = String(o.product || '').trim(); const inv = inventoryRef.current; const hist = productHistoryRef.current;
                         const invItem = Array.isArray(inv) ? inv.find(i => String(i.name).trim() === cleanProd) : null;
-                        const unitPrice = invItem ? Number(invItem.price) : (hist[cleanProd] || (o.quantity > 0 ? o.price/o.quantity : 0));
+                        const isDiscount = cleanProd.includes('적립금') || cleanProd.includes('기납금') || cleanProd.includes('선결제') || cleanProd.includes('선입금') || cleanProd.includes('과납') || cleanProd.includes('예치금') || cleanProd.includes('쿠폰') || cleanProd.includes('할인') || cleanProd.includes('포인트');
+                        let unitPrice = invItem ? Number(invItem.price) : (hist[cleanProd] || (o.quantity > 0 ? o.price/o.quantity : 0));
+                        if (isDiscount && unitPrice > 0) unitPrice = -Math.abs(unitPrice);
                         const validQty = (newQtyVal === '' || isNaN(parseInt(newQtyVal))) ? '' : parseInt(newQtyVal);
                         return { ...o, quantity: validQty, price: unitPrice * (Number(validQty) || 0), isUnmodified: false }; 
                     } 
@@ -2464,7 +2590,9 @@ const dashboardStats = useMemo(() => {
                 const activeItems = items.filter(i => !i.isCancelled && !i.isWaitlist); 
                 const waitlistItems = items.filter(i => !i.isCancelled && i.isWaitlist);
                 const addr = addrData || addressLookup.get(nick)?.data || {};
-                const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0); const currentShipping = getCalculatedShipping(nick, productTotal);
+                const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0); 
+                const productTotalForShipping = activeItems.reduce((sum, i) => sum + (Number(i.price) > 0 ? Number(i.price) : 0), 0);
+                const currentShipping = getCalculatedShipping(nick, productTotalForShipping);
                 const itemListText = activeItems.map(i => `${i.product}${i.quantity > 1 ? ` ★${i.quantity}개` : ''} ${Number(i.price).toLocaleString()}원`).join('\n');
                 const { emoji, paidMsg, unpaidPrefix, overpaidMsg = '과납 금액이 있습니다.\n환불 또는 적립 여부를 알려주세요!', addrNotice, surveyNotice, alwaysRequestAddress } = templateConfig;
                 
@@ -2543,9 +2671,12 @@ const dashboardStats = useMemo(() => {
                 let price = 0; const isCustomPriceValid = customPrice !== null && customPrice !== '';
                 if (isCustomPriceValid) price = Number(String(customPrice).replace(/,/g, '')); else price = invItem ? Number(invItem.price) : (hist[cContent] || 0);
 
-                if (cContent !== '' && (isCustomPriceValid || price > 0)) {
+                const isDiscount = cContent.includes('적립금') || cContent.includes('기납금') || cContent.includes('선결제') || cContent.includes('선입금') || cContent.includes('과납') || cContent.includes('예치금') || cContent.includes('쿠폰') || cContent.includes('할인') || cContent.includes('포인트');
+                if (isDiscount && price > 0) price = -Math.abs(price);
+
+                if (cContent !== '' && (isCustomPriceValid || price !== 0)) {
                     const priceToSave = price || 0;
-                    if (priceToSave >= 1) {
+                    if (priceToSave >= 1) { // 정상 제품 가격만 재고 등록 (마이너스는 무시)
                         setInventory(prevInv => {
                             const invArr = Array.isArray(prevInv) ? prevInv : []; const exists = invArr.find(i => String(i.name).trim() === cContent);
                             if (!exists) {
@@ -2855,8 +2986,8 @@ const dashboardStats = useMemo(() => {
                                      <button onClick={() => { setChats([]); window.localStorage.removeItem(getLsKey('savedChats')); }} className="bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded text-[9px] shadow-sm transition-colors flex items-center gap-0.5" title="구글 시트 기록은 남기고 화면에서만 채팅 삭제"><Icon name="trash" weight="bold"/> 비우기</button>
                                  </div>
                              </div>
-                             <div className={`text-[9px] p-1 rounded flex justify-between items-center ${syncStatus.includes('에러') || syncStatus.includes('실패') || syncStatus.includes('입력하세요') || syncStatus.includes('차단') ? 'bg-red-100 text-red-600 font-bold' : 'text-slate-600 dark:text-slate-400 bg-slate-200 dark:bg-slate-700'}`}>
-                                 <span className="truncate flex-1">{syncStatus}</span>
+                             <div className={`text-[10px] p-1.5 rounded flex justify-between items-center ${gasStatus.includes('에러') || gasStatus.includes('실패') || gasStatus.includes('입력하세요') || gasStatus.includes('차단') ? 'bg-red-100 text-red-600 font-bold' : 'text-slate-700 dark:text-slate-300 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 shadow-sm'}`}>
+                                 <span className="truncate flex-1 font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1"><Icon name="lightning" weight="fill" className="text-yellow-500"/> 3초 초고속 스캔중 <span className="text-slate-500 dark:text-slate-400 font-normal ml-1">| {youtubeStatus} | {gasStatus}</span></span>
                              </div>
                              <div className="flex gap-2">
                                  <div className="relative flex-1"><Icon name="magnifying-glass" className="absolute left-1.5 top-1/2 -translate-y-1/2 text-slate-400 text-[10px]"/><input type="text" placeholder="검색" value={chatSearch} onChange={e => setChatSearch(e.target.value)} onKeyDown={e => { if(e.key==='Escape'){ setChatSearch(''); e.target.blur(); } }} className="w-full text-[10px] pl-5 py-1.5 border dark:border-slate-600 rounded outline-none bg-white dark:bg-slate-900 focus:ring-1 focus:ring-slate-400" /></div>
@@ -2869,9 +3000,12 @@ const dashboardStats = useMemo(() => {
                              {(keywords || []).length > 0 && (<div className="flex gap-1 overflow-x-auto scrollbar-hide py-0.5">{(keywords || []).map(k => (<span key={k} onClick={() => handleRemoveKeyword(k)} className="bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 px-1.5 py-0.5 rounded-full text-[10px] cursor-pointer whitespace-nowrap hover:bg-red-100 hover:text-red-600 transition-colors flex items-center gap-0.5">{k} <Icon name="x" weight="bold" size={8}/></span>))}</div>)}
                         </div>
                         <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-1.5 space-y-0.5 bg-slate-50 dark:bg-slate-900">
-                            {[...filteredChats].reverse().map(c => {
+                            {reversedChats.map((c, idx) => {
                                 const safeContent = String(c.content || ''); const isMatched = (keywords || []).some(k => safeContent.includes(k)); const isProcessed = clickedChats?.has(c.id);
-                                const chatClasses = isProcessed ? 'opacity-80 bg-slate-100 dark:bg-slate-800/80 border-transparent' : (isMatched ? 'bg-slate-100 dark:bg-slate-800 border-slate-400 dark:border-slate-600 ring-1 ring-slate-400 dark:ring-slate-600 shadow-sm' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700');
+                                const isFocused = isFixedProductMode && focusedChatIndex === idx;
+                                
+                                // ✨ 파란색 포커스 테두리 디자인 적용
+                                const chatClasses = isFocused ? 'ring-2 ring-blue-500 bg-blue-100 dark:bg-blue-900/60 border-blue-400 z-10 scale-[1.02] shadow-md' : (isProcessed ? 'opacity-80 bg-slate-100 dark:bg-slate-800/80 border-transparent' : (isMatched ? 'bg-slate-100 dark:bg-slate-800 border-slate-400 dark:border-slate-600 ring-1 ring-slate-400 dark:ring-slate-600 shadow-sm' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'));
                                 
                                 const custStatus = specialCustomers[normalizeString(c.nickname)]?.type;
                                 let statusBadge = null;
@@ -2880,9 +3014,9 @@ const dashboardStats = useMemo(() => {
                                 else if (custStatus === 'manager') statusBadge = <span className="text-[9px] bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 px-1 py-0.5 rounded flex items-center gap-0.5 shrink-0"><Icon name="shield-check" weight="fill"/> 관리자</span>;
 
                                 return (
-                                    <div key={c.id} onClick={() => handleChatClick(c)} className={`py-1.5 px-2 border rounded cursor-pointer transition-all flex flex-col gap-1 ${chatClasses}`}>
-                                        <div className="flex justify-between items-start"><span className={`flex items-center gap-1 break-all text-[12px] font-bold ${isProcessed ? 'text-slate-400 dark:text-slate-500' : 'text-slate-800 dark:text-slate-200'}`}>{c.nickname} {statusBadge}</span><span className="text-[10px] text-slate-400 dark:text-slate-500 shrink-0 mt-0.5">{formatTimeOnly(c.time)}</span></div>
-                                        <div className={`text-[12px] font-medium leading-snug break-all pl-1 ${isProcessed ? 'text-slate-400 dark:text-slate-500' : 'text-slate-700 dark:text-slate-300'}`}>{renderChatContent(safeContent, keywords || [])}</div>
+                                    <div key={c.id} id={`chat-item-${idx}`} onClick={() => { setFocusedChatIndex(idx); handleChatClick(c); }} className={`py-1.5 px-2 border rounded cursor-pointer transition-all flex flex-col gap-1 ${chatClasses}`}>
+                                        <div className="flex justify-between items-start"><span className={`flex items-center gap-1 break-all text-[12px] font-bold ${isProcessed && !isFocused ? 'text-slate-400 dark:text-slate-500' : 'text-slate-800 dark:text-slate-200'}`}>{c.nickname} {statusBadge}</span><span className="text-[10px] text-slate-400 dark:text-slate-500 shrink-0 mt-0.5">{formatTimeOnly(c.time)}</span></div>
+                                        <div className={`text-[12px] font-medium leading-snug break-all pl-1 ${isProcessed && !isFocused ? 'text-slate-400 dark:text-slate-500' : 'text-slate-700 dark:text-slate-300'}`}>{renderChatContent(safeContent, keywords || [])}</div>
                                     </div>
                                 );
                             })}
@@ -2960,9 +3094,23 @@ const dashboardStats = useMemo(() => {
                             </div>
                         </div>
                         <div ref={orderListRef} className="flex-1 overflow-y-auto p-1.5 bg-slate-50 dark:bg-slate-900 relative z-0" onScroll={handleOrderScroll}>
-                      {displayedOrders.map(([nick, items]) => {
-                                const activeItems = items.filter(i => !i.isCancelled && !i.isWaitlist); const prodSum = activeItems.reduce((s, i) => s + Number(i.price), 0);
-                                const ship = getCalculatedShipping(nick, prodSum); const depSum = items.reduce((s, i) => s + (i.deposit || 0), 0);
+                            {displayedOrders.length === 0 && (
+                                <div className="flex flex-col items-center justify-center h-full text-slate-400 gap-3 opacity-80 pt-10 pb-10">
+                                    <Icon name="cloud-arrow-down" size={48} weight="light" className="text-blue-400 dark:text-blue-500" />
+                                    <div className="text-center text-xs leading-relaxed">
+                                        <p className="font-bold text-slate-500 dark:text-slate-300 text-sm mb-1">현재 입력된 주문이 없습니다.</p>
+                                        다른 PC나 브라우저에서 이어서 작업하시려면<br/>
+                                        우측 상단의 <strong className="text-blue-500">정산 / 내보내기</strong> 탭으로 이동하여<br/>
+                                        <strong className="bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded mx-0.5 text-slate-600 dark:text-slate-200 shadow-sm">파일 불러오기 (.json)</strong> 를 이용해주세요!
+                                    </div>
+                                </div>
+                            )}
+                            {displayedOrders.map(([nick, items]) => {
+                                const activeItems = items.filter(i => !i.isCancelled && !i.isWaitlist); 
+                                const prodSum = activeItems.reduce((s, i) => s + Number(i.price), 0);
+                                const prodSumForShipping = activeItems.reduce((s, i) => s + (Number(i.price) > 0 ? Number(i.price) : 0), 0);
+                                const ship = getCalculatedShipping(nick, prodSumForShipping); 
+                                const depSum = items.reduce((s, i) => s + (i.deposit || 0), 0);
                                 const baseGrand = prodSum + (activeItems.length > 0 ? ship : 0); const baseBal = baseGrand - depSum;
                                 const isCard = cardPayments[nick]; const cardFee = (isCard && baseBal > 0) ? baseBal * 0.1 : 0;
                                 const grand = baseGrand + cardFee; const bal = baseBal + cardFee;
@@ -3124,8 +3272,11 @@ const dashboardStats = useMemo(() => {
                 const savedCardPayments = cardPayments || {};
                 Object.entries(customerGroups).forEach(([nick, items]) => {
                     const activeItems = items.filter(i => !i.isCancelled && !i.isWaitlist); if(activeItems.length === 0) { customerPaidStatus[nick] = false; return; }
-                    const isCard = savedCardPayments[nick]; const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0);
-                    const shipping = getCalculatedShipping(nick, productTotal); const depositTotal = items.reduce((sum, i) => sum + (i.deposit || 0), 0);
+                    const isCard = savedCardPayments[nick]; 
+                    const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0);
+                    const productTotalForShipping = activeItems.reduce((sum, i) => sum + (Number(i.price) > 0 ? Number(i.price) : 0), 0);
+                    const shipping = getCalculatedShipping(nick, productTotalForShipping); 
+                    const depositTotal = items.reduce((sum, i) => sum + (i.deposit || 0), 0);
                     const grandTotal = productTotal + (activeItems.length > 0 ? shipping : 0); customerPaidStatus[nick] = (depositTotal >= grandTotal) || isCard;
                 });
                 orders.forEach(o => { 
@@ -3145,21 +3296,32 @@ const dashboardStats = useMemo(() => {
          const handleExportCustomers = () => { 
                 const groups = {}; orders.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); }); 
                 let entries = Object.entries(groups).map(([nick, items]) => {
-                    const activeItems = items.filter(i => !i.isCancelled && !i.isWaitlist); 
-                    const waitlistItems = items.filter(i => !i.isCancelled && i.isWaitlist);
+                    const isNoShow = noShowCustomers && noShowCustomers[nick];
+                    
+                    // ✨ 핵심: 노쇼 고객일 경우, '자동 취소' 처리된 아이템들도 엑셀에 내보내기 위해 필터에서 예외 처리로 살려줍니다.
+                    const activeItems = items.filter(i => !i.isWaitlist && (!i.isCancelled || isNoShow)); 
+                    const waitlistItems = items.filter(i => i.isWaitlist && (!i.isCancelled || isNoShow));
+                    
                     const isCard = cardPayments[nick]; 
                     const hasCashReceipt = cashReceipts[nick];
                     const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0);
-                    const currentShipping = getCalculatedShipping(nick, productTotal);
+                    const productTotalForShipping = activeItems.reduce((sum, i) => sum + (Number(i.price) > 0 ? Number(i.price) : 0), 0);
+                    const currentShipping = getCalculatedShipping(nick, productTotalForShipping);
                     const depositTotal = items.reduce((sum, i) => sum + (i.deposit || 0), 0); 
                     const grandTotal = productTotal + (activeItems.length > 0 ? currentShipping : 0); 
                     const isPaid = (depositTotal >= grandTotal) || isCard;
                     const balance = grandTotal - depositTotal;
-                    // ✨ 핵심: waitlistItems 배열도 같이 넘겨줍니다.
-                    return { nick, activeItems, waitlistItems, isPaid, isCard, hasCashReceipt, depositTotal, grandTotal, balance };
+                    
+                    return { nick, activeItems, waitlistItems, isPaid, isCard, hasCashReceipt, depositTotal, grandTotal, balance, isNoShow };
                 });
 
-                const getStatusPriority = (entry) => { if (entry.isPaid && !entry.isCard) return 1; if (entry.isCard) return 2; return 3; };
+                const getStatusPriority = (entry) => { 
+                    if (entry.isNoShow) return 99; // ✨ 노쇼는 무조건 맨 밑바닥으로 정렬
+                    if (entry.isPaid && !entry.isCard) return 1; 
+                    if (entry.isCard) return 2; 
+                    return 3; 
+                };
+
                 entries.sort((a, b) => { 
                     const pA = getStatusPriority(a); 
                     const pB = getStatusPriority(b); 
@@ -3167,7 +3329,7 @@ const dashboardStats = useMemo(() => {
                     return a.nick.localeCompare(b.nick); 
                 });
 
-                let excelRows = []; entries.forEach(({ nick, activeItems, waitlistItems, isPaid, isCard, hasCashReceipt, depositTotal, grandTotal, balance }) => { 
+                let excelRows = []; entries.forEach(({ nick, activeItems, waitlistItems, isPaid, isCard, hasCashReceipt, depositTotal, grandTotal, balance, isNoShow }) => { 
                     if(activeItems.length === 0 && waitlistItems.length === 0) return; 
                     const addrInfo = findAddress(nick) || {}; 
                     const fullAddress = addrInfo.zipcode ? `(${addrInfo.zipcode}) ${addrInfo.address || ''}` : (addrInfo.address || ''); 
@@ -3175,13 +3337,11 @@ const dashboardStats = useMemo(() => {
                     let cleanPhone = fixPhoneNumber(addrInfo.phone);
 
                     const isVip = specialCustomers && specialCustomers[normalizeString(nick)]?.type === 'vip';
-                    const isNoShow = noShowCustomers && noShowCustomers[nick];
                     const isWaitlistToggle = waitlistCustomers && waitlistCustomers[nick];
 
-                    // ✨ 핵심: 대기 상태면 엑셀 입금상태 열에 '대기'라고 명확히 찍힙니다.
                     let statusColumn = "";
                     if (isNoShow) {
-                        statusColumn = "노쇼";
+                        statusColumn = "🚨 노쇼 (취소됨)";
                     } else if (isWaitlistToggle || (waitlistItems.length > 0 && activeItems.length === 0)) {
                         statusColumn = "대기";
                     } else if (hasCashReceipt) {
@@ -3206,9 +3366,8 @@ const dashboardStats = useMemo(() => {
                     }); 
                     
                     excelRows.push(createRow(`[ ${nick} ]`)); 
-                    activeItems.forEach(item => { const qtyPart = item.quantity > 1 ? ` ★${item.quantity}개` : ''; excelRows.push(createRow(`${item.product}${qtyPart}`)); }); 
-                    // ✨ 핵심: 대기 상품은 앞에 [대기] 말머리가 붙어서 엑셀에 추가됩니다.
-                    waitlistItems.forEach(item => { const qtyPart = item.quantity > 1 ? ` ★${item.quantity}개` : ''; excelRows.push(createRow(`[대기] ${item.product}${qtyPart}`)); }); 
+                    activeItems.forEach(item => { const qtyPart = item.quantity > 1 ? ` ★${item.quantity}개` : ''; excelRows.push(createRow(`${isNoShow ? '[노쇼] ' : ''}${item.product}${qtyPart}`)); }); 
+                    waitlistItems.forEach(item => { const qtyPart = item.quantity > 1 ? ` ★${item.quantity}개` : ''; excelRows.push(createRow(`${isNoShow ? '[노쇼] ' : '[대기] '}${item.product}${qtyPart}`)); }); 
                 }); 
                 downloadExcel(excelRows, '고객별_정산_배송리스트'); 
             };
@@ -3226,8 +3385,11 @@ const dashboardStats = useMemo(() => {
                     const waitlistItems = items.filter(i => !i.isCancelled && i.isWaitlist);
                     if (activeItems.length === 0 && waitlistItems.length === 0) return;
 
-                    const isCard = cardPayments && cardPayments[nick]; const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0);
-                    const currentShipping = getCalculatedShipping(nick, productTotal); const baseGrandTotal = productTotal + currentShipping;
+                    const isCard = cardPayments && cardPayments[nick]; 
+                    const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0);
+                    const productTotalForShipping = activeItems.reduce((sum, i) => sum + (Number(i.price) > 0 ? Number(i.price) : 0), 0);
+                    const currentShipping = getCalculatedShipping(nick, productTotalForShipping); 
+                    const baseGrandTotal = productTotal + currentShipping;
                     const depositTotal = items.reduce((sum, i) => sum + (i.deposit || 0), 0); const baseBalance = baseGrandTotal - depositTotal;
                     const cardFee = (isCard && baseBalance > 0) ? baseBalance * 0.1 : 0; const grandTotal = baseGrandTotal + cardFee; const balance = baseBalance + cardFee;
                     const itemListTextForMsg = activeItems.map(i => `${i.product}${i.quantity > 1 ? ` ★${i.quantity}개` : ''} ${Number(i.price).toLocaleString()}원`).join('\n');
