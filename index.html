@@ -10,10 +10,10 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>주문서 관리 시스템</title>
+    <title>강은지 주문서</title>
     
     <!-- PWA 강제 설치를 위한 매니페스트 (URL 인코딩 방식) -->
-    <link rel="manifest" href="data:application/manifest+json,%7B%22name%22%3A%22%EC%A3%BC%EB%AC%B8%EC%84%9C%20%EA%B4%80%EB%A6%AC%20%EC%8B%9C%EC%8A%A4%ED%85%9C%22%2C%22short_name%22%3A%22%EC%A3%BC%EB%AC%B8%EC%84%9C%22%2C%22display%22%3A%22standalone%22%2C%22start_url%22%3A%22.%2F%22%2C%22background_color%22%3A%22%23202124%22%2C%22theme_color%22%3A%22%23202124%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22https%3A%2F%2Fcdn-icons-png.flaticon.com%2F512%2F3593%2F3593455.png%22%2C%22sizes%22%3A%22512x512%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
+    <link rel="manifest" href="data:application/manifest+json,%7B%22name%22%3A%22%EA%B0%95%EC%9D%80%EC%A7%80%20%EC%A3%BC%EB%AC%B8%EC%84%9C%22%2C%22short_name%22%3A%22%EA%B0%95%EC%9D%80%EC%A7%80%22%2C%22display%22%3A%22standalone%22%2C%22start_url%22%3A%22.%2F%22%2C%22background_color%22%3A%22%23202124%22%2C%22theme_color%22%3A%22%23202124%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22https%3A%2F%2Fcdn-icons-png.flaticon.com%2F512%2F3593%2F3593455.png%22%2C%22sizes%22%3A%22512x512%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
     
     <!-- 브라우저를 속여 진짜 '앱'으로 설치하게 만드는 가짜 서비스워커 즉석 생성 로직 -->
     <script>
@@ -90,6 +90,40 @@
         .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
         .resizable-panel { resize: horizontal; overflow: hidden; min-height: 100%; position: relative; }
         .resizable-panel::after { content: ''; position: absolute; bottom: 0; right: 0; width: 10px; height: 10px; cursor: se-resize; }
+        
+        /* ----------------------------------------------------
+           ✨ Professional SaaS Theme (고밀도 전문 UI 테마) ✨
+           ---------------------------------------------------- */
+        
+        /* 1. 곡률 통일: 너무 둥글둥글한 모서리와 원형 버튼을 세련된 라운드 스퀘어로 톤다운 */
+        .rounded-2xl, .rounded-xl, .rounded-lg { border-radius: 6px !important; }
+        .rounded-md, .rounded { border-radius: 4px !important; }
+        .rounded-full { border-radius: 4px !important; } /* 동그란 버튼들을 각진 버튼으로 변경 */
+        
+        /* 2. 과도한 팝(Pop) 효과 및 붕 떠있는 그림자를 차분하고 엣지있게 조절 */
+        .shadow-2xl, .shadow-xl, .shadow-lg { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05) !important; }
+        .shadow-md, .shadow-sm { box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03) !important; }
+        .animate-pop { animation: none !important; } /* 통통 튀는 팝업 애니메이션 제거로 진중함 추가 */
+        
+        /* 3. 정보 밀도 증가 (가독성 향상): 글로벌 여백 일괄 압축 */
+        .gap-2 { gap: 6px !important; } 
+        .gap-3 { gap: 8px !important; } 
+        .p-2 { padding: 6px !important; }
+        .mb-1\.5 { margin-bottom: 4px !important; }
+        .p-1\.5 { padding: 4px !important; }
+        
+        /* 4. 모달 창 등 불필요하게 넓은 패딩 다이어트 */
+        .p-6 { padding: 1.25rem !important; }
+        .p-5 { padding: 1rem !important; }
+        .p-4 { padding: 0.75rem !important; }
+        
+        /* 5. 헤더, 입력창 등 상하 높이를 줄여서 더 많은 행이 보이게 조절 */
+        .py-2 { padding-top: 5px !important; padding-bottom: 5px !important; }
+        .py-1\.5 { padding-top: 3px !important; padding-bottom: 3px !important; }
+        
+        /* 6. 메인 레이아웃 및 패널들의 배경을 살짝 더 차분한 톤으로 변경하여 데이터 집중도 향상 */
+        body, .bg-slate-50 { background-color: #f8fafc !important; }
+        .dark body, .dark .bg-slate-50 { background-color: #0f172a !important; }
     </style>
 </head>
 <body class="transition-colors duration-300">
@@ -3749,7 +3783,7 @@ const dashboardStats = useMemo(() => {
                     
                     <div className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 shadow-sm px-4 py-2 flex justify-between items-center z-10 shrink-0">
                         <div className="flex items-center gap-3">
-                            <h1 className="text-xl font-black tracking-tight text-slate-800 dark:text-white flex items-center gap-2"><Icon name="shopping-bag" weight="fill" className="text-blue-500" /> 주문서 관리 시스템</h1>
+                            <h1 className="text-xl font-black tracking-tight text-slate-800 dark:text-white flex items-center gap-2"><Icon name="shopping-bag" weight="fill" className="text-blue-500" /> 강은지 주문서</h1>
                             <div className="flex bg-slate-100 dark:bg-slate-900 rounded-lg p-1 ml-4 shadow-inner border dark:border-slate-700 items-center">
                                 <button onClick={() => setActiveTab('live')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${activeTab === 'live' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-600 dark:text-blue-400 border border-slate-200 dark:border-slate-600' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}><Icon name="broadcast" weight={activeTab === 'live' ? 'fill' : 'regular'} className="inline-block mr-1"/> 라이브</button>
                                 <button onClick={() => setActiveTab('management')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${activeTab === 'management' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-600 dark:text-blue-400 border border-slate-200 dark:border-slate-600' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}><Icon name="kanban" weight={activeTab === 'management' ? 'fill' : 'regular'} className="inline-block mr-1"/> 정산 / 내보내기</button>
