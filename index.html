@@ -123,7 +123,31 @@
         
         /* 6. 메인 레이아웃 및 패널들의 배경을 살짝 더 차분한 톤으로 변경하여 데이터 집중도 향상 */
         body, .bg-slate-50 { background-color: #f8fafc !important; }
-        .dark body, .dark .bg-slate-50 { background-color: #0f172a !important; }
+        
+        /* 7. ✨ 눈이 편안한 다크모드 (Soft Dark Theme) - 쨍한 대비를 줄이고 눈 피로가 적은 모노톤 & 파스텔톤 적용 */
+        .dark body, .dark .bg-slate-50, .dark .bg-slate-900 { background-color: #18181b !important; } /* 차분한 진회색 바탕 (Zinc-900) */
+        .dark .bg-white, .dark .bg-slate-800 { background-color: #27272a !important; } /* 패널 배경 (Zinc-800) */
+        .dark .border-slate-700, .dark .border-slate-600, .dark .border-slate-800 { border-color: #3f3f46 !important; } /* 부드러운 테두리 */
+        .dark ::-webkit-scrollbar-thumb { background: #52525b !important; } /* 스크롤바 색상 차분하게 */
+        
+        /* 눈부심 방지 텍스트 톤다운 */
+        .dark, .dark .text-slate-100, .dark .text-white, .dark .text-slate-200 { color: #e4e4e7 !important; } 
+        .dark .text-slate-300 { color: #d4d4d8 !important; }
+        .dark .text-slate-400 { color: #a1a1aa !important; }
+        .dark .text-slate-500 { color: #71717a !important; }
+        
+        /* 포인트 색상(블루, 레드, 오렌지, 그린) 채도 낮추기 (눈부심 방지) */
+        .dark .text-blue-300, .dark .text-blue-400, .dark .text-blue-500, .dark .text-blue-600, .dark .text-blue-700 { color: #60a5fa !important; }
+        .dark .bg-blue-900\/20, .dark .bg-blue-900\/30, .dark .bg-blue-900\/40, .dark .bg-blue-900\/50, .dark .bg-blue-900\/60, .dark .bg-blue-800 { background-color: rgba(59, 130, 246, 0.15) !important; border-color: rgba(59, 130, 246, 0.3) !important; }
+        
+        .dark .text-red-400, .dark .text-red-500, .dark .text-red-600 { color: #f87171 !important; }
+        .dark .bg-red-900\/10, .dark .bg-red-900\/20, .dark .bg-red-900\/30, .dark .bg-red-900\/40 { background-color: rgba(248, 113, 113, 0.1) !important; border-color: rgba(248, 113, 113, 0.2) !important; }
+        
+        .dark .text-orange-400, .dark .text-orange-500, .dark .text-orange-600 { color: #fb923c !important; }
+        .dark .bg-orange-900\/20 { background-color: rgba(251, 146, 60, 0.1) !important; border-color: rgba(251, 146, 60, 0.2) !important; }
+        
+        .dark .text-green-400, .dark .text-green-500, .dark .text-green-600 { color: #4ade80 !important; }
+        .dark .bg-green-900\/20, .dark .bg-green-900\/30 { background-color: rgba(74, 222, 128, 0.1) !important; border-color: rgba(74, 222, 128, 0.2) !important; }
     </style>
 </head>
 <body class="transition-colors duration-300">
@@ -2301,9 +2325,35 @@ const dashboardStats = useMemo(() => {
             // ✨ 키보드 네비게이션 로직 종료
 
             const renderChatContent = useCallback((content, keywordsArr) => {
-                const safeContent = String(content || ''); if (!keywordsArr || keywordsArr.length === 0) return safeContent; const kwArray = keywordsArr.filter(k => k.trim()); if (!kwArray.length) return safeContent;
-                const pattern = new RegExp(`(${kwArray.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi');
-                return safeContent.split(pattern).map((part, i) => kwArray.includes(part) ? <span key={i} className="text-blue-600 dark:text-blue-400 font-black bg-blue-50 dark:bg-blue-900/30 px-1 py-0.5 rounded shadow-sm">{part}</span> : part);
+                const safeContent = String(content || ''); 
+                const kwArray = (keywordsArr || []).filter(k => k.trim()); 
+                
+                // 💡 자주 쓰이는 색상/사이즈 자동 형광펜 처리용 단어 목록
+                const autoWords = ['블랙', '화이트', '아이보리', '베이지', '그레이', '차콜', '네이비', '레드', '핑크', '블루', '소라', '옐로우', '그린', '카키', '브라운', '퍼플', '프리', 'FREE', '스몰', '미듐', '라지'];
+                
+                if (!kwArray.length && !autoWords.some(w => safeContent.includes(w)) && !safeContent.match(/(55|66|77|88|225|230|235|240|245|250)/)) {
+                    return safeContent;
+                }
+
+                // 수동 키워드 + 자동 단어 정규식 병합
+                let patterns = [...kwArray, ...autoWords].map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+                patterns.push('55', '66', '77', '88', '225', '230', '235', '240', '245', '250');
+                
+                const regex = new RegExp(`(${patterns.join('|')})`, 'gi');
+
+                return safeContent.split(regex).map((part, i) => {
+                    if (!part) return part;
+                    
+                    // 1. 수동 등록 키워드 (진한 노란색 형광펜)
+                    if (kwArray.includes(part)) {
+                        return <span key={i} className="text-yellow-900 dark:text-yellow-100 font-black bg-yellow-300 dark:bg-yellow-600/60 px-1 py-0.5 rounded shadow-sm">{part}</span>;
+                    } 
+                    // 2. 자동 인식 단어 (은은한 민트색 형광펜)
+                    else if (autoWords.includes(part) || /^(55|66|77|88|225|230|235|240|245|250)$/.test(part)) {
+                        return <span key={i} className="text-emerald-900 dark:text-emerald-100 font-bold bg-emerald-200 dark:bg-emerald-700/50 px-1 rounded">{part}</span>;
+                    }
+                    return part;
+                });
             }, []);
 
             const handleChatClick = (chat) => { bringToTopAndScroll(chat.nickname); setClickedChats(prev => new Set(prev).add(chat.id)); const finalProduct = (isFixedProductMode && manualProduct.trim() !== '') ? manualProduct.trim() : String(chat.content || ''); const finalPrice = isFixedProductMode ? manualPrice : null; addOrderLogic(chat.nickname, finalProduct, 1, true, null, finalPrice, isFixedProductMode, true); };
@@ -2831,9 +2881,14 @@ const dashboardStats = useMemo(() => {
             const handleAddManualDeposit = (e) => { e.preventDefault(); if (!newDepositName.trim() || !newDepositAmount) return openModal("입금자명/금액 필수", 'alert'); const newDep = { id: `manual_${Date.now()}`, name: newDepositName, amount: newDepositAmount, source: 'manual' }; setManualDeposits(prev => [newDep, ...prev]); setNewDepositName(''); setNewDepositAmount(''); };
 
             const visibleDeposits = useMemo(() => {
-                if (deferredDepositSearch) return filteredDeposits; const unmatched = []; const matched = [];
-                filteredDeposits.forEach(d => { if (matchedDeposits?.has(d.id)) matched.push(d); else unmatched.push(d); });
-                return [...unmatched, ...matched];
+                if (deferredDepositSearch) return filteredDeposits; 
+                const unmatched = []; const matched = []; const sijae = [];
+                filteredDeposits.forEach(d => { 
+                    if (String(d.name).trim() === '시재') sijae.push(d);
+                    else if (matchedDeposits?.has(d.id)) matched.push(d); 
+                    else unmatched.push(d); 
+                });
+                return [...unmatched, ...matched, ...sijae];
             }, [filteredDeposits, deferredDepositSearch, matchedDeposits]);
 
             const usedAddressNicks = useMemo(() => {
