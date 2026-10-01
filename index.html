@@ -764,12 +764,11 @@ useEffect(() => {
                             </div>
                         </div>
                     </div>
-                    <button onClick={()=>setIsSettingsOpen(false)} className="w-full bg-slate-800 text-white rounded py-2 text-sm font-bold hover:bg-slate-900 dark:bg-slate-700 shadow-sm mt-4">닫기</button>
                 </div>
             );
         };
 
-     const InventoryItemRow = memo(({ item, itemStats, getInventory, setOrders, setInventory, setProductHistory, openModal, expandedInventoryItem, setExpandedInventoryItem, setManualProduct, setCurrentSearchTerm, setManualPrice, setIsFixedProductMode, customerPaidStatus, saveInventoryToServer, cardPayments }) => {
+        const InventoryItemRow = memo(({ item, itemStats, getInventory, setOrders, setInventory, setProductHistory, openModal, expandedInventoryItem, setExpandedInventoryItem, setManualProduct, setCurrentSearchTerm, setManualPrice, setIsFixedProductMode, customerPaidStatus, saveInventoryToServer, cardPayments }) => {
             const [isEditing, setIsEditing] = useState(false);
             const [localName, setLocalName] = useState(item.name);
             const [localPrice, setLocalPrice] = useState(item.price === 0 || item.price === '' ? '' : Number(item.price).toLocaleString());
@@ -781,7 +780,6 @@ useEffect(() => {
 
             const orderedCount = itemStats ? itemStats.count : 0;
             const aggregatedOrders = itemStats ? itemStats.aggregated : [];
-            // ✨ 핵심: 대기 수량과 대기 명단 데이터 가져오기
             const waitlistCount = itemStats ? (itemStats.waitlistCount || 0) : 0;
             const waitlistAggregated = itemStats ? (itemStats.waitlistAggregated || []) : [];
 
@@ -800,7 +798,6 @@ useEffect(() => {
                 let copyText = "";
 
                 if (myGroup && myGroup.options.length > 0) {
-                    // 옵션 사이에 쉼표(,) 추가 및 맨 앞 이모지(🔹) 추가
                     copyText = `🔹 ${myGroup.baseName} ${myGroup.options.join(', ')} / ${priceStr}`.trim();
                 } else {
                     copyText = `🔹 ${item.name} / ${priceStr}`.trim();
@@ -825,26 +822,22 @@ useEffect(() => {
                     clearTimeout(clickTimeoutRef.current);
                 }
 
-                // 연속 클릭을 감지하기 위한 0.25초(250ms) 대기 시간
                 clickTimeoutRef.current = setTimeout(() => {
                     const count = clickCountRef.current;
-                    clickCountRef.current = 0; // 카운트 초기화
+                    clickCountRef.current = 0;
 
                     if (count === 1) {
-                        // 1. 단일 클릭: 제품명만 복사
                         const copyText = item.name.trim();
                         const textArea = document.createElement("textarea"); textArea.value = copyText; document.body.appendChild(textArea); textArea.select();
                         try { document.execCommand('copy'); } catch (err) {} document.body.removeChild(textArea);
                         target.classList.add('text-green-600', 'dark:text-green-400');
                         setTimeout(() => target.classList.remove('text-green-600', 'dark:text-green-400'), 500);
                     } else if (count === 2) {
-                        // 2. 더블 클릭: 상단 고정 (수동 입력창)
                         setManualProduct(item.name); 
                         setManualPrice(item.price ? Number(item.price).toLocaleString() : '');
                         setIsFixedProductMode(true); 
                         document.getElementById('manual-prod-input')?.focus();
                     } else if (count >= 3) {
-                        // 3. 세 번 클릭: 옵션 병합 스마트 복사
                         executeSmartCopy(target);
                     }
                 }, 250); 
@@ -873,11 +866,8 @@ useEffect(() => {
                     return;
                 }
                 
-                // ✨ 추가: 상품명이 변경된 경우, 기존에 해당 상품을 주문한 모든 내역의 상품명도 일괄 업데이트
                 if (newName !== item.name) {
                     setOrders(prevOrders => prevOrders.map(o => o.product === item.name ? { ...o, product: newName } : o));
-                    
-                    // 주문 입력시 불러오는 가격 히스토리 데이터도 새 이름으로 복사해 둡니다.
                     setProductHistory(prevHist => {
                         const next = { ...prevHist };
                         if (next[item.name] !== undefined) {
@@ -891,6 +881,10 @@ useEffect(() => {
             };
 
             const handleDelete = () => {
+                if (item.isLocked) {
+                    openModal('잠금(자물쇠)이 설정된 상품은 삭제할 수 없습니다. 먼저 자물쇠를 해제해주세요.', 'alert');
+                    return;
+                }
                 openModal(`'${item.name}' 상품을 삭제하시겠습니까?`, 'confirm', () => {
                     setInventory(prev => {
                         const newInv = prev.filter(i => i.name !== item.name);
@@ -903,6 +897,15 @@ useEffect(() => {
             const handleToggleSoldOut = () => {
                 setInventory(prev => {
                     const newInv = prev.map(i => i.name === item.name ? { ...i, isSoldOut: !i.isSoldOut } : i);
+                    saveInventoryToServer(newInv);
+                    return newInv;
+                });
+            };
+
+            // ✨ 자물쇠(잠금) 토글 함수
+            const handleToggleLock = () => {
+                setInventory(prev => {
+                    const newInv = prev.map(i => i.name === item.name ? { ...i, isLocked: !i.isLocked } : i);
                     saveInventoryToServer(newInv);
                     return newInv;
                 });
@@ -940,7 +943,6 @@ useEffect(() => {
                             <div className="flex flex-col gap-1.5">
                                 <div className="flex justify-between items-start gap-2">
                                     <div className="flex-1 flex items-start gap-1.5 min-w-0">
-                                        {/* ✨ 핀 버튼 추가: 클릭 시 수동 입력창에 고정 */}
                                         <button onClick={(e) => {
                                             e.stopPropagation();
                                             setManualProduct(item.name); 
@@ -954,13 +956,19 @@ useEffect(() => {
                                             onClick={handleMultiClick}
                                             onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); executeSmartCopy(e.currentTarget); }}
                                         >
-                                            {item.name}
+                                            {item.name} {item.isLocked && <span className="text-amber-500 text-[10px] ml-1">🔒</span>}
                                         </div>
                                     </div>
+                                    {/* ✨ 자물쇠 버튼 위치: 판매/품절 버튼과 수정/삭제 버튼 사이 */}
                                     <div className="flex items-center justify-end shrink-0 gap-1 mt-0.5">
                                         <button onClick={(e) => { e.stopPropagation(); handleToggleSoldOut(); }} className={`px-1.5 py-0.5 rounded text-[9px] font-bold shadow-sm transition-colors ${item.isSoldOut ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-slate-200 text-slate-600 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600'}`}>{item.isSoldOut ? '판매' : '품절'}</button>
+                                        
+                                        <button onClick={(e) => { e.stopPropagation(); handleToggleLock(); }} className={`px-1.5 py-0.5 rounded text-[9px] font-bold shadow-sm transition-colors ${item.isLocked ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-400 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-400'}`} title={item.isLocked ? "잠금 해제 (초기화 시 삭제 가능)" : "상품 잠금 (초기화 및 삭제 방지)"}>
+                                            <Icon name={item.isLocked ? "lock" : "lock-open"} weight="bold" size={12}/>
+                                        </button>
+
                                         <button onClick={(e) => { e.stopPropagation(); setIsEditing(true); }} className="text-slate-400 hover:text-blue-500 w-5 flex justify-center" title="수정"><Icon name="pencil-simple" weight="bold" size={14}/></button>
-                                        <button onClick={(e) => { e.stopPropagation(); handleDelete(); }} className="text-slate-400 hover:text-red-500 w-5 flex justify-center" title="삭제"><Icon name="trash" weight="bold" size={14}/></button>
+                                        <button onClick={(e) => { e.stopPropagation(); handleDelete(); }} className={`w-5 flex justify-center ${item.isLocked ? 'text-slate-200 dark:text-slate-700 cursor-not-allowed' : 'text-slate-400 hover:text-red-500'}`} title={item.isLocked ? "잠긴 상품은 삭제할 수 없습니다" : "삭제"}><Icon name="trash" weight="bold" size={14}/></button>
                                     </div>
                                 </div>
                                 
@@ -971,7 +979,6 @@ useEffect(() => {
                                         <span className="flex items-center gap-1 shrink-0"><span className="text-slate-400">잔여</span> <span className={`font-bold ${item.stock !== undefined && item.stock !== '' && (item.stock - orderedCount <= 0) ? 'text-red-500' : 'text-blue-600 dark:text-blue-400'}`} title={`초기설정재고: ${item.stock !== undefined && item.stock !== '' ? item.stock : '무한'}`}>{item.stock !== undefined && item.stock !== '' ? item.stock - orderedCount : '∞'}</span></span>
                                         <span className="w-px h-3 bg-slate-300 dark:bg-slate-600 shrink-0"></span>
                                         <span className="flex items-center gap-1 shrink-0"><span className="text-slate-400">주문</span> <span className={`font-bold ${item.isSoldOut ? 'text-red-400' : 'text-slate-700 dark:text-slate-300'}`}>{orderedCount}</span></span>
-                                        {/* ✨ 대기 수량 표시 추가 */}
                                         {waitlistCount > 0 && (
                                             <>
                                                 <span className="w-px h-3 bg-slate-300 dark:bg-slate-600 shrink-0"></span>
@@ -986,7 +993,6 @@ useEffect(() => {
                     </div>
                     {isExpanded && !isEditing && (
                         <div className="bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-700 p-1.5 flex flex-col gap-1">
-                            {/* 확정 명단 */}
                             <div className="flex justify-between items-center mb-1">
                                 <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1"><Icon name="users" weight="fill" /> 확정 명단 (총 {orderedCount}개)</span>
                                 <button onClick={handleCopyNames} className="text-[9px] bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-600 hover:bg-slate-300 px-1.5 py-0.5 rounded font-bold shadow-sm transition-colors">명단 복사</button>
@@ -1024,7 +1030,6 @@ useEffect(() => {
                                 </div>
                             )}
 
-                            {/* ✨ 대기 명단 (주황색) 추가 */}
                             {waitlistAggregated.length > 0 && (
                                 <>
                                     <div className="flex justify-between items-center mt-2 mb-1 border-t dark:border-slate-700 pt-2">
@@ -1057,7 +1062,7 @@ useEffect(() => {
                 </div>
             );
         }, (prev, next) => {
-            if (prev.item.name !== next.item.name || prev.item.price !== next.item.price || prev.item.isSoldOut !== next.item.isSoldOut || prev.item.stock !== next.item.stock) return false;
+            if (prev.item.name !== next.item.name || prev.item.price !== next.item.price || prev.item.isSoldOut !== next.item.isSoldOut || prev.item.stock !== next.item.stock || prev.item.isLocked !== next.item.isLocked) return false;
             
             const isExpandedPrev = prev.expandedInventoryItem === prev.item.name;
             const isExpandedNext = next.expandedInventoryItem === next.item.name;
@@ -1930,7 +1935,8 @@ useEffect(() => {
                                             id: existing && existing.id ? existing.id : `inv_${Date.now()}_${Math.random()}`, 
                                             name: i.name, price: Number(i.price), 
                                             stock: existing && existing.stock !== undefined ? existing.stock : '', 
-                                            isSoldOut: i.status === '품절' || (existing && existing.isSoldOut)
+                                            isSoldOut: i.status === '품절' || (existing && existing.isSoldOut),
+                                            isLocked: existing ? existing.isLocked : false
                                         };
                                     });
                                     return [...localOnly, ...merged];
@@ -2688,8 +2694,8 @@ const dashboardStats = useMemo(() => {
                 let msg = `${emoji} ${nick} 님 ${emoji}\n\n[${broadcastName} 주문목록]\n${itemListText}\n배송비 ${currentShipping.toLocaleString()}원\n\n총 주문금액 ${grandTotal.toLocaleString()}원\n------------------\n`;
                 if (isCard) { 
                     const cardBase = Math.max(0, grandTotal - depositTotal);
-                    if (depositTotal > 0) { msg += `[카드결제]\n총 주문금액 ${grandTotal.toLocaleString()}원\n선입금 ${depositTotal.toLocaleString()}원\n남은 결제금액 ${cardBase.toLocaleString()}원\n수수료(10%) ${(cardBase * 0.1).toLocaleString()}원\n👉최종 결제요청액 ${(cardBase * 1.1).toLocaleString()}원 예정\n\n핸드폰번호 남겨주세요🌸\n------------------\n\n`; } 
-                    else { msg += `[카드결제]\n금액 ${cardBase.toLocaleString()}원\n수수료(10%) ${(cardBase * 0.1).toLocaleString()}원\n👉결제요청액 ${(cardBase * 1.1).toLocaleString()}원 예정\n\n핸드폰번호 남겨주세요🌸\n------------------\n\n`; }
+                    if (depositTotal > 0) { msg += `[카드결제]\n총 주문금액 ${grandTotal.toLocaleString()}원\n선입금 ${depositTotal.toLocaleString()}원\n남은 결제금액 ${cardBase.toLocaleString()}원\n수수료(10%) ${(cardBase * 0.1).toLocaleString()}원\n👉최종 결제요청액 ${(cardBase * 1.1).toLocaleString()}원 예정\n\n방송종료 시간이 늦을경우 오전에 카드결제 링크 발송합니다.\n주문내역 확인 후 주무시면 됩니다!\n------------------\n\n`; } 
+                    else { msg += `[카드결제]\n금액 ${cardBase.toLocaleString()}원\n수수료(10%) ${(cardBase * 0.1).toLocaleString()}원\n👉결제요청액 ${(cardBase * 1.1).toLocaleString()}원 예정\n\n방송종료 시간이 늦을경우 오전에 카드결제 링크 발송합니다.\n주문내역 확인 후 주무시면 됩니다!\n------------------\n\n`; }
                 } 
                 else { 
                     const isPaid = (balance <= 0) && (grandTotal >= 0) && (activeItems.length > 0); 
@@ -2702,9 +2708,9 @@ const dashboardStats = useMemo(() => {
                 
                 if (addr && addr.address && !alwaysRequestAddress) {
                     const dispPhone = fixPhoneNumber(addr.phone);
-                    msg += `\n[배송지 확인]\n\n${addr.realname || nick}\n${dispPhone}\n${addr.address} ${addr.zipcode ? `(${addr.zipcode})` : ''}\n${addr.memo ? addr.memo + '\n' : ''}\n------------------\n${addrNotice}`;
+                    msg += `\n[배송지 확인]\n\n${addr.realname || nick}\n${dispPhone}\n${addr.address} ${addr.zipcode ? `(${addr.zipcode})` : ''}\n${addr.memo ? addr.memo + '\n' : ''}\n------------------\n${addrNotice ? addrNotice + '\n' : ''}`;
                 } else if (!sentAddressRequests.has(nick) || alwaysRequestAddress) { 
-                    msg += `\n${surveyNotice}`; setSentAddressRequests(prev => new Set(prev).add(nick)); 
+                    if (surveyNotice) msg += `\n${surveyNotice}\n`; setSentAddressRequests(prev => new Set(prev).add(nick)); 
                 }
 
                 // ✨ 대기 상품이 있다면 메시지 맨 끝에 별도 안내문 추가
@@ -3480,7 +3486,7 @@ const dashboardStats = useMemo(() => {
             const handleExportAllMessages = () => {
                 const groups = {}; orders.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); });
                 const templateConfigStr = localStorage.getItem(getLsKey('templateConfig'));
-                const templateConfigLocal = templateConfigStr ? JSON.parse(templateConfigStr) : { emoji: '💙', paidMsg: '😍 완납 확인! 감사합니다 😍', unpaidPrefix: '[미입금]\n총 입금하실 금액\n👉', overpaidMsg: '과납 금액이 있습니다.\n환불 또는 적립 여부를 알려주세요!', addrNotice: '※ 배송지 변경 시 채팅으로 변경할 주소를 남겨주세요!', surveyNotice: '방송마다 1회 하단의 주문서(배송지입력) 필수!!', alwaysRequestAddress: false };
+                const templateConfigLocal = templateConfigStr ? JSON.parse(templateConfigStr) : { emoji: '💙', paidMsg: '😍 완납 확인! 감사합니다 😍', unpaidPrefix: '[미입금]\n총 입금하실 금액\n👉', overpaidMsg: '과납 금액이 있습니다.\n환불 또는 적립 여부를 알려주세요!', addrNotice: '', surveyNotice: '', alwaysRequestAddress: false };
                 const overpaidMsg = templateConfigLocal.overpaidMsg || '과납 금액이 있습니다.\n환불 또는 적립 여부를 알려주세요!';
                 const bankStr = localStorage.getItem(getLsKey('bankAccount')) || "카카오뱅크 김선정\n7942 18 01611";
                 const sentAddressRequestsStr = localStorage.getItem(getLsKey('sentAddressRequests')); const sentAddressRequestsLocal = sentAddressRequestsStr ? new Set(JSON.parse(sentAddressRequestsStr)) : new Set();
@@ -3504,8 +3510,8 @@ const dashboardStats = useMemo(() => {
                     let statusStr = '';
                     if (isCard) { 
                         statusStr = '카드결제'; const cardBase = Math.max(0, baseGrandTotal - depositTotal);
-                        if (depositTotal > 0) { msg += `[카드결제]\n총 주문금액 ${baseGrandTotal.toLocaleString()}원\n선입금 ${depositTotal.toLocaleString()}원\n남은 결제금액 ${cardBase.toLocaleString()}원\n수수료(10%) ${(cardBase * 0.1).toLocaleString()}원\n👉최종 결제요청액 ${(cardBase * 1.1).toLocaleString()}원 예정\n\n핸드폰번호 남겨주세요🌸\n------------------\n\n`; } 
-                        else { msg += `[카드결제]\n금액 ${cardBase.toLocaleString()}원\n수수료(10%) ${(cardBase * 0.1).toLocaleString()}원\n👉결제요청액 ${(cardBase * 1.1).toLocaleString()}원 예정\n\n핸드폰번호 남겨주세요🌸\n------------------\n\n`; }
+                        if (depositTotal > 0) { msg += `[카드결제]\n총 주문금액 ${baseGrandTotal.toLocaleString()}원\n선입금 ${depositTotal.toLocaleString()}원\n남은 결제금액 ${cardBase.toLocaleString()}원\n수수료(10%) ${(cardBase * 0.1).toLocaleString()}원\n👉최종 결제요청액 ${(cardBase * 1.1).toLocaleString()}원 예정\n\n방송종료 시간이 늦을경우 오전에 카드결제 링크 발송합니다.\n주문내역 확인 후 주무시면 됩니다!\n------------------\n\n`; } 
+                        else { msg += `[카드결제]\n금액 ${cardBase.toLocaleString()}원\n수수료(10%) ${(cardBase * 0.1).toLocaleString()}원\n👉결제요청액 ${(cardBase * 1.1).toLocaleString()}원 예정\n\n방송종료 시간이 늦을경우 오전에 카드결제 링크 발송합니다.\n주문내역 확인 후 주무시면 됩니다!\n------------------\n\n`; }
                     } else { 
                         const isPaid = (balance <= 0) && (grandTotal >= 0); 
                         if (depositTotal > 0 && balance <= 0) { msg += `[입금확인]\n${depositTotal.toLocaleString()}원\n------------------\n\n`; } 
@@ -3519,8 +3525,10 @@ const dashboardStats = useMemo(() => {
                     }
                     if (addrInfo && addrInfo.address && !templateConfigLocal.alwaysRequestAddress) {
                         let cleanPhone = fixPhoneNumber(addrInfo.phone);
-                        msg += `\n[배송지 확인]\n\n${addrInfo.realname || nick}\n${cleanPhone}\n${addrInfo.address} ${addrInfo.zipcode ? `(${addrInfo.zipcode})` : ''}\n${addrInfo.memo ? addrInfo.memo + '\n' : ''}\n------------------\n${templateConfigLocal.addrNotice}`; 
-                    } else if (!sentAddressRequestsLocal.has(nick) || templateConfigLocal.alwaysRequestAddress) { msg += `\n${templateConfigLocal.surveyNotice}`; }
+                        msg += `\n[배송지 확인]\n\n${addrInfo.realname || nick}\n${cleanPhone}\n${addrInfo.address} ${addrInfo.zipcode ? `(${addrInfo.zipcode})` : ''}\n${addrInfo.memo ? addrInfo.memo + '\n' : ''}\n------------------\n${templateConfigLocal.addrNotice ? templateConfigLocal.addrNotice + '\n' : ''}`; 
+                    } else if (!sentAddressRequestsLocal.has(nick) || templateConfigLocal.alwaysRequestAddress) { 
+                        if (templateConfigLocal.surveyNotice) msg += `\n${templateConfigLocal.surveyNotice}\n`; 
+                    }
                     
                     if (waitlistItems.length > 0) {
                         const waitlistText = waitlistItems.map(i => `${i.product}${i.quantity > 1 ? ` ★${i.quantity}개` : ''}`).join('\n');
@@ -3694,7 +3702,7 @@ const dashboardStats = useMemo(() => {
             const [quickShipping, setQuickShipping] = useLocalStorage('quickShipping', 4000); 
             const [jejuShipping, setJejuShipping] = useLocalStorage('jejuShipping', 8000);
             const [freeShippingThreshold, setFreeShippingThreshold] = useLocalStorage('freeShippingThreshold', 70000);
-            const [templateConfig, setTemplateConfig] = useLocalStorage('templateConfig', { emoji: '💙', paidMsg: '😍 완납 확인! 감사합니다 😍', unpaidPrefix: '[미입금]\n총 입금하실 금액\n👉', overpaidMsg: '과납 금액이 있습니다.\n환불 또는 적립 여부를 알려주세요!', addrNotice: '※ 배송지 변경 시 채팅으로 변경할 주소를 남겨주세요!', surveyNotice: '방송마다 1회 하단의 주문서(배송지입력) 필수!!', alwaysRequestAddress: false });
+            const [templateConfig, setTemplateConfig] = useLocalStorage('templateConfig', { emoji: '💙', paidMsg: '😍 완납 확인! 감사합니다 😍', unpaidPrefix: '[미입금]\n총 입금하실 금액\n👉', overpaidMsg: '과납 금액이 있습니다.\n환불 또는 적립 여부를 알려주세요!', addrNotice: '', surveyNotice: '', alwaysRequestAddress: false });
             const [isDarkMode, setIsDarkMode] = useLocalStorage('darkMode', false);
             
             const [productHistory, setProductHistory] = useLocalStorage('productHistory', {});
@@ -3735,6 +3743,16 @@ const dashboardStats = useMemo(() => {
             const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
 
             useEffect(() => {
+                setTemplateConfig(prev => {
+                    let updated = { ...prev };
+                    let changed = false;
+                    if (updated.surveyNotice === '방송마다 1회 하단의 주문서(배송지입력) 필수!!') { updated.surveyNotice = ''; changed = true; }
+                    if (updated.addrNotice === '※ 배송지 변경 시 채팅으로 변경할 주소를 남겨주세요!') { updated.addrNotice = ''; changed = true; }
+                    return changed ? updated : prev;
+                });
+            }, [setTemplateConfig]);
+
+            useEffect(() => {
                 const handleGlobalKeyDown = (e) => {
                     if (e.altKey && (e.key === 'r' || e.key === 'R' || e.key === 'ㄱ')) {
                         e.preventDefault();
@@ -3760,15 +3778,22 @@ const dashboardStats = useMemo(() => {
             const openModal = useCallback((msg, type = 'alert', onConfirm = null, onCancel = null, initVal = '') => { setModalConfig({ isOpen: true, type, message: msg, onConfirm: (val) => { setModalConfig(p => ({...p, isOpen: false})); if(onConfirm) onConfirm(val); }, onCancel: () => { setModalConfig(p => ({...p, isOpen: false})); if(onCancel) onCancel(); }, initialValue: initVal }); }, []);
 
             const handleResetAllData = () => {
-                openModal('정말 모든 데이터를 초기화하시겠습니까?\n(주문서, 입금 연결, 채팅 기록, 실시간 재고, 기타 설정이 모두 삭제됩니다)', 'confirm', () => {
+                openModal('정말 모든 데이터를 초기화하시겠습니까?\n(주문서, 입금 연결, 채팅 기록, 실시간 재고(잠긴 상품 제외), 기타 설정이 삭제됩니다)', 'confirm', () => {
                     setOrders([]); setProductHistory({}); setShippingOverrides({}); setCardPayments({}); setMatchedDeposits(new Set()); setDepositLinks({}); setDepositorNames({}); setClickedChats(new Set());
-                    setKeywords([]); setSentAddressRequests(new Set()); setDeletedDepositIds(new Set()); setCheckedOrders(new Set()); setAddressMapping({}); setCashReceipts({}); setInventory([]); setManualDeposits([]); localStorage.removeItem(getLsKey('ignoredAutoMatch'));
+                    setKeywords([]); setSentAddressRequests(new Set()); setDeletedDepositIds(new Set()); setCheckedOrders(new Set()); setAddressMapping({}); setCashReceipts({}); 
+                    
+                    // ✨ 초기화 시 자물쇠(isLocked)가 걸린 상품들만 추출하기
+                    const lockedItems = Array.isArray(inventory) ? inventory.filter(i => i.isLocked) : [];
+                    setInventory(lockedItems); 
+                    
+                    setManualDeposits([]); localStorage.removeItem(getLsKey('ignoredAutoMatch'));
                     setNoShowCustomers({}); setWaitlistCustomers({});
-                    // 채팅 기록 날리기
                     window.localStorage.removeItem(getLsKey('savedChats'));
                     
                     if (googleScriptUrl && masterSheetId) {
-                        fetchGas(googleScriptUrl, { action: 'save_inventory', masterId: getCleanSheetId(masterSheetId), data: [] }).catch(()=>{});
+                        // ✨ 구글 시트에도 빈 배열([])이 아닌 잠긴 상품만 남겨서 덮어쓰기!
+                        const payload = lockedItems.map(i => ({ name: i.name, price: i.price, status: i.isSoldOut ? '품절' : '' }));
+                        fetchGas(googleScriptUrl, { action: 'save_inventory', masterId: getCleanSheetId(masterSheetId), data: payload }).catch(()=>{});
                     }
                 });
             };
