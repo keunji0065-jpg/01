@@ -228,9 +228,15 @@
             if (!val) return new Date(0);
             const s = String(val).trim();
             
+            // YYYYMMDD 형식
+            if (/^\d{8}$/.test(s)) return new Date(parseInt(s.substring(0, 4)), parseInt(s.substring(4, 6)) - 1, parseInt(s.substring(6, 8)));
+            // YYMMDD 형식
+            if (/^\d{6}$/.test(s)) return new Date(2000 + parseInt(s.substring(0, 2)), parseInt(s.substring(2, 4)) - 1, parseInt(s.substring(4, 6)));
+
             // ✨ 구글 시트/엑셀 숫자형 일련번호(예: 45206.5) 처리 로직
             const numVal = Number(s);
-            if (!isNaN(numVal) && numVal > 30000) {
+            // 엑셀에서 30000은 대략 1982년, 60000은 2064년. 이 범위 내일 때만 일련번호로 취급하여 버그 방지
+            if (!isNaN(numVal) && numVal > 30000 && numVal < 60000) {
                 const d = new Date(1899, 11, 30);
                 d.setDate(d.getDate() + Math.floor(numVal));
                 if (!isNaN(d) && d.getTime() > 0) return d;
@@ -238,6 +244,11 @@
 
             const match = s.match(/(\d{4})[./-]\s*(\d{1,2})[./-]\s*(\d{1,2})/);
             if (match) return new Date(parseInt(match[1]), parseInt(match[2])-1, parseInt(match[3]));
+            
+            // "10. 7" 또는 "10/7" 같은 올해 연도 생략 날짜 (구글폼에서 자주 발생)
+            const shortMatch = s.match(/^(\d{1,2})[./-]\s*(\d{1,2})[./]?\s*$/);
+            if (shortMatch) return new Date(new Date().getFullYear(), parseInt(shortMatch[1])-1, parseInt(shortMatch[2]));
+
             let d = new Date(s.replace(/-/g, '/')); // iOS Safari 크로스 브라우징 완벽 호환을 위한 슬래시 치환
             if (!isNaN(d) && d.getTime() > 0) return d;
             return new Date(0);
@@ -366,7 +377,7 @@ useEffect(() => {
             
             if (!isOpen) return null;
             return (
-                <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[9999] animate-pop" onClick={type === 'alert' ? () => onConfirm() : undefined}>
+                <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[9999] animate-pop">
                     <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl p-6 w-80 max-w-sm" onClick={e => e.stopPropagation()}>
                         <div className="mb-4">
                             <h3 className="text-lg font-bold text-center text-slate-800 dark:text-slate-100 mb-2">{type === 'confirm' ? '확인' : type === 'prompt' ? '입력' : '알림'}</h3>
@@ -428,7 +439,7 @@ useEffect(() => {
             };
 
             return (
-                <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[9999] animate-pop" onClick={onClose}>
+                <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[9999] animate-pop">
                     <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl p-4 w-full max-w-md mx-4 flex flex-col max-h-[80vh]" onClick={e => e.stopPropagation()}>
                         <div className="mb-3 border-b dark:border-slate-700 pb-2 flex justify-between items-center shrink-0">
                             <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
@@ -539,7 +550,7 @@ useEffect(() => {
 
             if (!isOpen) return null;
             return (
-                <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[9999] animate-pop" onClick={onClose}>
+                <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[9999] animate-pop">
                     <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl p-6 w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
                         <div className="mb-4 border-b dark:border-slate-700 pb-3 flex justify-between items-center">
                             <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2"><Icon name="pencil-line" weight="fill" /> '{initialData ? initialData.nickname : nick}' 배송지 {initialData ? '수정' : '빠른 입력'}</h3>
@@ -627,7 +638,7 @@ useEffect(() => {
             };
             
             return (
-                <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[9999] animate-pop" onClick={onClose}>
+                <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[9999] animate-pop">
                     <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl p-6 w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
                         <div className="mb-4 border-b dark:border-slate-700 pb-3 flex justify-between items-center">
                             <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2"><Icon name="users-three" weight="fill" className="text-blue-500" /> 통합 고객상태 관리대장</h3>
@@ -1357,7 +1368,7 @@ useEffect(() => {
     };
 
     return (
-        <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[9999] animate-pop" onClick={onClose}>
+        <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[9999] animate-pop">
             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl p-5 w-full max-w-md mx-4 flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
                 <div className="mb-4 border-b dark:border-slate-700 pb-3 flex justify-between items-center shrink-0">
                     <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2"><Icon name="clipboard-text" weight="fill" className="text-blue-500"/> 스마트 메뉴판</h3>
@@ -1898,7 +1909,7 @@ useEffect(() => {
                             const mappedRaw = addrRows.map(row => {
                                 let obj = {}; headers.forEach((h, i) => { obj[h] = row[i]; });
                                 const getVal = (...keys) => { for (let k of keys) { if (obj[k]) return String(obj[k]).trim(); } return ''; };
-                                const tsRaw = getVal('타임스탬프', '날짜', '시간', '제출시간');
+                                const tsRaw = getVal('입력시간', '타임스탬프', '날짜', '시간', '제출시간');
                                 return {
                                     nickname: getVal('닉네임', '아이디', '주문자', '유튜브닉네임'),
                                     realname: getVal('이름', '수령인', '입금자명', '입금자'),
@@ -3047,7 +3058,7 @@ const dashboardStats = useMemo(() => {
                     <SmartMenuModal isOpen={isMenuModalOpen} onClose={() => setIsMenuModalOpen(false)} inventory={inventory} />
 
                     {isBatchModalOpen && (
-                        <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[9999] animate-pop" onClick={() => setIsBatchModalOpen(false)}>
+                        <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[9999] animate-pop">
                             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl p-6 w-full max-w-sm mx-4" onClick={e => e.stopPropagation()}>
                                 <h3 className="font-bold text-lg mb-4 text-slate-800 dark:text-slate-200 flex items-center gap-2"><Icon name="copy" weight="fill"/> 옵션 일괄 생성</h3>
                                 <div className="space-y-3">
