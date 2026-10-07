@@ -227,6 +227,15 @@
         const parseSafeDate = (val) => {
             if (!val) return new Date(0);
             const s = String(val).trim();
+            
+            // ✨ 구글 시트/엑셀 숫자형 일련번호(예: 45206.5) 처리 로직
+            const numVal = Number(s);
+            if (!isNaN(numVal) && numVal > 30000) {
+                const d = new Date(1899, 11, 30);
+                d.setDate(d.getDate() + Math.floor(numVal));
+                if (!isNaN(d) && d.getTime() > 0) return d;
+            }
+
             const match = s.match(/(\d{4})[./-]\s*(\d{1,2})[./-]\s*(\d{1,2})/);
             if (match) return new Date(parseInt(match[1]), parseInt(match[2])-1, parseInt(match[3]));
             let d = new Date(s.replace(/-/g, '/')); // iOS Safari 크로스 브라우징 완벽 호환을 위한 슬래시 치환
@@ -1889,6 +1898,7 @@ useEffect(() => {
                             const mappedRaw = addrRows.map(row => {
                                 let obj = {}; headers.forEach((h, i) => { obj[h] = row[i]; });
                                 const getVal = (...keys) => { for (let k of keys) { if (obj[k]) return String(obj[k]).trim(); } return ''; };
+                                const tsRaw = getVal('타임스탬프', '날짜', '시간', '제출시간');
                                 return {
                                     nickname: getVal('닉네임', '아이디', '주문자', '유튜브닉네임'),
                                     realname: getVal('이름', '수령인', '입금자명', '입금자'),
@@ -1896,7 +1906,8 @@ useEffect(() => {
                                     address: getVal('주소', '전체주소', '배송지', '주소(동,호수 필수)'),
                                     zipcode: getVal('우편번호', '우편', '우편 번호'),
                                     memo: getVal('배송메모', '메모', '요청사항'),
-                                    timestamp: getVal('타임스탬프', '날짜', '시간', '제출시간'),
+                                    timestamp: tsRaw,
+                                    _parsedTime: parseSafeDate(tsRaw).getTime(),
                                     _source: 'raw'
                                 };
                             }).filter(a => a.nickname || a.realname);
@@ -1906,7 +1917,7 @@ useEffect(() => {
                     } else { gasMsg += `주소(연결실패) `; }
                     
                     if (res.masterAddresses && Array.isArray(res.masterAddresses)) {
-                        const masterAddrs = res.masterAddresses.map(a => ({...a, phone: fixPhoneNumber(String(a.phone || '').trim()), _source: 'master'}));
+                        const masterAddrs = res.masterAddresses.map(a => ({...a, phone: fixPhoneNumber(String(a.phone || '').trim()), _parsedTime: parseSafeDate(a.timestamp).getTime(), _source: 'master'}));
                         mergedAddr = [...mergedAddr, ...masterAddrs];
                     }
                     
@@ -2412,13 +2423,16 @@ const dashboardStats = useMemo(() => {
                     let newDepositLinks = { ...depositLinks };
                     
                     updatedOrders.forEach(o => {
-                        if (o.isCancelled) return;
                         if (!customerBalances[o.customer]) { customerBalances[o.customer] = { productTotal: 0, productTotalForShipping: 0, depositTotal: 0, activeItemsCount: 0, isCloud: false }; }
-                        customerBalances[o.customer].productTotal += Number(o.price); 
-                        if (!o.isWaitlist && Number(o.price) > 0) customerBalances[o.customer].productTotalForShipping += Number(o.price);
+                        
                         customerBalances[o.customer].depositTotal += (o.deposit || 0); 
-                        if (!o.isWaitlist) customerBalances[o.customer].activeItemsCount += 1;
-                        if (o.loadedFromCloud) customerBalances[o.customer].isCloud = true;
+                        
+                        if (!o.isCancelled) {
+                            customerBalances[o.customer].productTotal += Number(o.price); 
+                            if (!o.isWaitlist && Number(o.price) > 0) customerBalances[o.customer].productTotalForShipping += Number(o.price);
+                            if (!o.isWaitlist) customerBalances[o.customer].activeItemsCount += 1;
+                            if (o.loadedFromCloud) customerBalances[o.customer].isCloud = true;
+                        }
                     });
 
                     const matchLookup = {};
@@ -2447,21 +2461,16 @@ const dashboardStats = useMemo(() => {
                         
                         if (matchedCustomer) {
                             const cb = customerBalances[matchedCustomer];
-                            if (cb.balance <= 0) { 
-                                newMatchedIds.add(deposit.id);
-                                newDepositLinks[deposit.id] = matchedCustomer;
-                                hasChanges = true; 
-                            } else {
-                                let applied = false;
-                                updatedOrders = updatedOrders.map(o => { 
-                                    if (o.customer === matchedCustomer && !applied) { applied = true; return { ...o, deposit: (o.deposit || 0) + depositAmount, loadedFromCloud: false }; } 
-                                    return o; 
-                                });
-                                cb.depositTotal += depositAmount; cb.balance -= depositAmount; cb.isCloud = false; 
-                                newMatchedIds.add(deposit.id);
-                                newDepositLinks[deposit.id] = matchedCustomer;
-                                hasChanges = true;
-                            }
+                            // 금액이 초과(과납)되더라도 무조건 주문서에 입금액을 누적시켜 과납을 기록하도록 수정
+                            let applied = false;
+                            updatedOrders = updatedOrders.map(o => { 
+                                if (o.customer === matchedCustomer && !applied) { applied = true; return { ...o, deposit: (o.deposit || 0) + depositAmount, loadedFromCloud: false }; } 
+                                return o; 
+                            });
+                            cb.depositTotal += depositAmount; cb.balance -= depositAmount; cb.isCloud = false; 
+                            newMatchedIds.add(deposit.id);
+                            newDepositLinks[deposit.id] = matchedCustomer;
+                            hasChanges = true;
                         }
                     });
                     if (hasChanges) { setOrders(updatedOrders); setMatchedDeposits(newMatchedIds); setDepositLinks(newDepositLinks); }
@@ -2475,17 +2484,32 @@ const dashboardStats = useMemo(() => {
                 if (!googleScriptUrl || !masterSheetId || Object.keys(orders).length === 0) return; 
                 
                 const customerTotalsForShipping = {}; 
+                const customerTotalDeposits = {}; 
+
+                orders.forEach(o => {
+                    if (!customerTotalDeposits[o.customer]) customerTotalDeposits[o.customer] = 0;
+                    customerTotalDeposits[o.customer] += (o.deposit || 0);
+                });
+
                 orders.filter(o => !o.isCancelled && !o.isWaitlist).forEach(o => { 
                     customerTotalsForShipping[o.customer] = (customerTotalsForShipping[o.customer] || 0) + (Number(o.price) > 0 ? Number(o.price) : 0); 
                 });
                 
                 const uniqueNicknames = Array.from(new Set(orders.filter(o => !o.isCancelled).map(o => o.customer)));
+                const printedDeposits = {};
                 
                 const saveList = orders.filter(o=>!o.isCancelled).map(o => { 
                     let addrRes = addressLookup.get(o.customer); let addr = addrRes.data || {}; 
                     const currentShipping = getCalculatedShipping(o.customer, customerTotalsForShipping[o.customer] || 0); 
                     const isCard = cardPayments[o.customer] ? true : false; 
                     const customerVal = o.customer || '';
+                    
+                    // 주문 품목 중 하나가 취소되어도 해당 고객의 입금 총액이 마스터 시트에 정상 보존되도록 개선
+                    let depositToSave = 0;
+                    if (!printedDeposits[customerVal]) {
+                        depositToSave = customerTotalDeposits[customerVal] || 0;
+                        printedDeposits[customerVal] = true;
+                    }
                     
                     const isVip = specialCustomers && specialCustomers[normalizeString(customerVal)]?.type === 'vip';
                     const isNoShow = noShowCustomers && noShowCustomers[customerVal];
@@ -2497,7 +2521,7 @@ const dashboardStats = useMemo(() => {
                         '수량': o.quantity,
                         '단가(제품금액)': o.price,
                         '배송비': currentShipping,
-                        '입금액': o.deposit,
+                        '입금액': depositToSave,
                         '카드결제': isCard ? 'O' : '',
                         '수령인명': addr.realname || '',
                         '연락처': addr.phone ? "'" + addr.phone : '',
@@ -2678,7 +2702,26 @@ const dashboardStats = useMemo(() => {
             }, [setOrders]);
 
             const handleOrderCancel = useCallback((id) => setOrders(prev => prev.map(o => o.id === id ? { ...o, isCancelled: !o.isCancelled } : o)), [setOrders]);
-            const handleOrderDelete = useCallback((id) => openModal("주문 삭제하시겠습니까?", 'confirm', () => setOrders(prev => prev.filter(o => o.id !== id))), [openModal, setOrders]);
+            const handleOrderDelete = useCallback((id) => {
+                openModal("주문 삭제하시겠습니까?", 'confirm', () => {
+                    setOrders(prev => {
+                        const orderToDelete = prev.find(o => o.id === id);
+                        if (!orderToDelete) return prev;
+                        const depositToShift = orderToDelete.deposit || 0;
+                        
+                        let shifted = false;
+                        const next = prev.filter(o => o.id !== id).map(o => {
+                            // 삭제하는 줄에 묶여있던 입금액이 있다면, 동일 고객의 다른 줄로 안전하게 이관
+                            if (!shifted && o.customer === orderToDelete.customer) {
+                                shifted = true;
+                                return { ...o, deposit: (o.deposit || 0) + depositToShift };
+                            }
+                            return o;
+                        });
+                        return next;
+                    });
+                });
+            }, [openModal, setOrders]);
 
    const copyOrderSheet = useCallback((nick, items, grandTotal, depositTotal, balance, isCard, addrData, e) => {
                 // ✨ 확정 상품과 대기 상품 분리
@@ -2918,8 +2961,8 @@ const dashboardStats = useMemo(() => {
                 const latestMap = {};
                 addresses.forEach(a => {
                     const cleanNick = normalizeString(a.nickname);
-                    const ts = parseSafeDate(a.timestamp).getTime();
-                    if (!latestMap[cleanNick] || ts > parseSafeDate(latestMap[cleanNick].timestamp).getTime()) latestMap[cleanNick] = a;
+                    const ts = a._parsedTime || parseSafeDate(a.timestamp).getTime();
+                    if (!latestMap[cleanNick] || ts > (latestMap[cleanNick]._parsedTime || parseSafeDate(latestMap[cleanNick].timestamp).getTime())) latestMap[cleanNick] = a;
                 });
                 let res = Object.values(latestMap);
                 if (deferredAddressSearch) { const term = String(deferredAddressSearch).toLowerCase(); res = res.filter(a => String(a.nickname).toLowerCase().includes(term) || String(a.realname).toLowerCase().includes(term) || String(a.phone).includes(term)); }
@@ -2968,13 +3011,13 @@ const dashboardStats = useMemo(() => {
                         
                         if (aIsSimilar && bIsSimilar) {
                             if (a._tempScore !== b._tempScore) return a._tempScore - b._tempScore;
-                            return parseSafeDate(b.timestamp).getTime() - parseSafeDate(a.timestamp).getTime();
+                            return (b._parsedTime || parseSafeDate(b.timestamp).getTime()) - (a._parsedTime || parseSafeDate(a.timestamp).getTime());
                         }
                         
-                        return parseSafeDate(b.timestamp).getTime() - parseSafeDate(a.timestamp).getTime();
+                        return (b._parsedTime || parseSafeDate(b.timestamp).getTime()) - (a._parsedTime || parseSafeDate(a.timestamp).getTime());
                     });
                 } else {
-                    res.sort((a, b) => { const tA = parseSafeDate(a.timestamp).getTime(); const tB = parseSafeDate(b.timestamp).getTime(); return tB - tA; });
+                    res.sort((a, b) => { const tA = a._parsedTime || parseSafeDate(a.timestamp).getTime(); const tB = b._parsedTime || parseSafeDate(b.timestamp).getTime(); return tB - tA; });
                 }
                 return res;
             }, [addresses, deferredAddressSearch, selectedNick, addressMapping, depositorNames]);
@@ -3297,7 +3340,7 @@ const dashboardStats = useMemo(() => {
                             {visibleAddresses.map((addr, idx) => {
                                 const isUsed = usedAddressNicks.has(normalizeString(addr.nickname));
                                 const tsDate = parseSafeDate(addr.timestamp);
-                                const tsStr = tsDate.getTime() > 0 ? `${tsDate.getMonth()+1}/${tsDate.getDate()}` : '';
+                                const tsStr = tsDate.getTime() > 0 ? `${String(tsDate.getMonth()+1).padStart(2, '0')}/${String(tsDate.getDate()).padStart(2, '0')}` : '';
                                 return (
                                     <div key={`${addr.phone}-${idx}`} onClick={() => handleAddressClick(addr)} className={`relative flex flex-col p-1.5 border rounded cursor-pointer transition-all ${isUsed ? 'opacity-60 bg-slate-100 dark:bg-slate-800/80 border-transparent' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm'}`}>
                                         <div className="flex justify-between items-center gap-1">
