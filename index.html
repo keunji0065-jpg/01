@@ -1085,7 +1085,7 @@ useEffect(() => {
         });
 
         // ✨ 안전성 극대화 및 품절 마크 디자인 변경된 InventoryItemRow
-        const InventoryItemRow = memo(({ item, itemStats, expandedInventoryItem, onItemAction }) => {
+        const InventoryItemRow = memo(({ item, itemStats, expandedInventoryItem, onItemAction, setInventory, saveInventoryToServer, openModal, setExpandedInventoryItem }) => {
             const isExpanded = item && expandedInventoryItem === item.name;
             const orderedCount = itemStats ? itemStats.count : 0;
             const waitlistCount = itemStats ? (itemStats.waitlistCount || 0) : 0;
@@ -1106,6 +1106,31 @@ useEffect(() => {
                 }
             };
 
+            const handleToggleSoldOut = (e) => {
+                e.stopPropagation();
+                setInventory(prev => { const newInv = prev.map(i => i.name === item.name ? { ...i, isSoldOut: !i.isSoldOut } : i); saveInventoryToServer(newInv); return newInv; });
+            };
+
+            const handleToggleLock = (e) => {
+                e.stopPropagation();
+                setInventory(prev => { const newInv = prev.map(i => i.name === item.name ? { ...i, isLocked: !i.isLocked } : i); saveInventoryToServer(newInv); return newInv; });
+            };
+
+            const handleDelete = (e) => {
+                e.stopPropagation();
+                if (item.isLocked) return openModal('잠금(자물쇠)이 설정된 상품은 삭제할 수 없습니다.', 'alert');
+                openModal(`'${item.name}' 상품을 삭제하시겠습니까?`, 'confirm', () => {
+                    setInventory(prev => {
+                        const newInv = prev.filter(i => i.name !== item.name);
+                        saveInventoryToServer(newInv);
+                        return newInv;
+                    });
+                    if (expandedInventoryItem === item.name) {
+                        setExpandedInventoryItem(null); 
+                    }
+                });
+            };
+
             if (!item) return null;
 
             return (
@@ -1114,14 +1139,17 @@ useEffect(() => {
                         {feedback ? <span className={feedback.color}>{feedback.msg}</span> : item.name}
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0 text-[10px]">
-                        {item.isLocked && <Icon name="lock" weight="fill" className="text-amber-500 shrink-0"/>}
-                        {item.isSoldOut && <span className="bg-slate-200 text-slate-500 px-1 py-0.5 rounded text-[9px] shrink-0 font-bold border border-slate-300">품절</span>}
                         <span className="text-slate-400 shrink-0">{item.price ? Number(item.price).toLocaleString() : '0'}</span>
                         {(orderedCount > 0 || waitlistCount > 0) && (
                             <span className={`font-bold shrink-0 ${orderedCount > 0 ? 'text-blue-600 dark:text-blue-400' : 'text-orange-500'}`}>
                                 ({orderedCount}{waitlistCount > 0 ? `+${waitlistCount}` : ''})
                             </span>
                         )}
+                        <div className="flex items-center gap-0.5 ml-1 border-l dark:border-slate-200 pl-1.5 shrink-0">
+                            <button onClick={handleToggleSoldOut} className={`px-1.5 py-0.5 rounded text-[9px] font-bold shadow-sm transition-colors ${item.isSoldOut ? 'bg-slate-500 text-white hover:bg-slate-600' : 'bg-slate-100 text-slate-400 border border-slate-200 hover:bg-slate-200 dark:bg-slate-800 dark:border-slate-600 dark:hover:bg-slate-700'}`}>{item.isSoldOut ? '품절' : '품절'}</button>
+                            <button onClick={handleToggleLock} className={`w-5 h-5 flex justify-center items-center rounded transition-colors shadow-sm ${item.isLocked ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/50 dark:text-amber-400' : 'bg-slate-100 text-slate-400 border border-slate-200 hover:bg-slate-200 dark:bg-slate-800 dark:border-slate-600 dark:hover:bg-slate-700'}`} title={item.isLocked ? "잠금 해제" : "상품 잠금"}><Icon name={item.isLocked ? "lock" : "lock-open"} weight="bold" size={12}/></button>
+                            <button onClick={handleDelete} className={`w-5 h-5 flex justify-center items-center rounded transition-colors shadow-sm ${item.isLocked ? 'bg-slate-100 text-slate-300 dark:bg-slate-800 cursor-not-allowed border border-transparent' : 'bg-slate-100 text-slate-400 border border-slate-200 hover:bg-red-50 hover:text-red-500 hover:border-red-200 dark:bg-slate-800 dark:border-slate-600 dark:hover:bg-slate-700'}`} title="삭제"><Icon name="trash" weight="bold" size={12}/></button>
+                        </div>
                     </div>
                 </div>
             );
@@ -3615,7 +3643,17 @@ const dashboardStats = useMemo(() => {
                                 .filter(i => !deferredSearchTerm || String(i.name).toLowerCase().includes(String(deferredSearchTerm).toLowerCase()))
                                 .sort((a, b) => String(b.name).localeCompare(String(a.name), 'ko', { numeric: true }))
                                 .map(item => (
-                                    <InventoryItemRow key={item.id || item.name} item={item} itemStats={inventoryStats[item.name]} expandedInventoryItem={expandedInventoryItem} onItemAction={handleInventoryItemAction} />
+                                    <InventoryItemRow 
+                                        key={item.id || item.name} 
+                                        item={item} 
+                                        itemStats={inventoryStats[item.name]} 
+                                        expandedInventoryItem={expandedInventoryItem} 
+                                        onItemAction={handleInventoryItemAction}
+                                        setInventory={setInventory}
+                                        saveInventoryToServer={saveInventoryToServer}
+                                        openModal={openModal}
+                                        setExpandedInventoryItem={setExpandedInventoryItem}
+                                    />
                             ))}
                         </div>
                     </div>
