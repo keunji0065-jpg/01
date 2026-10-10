@@ -1014,7 +1014,7 @@ useEffect(() => {
                         {aggregatedOrders.length === 0 ? (
                             <div className="text-center text-[10px] text-slate-400 py-3 bg-white/50 dark:bg-slate-900/50 rounded border border-dashed border-slate-300 dark:border-slate-700">확정된 주문이 없습니다.</div>
                         ) : (
-                            <div className="flex flex-col gap-0.5 max-h-[140px] overflow-y-auto pr-1">
+                            <div className="grid grid-cols-2 gap-1 max-h-[140px] overflow-y-auto pr-1">
                                 {aggregatedOrders.map(agg => {
                                     const isPaid = customerPaidStatus && customerPaidStatus[agg.customer];
                                     const isCard = cardPayments && cardPayments[agg.customer];
@@ -1030,6 +1030,7 @@ useEffect(() => {
                                                 try { document.execCommand('copy'); } catch (err) {} document.body.removeChild(textArea);
                                                 const el = e.currentTarget; el.classList.add('text-green-500'); setTimeout(() => el.classList.remove('text-green-500'), 500);
                                             }} title="클릭하여 닉네임 복사">
+                                                <span className="text-[9px] text-slate-400 mr-0.5 shrink-0 font-normal">{idx + 1}.</span>
                                                 <span className="truncate">{agg.customer}</span> {agg.quantity > 1 && <span className="text-slate-500 ml-0.5 shrink-0">({agg.quantity}개)</span>}
                                                 {isCard && <span className="text-[8px] bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-300 border border-purple-200 dark:border-purple-700 px-1 py-0.5 rounded shrink-0 leading-none">카드</span>}
                                             </span>
@@ -1048,7 +1049,7 @@ useEffect(() => {
                                 <div className="flex justify-between items-center mt-2 mb-1 border-t border-slate-200 dark:border-slate-700 pt-2">
                                     <span className="text-[10px] font-bold text-orange-500 flex items-center gap-1"><Icon name="hourglass" weight="fill" /> 대기 명단 ({waitlistCount})</span>
                                 </div>
-                                <div className="flex flex-col gap-0.5 max-h-[120px] overflow-y-auto pr-1">
+                                <div className="grid grid-cols-2 gap-1 max-h-[120px] overflow-y-auto pr-1">
                                     {waitlistAggregated.map(agg => (
                                         <div key={agg.customer} className="flex justify-between items-center bg-orange-50 dark:bg-orange-900/20 px-1.5 py-1 rounded border border-orange-200 dark:border-orange-800 shadow-sm text-[10px] group hover:border-orange-300 min-w-0">
                                             <span className="cursor-pointer hover:underline truncate flex-1 flex items-center gap-0.5 text-orange-700 dark:text-orange-400" onClick={(e) => {
@@ -1057,6 +1058,7 @@ useEffect(() => {
                                                 try { document.execCommand('copy'); } catch (err) {} document.body.removeChild(textArea);
                                                 const el = e.currentTarget; el.classList.add('text-green-500'); setTimeout(() => el.classList.remove('text-green-500'), 500);
                                             }} title="클릭하여 닉네임 복사">
+                                                <span className="text-[9px] text-orange-400/70 mr-0.5 shrink-0 font-normal">{idx + 1}.</span>
                                                 <span className="truncate">{agg.customer}</span> {agg.quantity > 1 && <span className="text-orange-500 ml-0.5 shrink-0">({agg.quantity}개)</span>}
                                             </span>
                                             <button onClick={(e) => {
@@ -1099,8 +1101,8 @@ useEffect(() => {
             };
 
             return (
-                <div onClick={handleClick} className={`p-1.5 flex items-center justify-between gap-1 border rounded cursor-pointer transition-colors shadow-sm text-xs select-none ${isExpanded ? 'bg-blue-100/50 dark:bg-blue-900/40 border-blue-300 ring-1 ring-blue-300' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'} ${item.isSoldOut ? 'opacity-60' : ''}`}>
-                    <div className={`font-bold truncate flex-1 min-w-0 ${item.isSoldOut && !feedback ? 'text-red-500 line-through' : 'text-slate-800 dark:text-slate-200'}`} title={item.name}>
+                <div onClick={handleClick} className={`p-1.5 flex items-center justify-between gap-1 border rounded cursor-pointer transition-colors shadow-sm text-xs select-none ${isExpanded ? 'bg-blue-100/50 dark:bg-blue-900/40 border-blue-300 ring-1 ring-blue-300' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'} ${item.isSoldOut ? 'opacity-60 bg-slate-50 dark:bg-slate-800' : ''}`}>
+                    <div className={`font-bold truncate flex-1 min-w-0 text-slate-800 dark:text-slate-200`} title={item.name}>
                         {feedback ? <span className={feedback.color}>{feedback.msg}</span> : item.name}
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0 text-[10px]">
@@ -1736,11 +1738,41 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     }
                 });
                 for (let prod in stats) {
-                    stats[prod].aggregated = Object.values(stats[prod].customers).sort((a, b) => String(a.customer).localeCompare(String(b.customer), 'ko'));
-                    stats[prod].waitlistAggregated = Object.values(stats[prod].waitlistCustomers).sort((a, b) => String(a.customer).localeCompare(String(b.customer), 'ko'));
+                    // ✨ 등록 시간(클릭 순서) 기반 선착순 정렬
+                    stats[prod].aggregated = Object.values(stats[prod].customers).sort((a, b) => Math.min(...a.orderIds) - Math.min(...b.orderIds));
+                    stats[prod].waitlistAggregated = Object.values(stats[prod].waitlistCustomers).sort((a, b) => Math.min(...a.orderIds) - Math.min(...b.orderIds));
                 }
                 return stats;
             }, [orders]);
+
+            // ✨ 자동 품절 및 품절 해제 처리 로직 (재고 도달 시)
+            useEffect(() => {
+                setInventory(prevInv => {
+                    let hasChanges = false;
+                    const nextInv = prevInv.map(item => {
+                        if (item.stock !== '' && item.stock !== undefined && item.stock !== null) {
+                            const stats = inventoryStats[item.name];
+                            const orderedCount = stats ? stats.count : 0;
+                            const stockNum = Number(item.stock);
+                            if (orderedCount >= stockNum && !item.isSoldOut) {
+                                hasChanges = true;
+                                return { ...item, isSoldOut: true };
+                            } else if (orderedCount < stockNum && item.isSoldOut) {
+                                hasChanges = true;
+                                return { ...item, isSoldOut: false };
+                            }
+                        }
+                        return item;
+                    });
+                    
+                    if (hasChanges) {
+                        saveInventoryToServer(nextInv);
+                        return nextInv;
+                    }
+                    return prevInv;
+                });
+            }, [inventoryStats, setInventory, saveInventoryToServer]);
+
             const [copyStatus, setCopyStatus] = useState({});
             const [quickMsgCopyStatus, setQuickMsgCopyStatus] = useState({});
             const [isSaving, setIsSaving] = useState(false);
