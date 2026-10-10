@@ -1134,8 +1134,8 @@ useEffect(() => {
             if (!item) return null;
 
             return (
-                <div onClick={handleClick} className={`p-1.5 flex items-center justify-between gap-1 border rounded cursor-pointer transition-colors shadow-sm text-xs select-none ${isExpanded ? 'bg-blue-100/50 dark:bg-blue-900/40 border-blue-300 ring-1 ring-blue-300' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'} ${item.isSoldOut ? 'opacity-50 bg-slate-100 dark:bg-slate-800/80' : ''}`}>
-                    <div className={`font-bold truncate flex-1 min-w-0 ${item.isSoldOut ? 'text-slate-500 dark:text-slate-400' : 'text-slate-800 dark:text-slate-200'}`} title={item.name}>
+                <div onClick={handleClick} className={`p-1.5 flex items-center justify-between gap-1 border rounded cursor-pointer transition-colors shadow-sm text-xs select-none ${isExpanded ? 'bg-blue-100/50 dark:bg-blue-900/40 border-blue-300 ring-1 ring-blue-300' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'}`}>
+                    <div className={`font-bold truncate flex-1 min-w-0 text-slate-800 dark:text-slate-200`} title={item.name}>
                         {feedback ? <span className={feedback.color}>{feedback.msg}</span> : item.name}
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0 text-[10px]">
@@ -1146,7 +1146,7 @@ useEffect(() => {
                             </span>
                         )}
                         <div className="flex items-center gap-0.5 ml-1 border-l dark:border-slate-200 pl-1.5 shrink-0">
-                            <button onClick={handleToggleSoldOut} className={`px-1.5 py-0.5 rounded text-[9px] font-bold shadow-sm transition-colors ${item.isSoldOut ? 'bg-slate-500 text-white hover:bg-slate-600' : 'bg-slate-100 text-slate-400 border border-slate-200 hover:bg-slate-200 dark:bg-slate-800 dark:border-slate-600 dark:hover:bg-slate-700'}`}>{item.isSoldOut ? '품절' : '품절'}</button>
+                            <button onClick={handleToggleSoldOut} className={`px-1.5 py-0.5 rounded text-[9px] font-bold shadow-sm transition-colors ${item.isSoldOut ? 'bg-red-500 text-white hover:bg-red-600 border border-red-600' : 'bg-slate-100 text-slate-400 border border-slate-200 hover:bg-slate-200 dark:bg-slate-800 dark:border-slate-600 dark:hover:bg-slate-700'}`}>{item.isSoldOut ? '품절' : '품절'}</button>
                             <button onClick={handleToggleLock} className={`w-5 h-5 flex justify-center items-center rounded transition-colors shadow-sm ${item.isLocked ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/50 dark:text-amber-400' : 'bg-slate-100 text-slate-400 border border-slate-200 hover:bg-slate-200 dark:bg-slate-800 dark:border-slate-600 dark:hover:bg-slate-700'}`} title={item.isLocked ? "잠금 해제" : "상품 잠금"}><Icon name={item.isLocked ? "lock" : "lock-open"} weight="bold" size={12}/></button>
                             <button onClick={handleDelete} className={`w-5 h-5 flex justify-center items-center rounded transition-colors shadow-sm ${item.isLocked ? 'bg-slate-100 text-slate-300 dark:bg-slate-800 cursor-not-allowed border border-transparent' : 'bg-slate-100 text-slate-400 border border-slate-200 hover:bg-red-50 hover:text-red-500 hover:border-red-200 dark:bg-slate-800 dark:border-slate-600 dark:hover:bg-slate-700'}`} title="삭제"><Icon name="trash" weight="bold" size={12}/></button>
                         </div>
@@ -2935,6 +2935,20 @@ const dashboardStats = useMemo(() => {
                             let uPrice = invItem ? Number(invItem.price) : (hist[cleanVal] || 0);
                             if (isDiscount(cleanVal) && uPrice > 0) uPrice = -Math.abs(uPrice);
                             newOrder.price = (Number(newOrder.quantity) || 0) * uPrice; 
+                            
+                            // ✨ '사은품' 단어가 포함되어 있으면 즉시 재고(인벤토리)에 등록
+                            if (cleanVal.includes('사은품')) {
+                                setInventory(prevInv => {
+                                    if (!Array.isArray(prevInv)) return prevInv;
+                                    const exists = prevInv.find(i => String(i.name).trim() === cleanVal);
+                                    if (!exists) {
+                                        const newInv = [{ id: `inv_${Date.now()}_${Math.random()}`, name: cleanVal, price: uPrice || 0, stock: '', isSoldOut: false, isLocked: false }, ...prevInv];
+                                        saveInventoryToServer(newInv); 
+                                        return newInv;
+                                    }
+                                    return prevInv;
+                                });
+                            }
                         } 
                         if (field === 'price' && o.product && String(o.product).trim() !== '') { 
                             const cleanProd = String(o.product).trim(); let valNum = Number(String(value).replace(/,/g, ''));
@@ -3133,7 +3147,7 @@ const dashboardStats = useMemo(() => {
                     if(inventory.some(i => i.name === cleanProduct)) return openModal("이미 등록된 상품명입니다.", "alert");
                     
                     setInventory(prev => {
-                        const newInv = [{ id: `inv_${Date.now()}_${Math.random()}`, name: cleanProduct, price: priceNum, stock: '', isSoldOut: false }, ...prev];
+                        const newInv = [{ id: `inv_${Date.now()}_${Math.random()}`, name: cleanProduct, price: priceNum, stock: '', isSoldOut: false, isLocked: false }, ...prev];
                         saveInventoryToServer(newInv);
                         return newInv;
                     });
@@ -3312,7 +3326,7 @@ const dashboardStats = useMemo(() => {
                 if(inventory.some(i => i.name === cleanName)) return openModal("이미 등록된 상품명입니다.", "alert");
                 
                 setInventory(prev => {
-                    const newInv = [{ id: `inv_${Date.now()}_${Math.random()}`, name: cleanName, price: priceNum, stock: stockNum, isSoldOut: false }, ...prev];
+                    const newInv = [{ id: `inv_${Date.now()}_${Math.random()}`, name: cleanName, price: priceNum, stock: stockNum, isSoldOut: false, isLocked: false }, ...prev];
                     saveInventoryToServer(newInv);
                     return newInv;
                 });
