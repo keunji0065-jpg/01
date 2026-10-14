@@ -636,7 +636,7 @@ useEffect(() => {
                                                     {item.name} {item.isSoldOut && <span className="ml-1 text-[10px] bg-red-500 text-white px-1 py-0.5 rounded font-bold shadow-sm">품절</span>}
                                                 </div>
                                                 <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                                                    단가: {Number(item.price).toLocaleString()}원 | 남은재고: {item.stock !== undefined && item.stock !== '' ? item.stock : '∞'}
+                                                    단가: {Number(item.price).toLocaleString()}원 | 총재고: {item.stock !== undefined && item.stock !== '' ? item.stock : '∞'}
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-2 shrink-0">
@@ -1143,6 +1143,10 @@ useEffect(() => {
             const waitlistCount = itemStats ? (itemStats.waitlistCount || 0) : 0;
             const [feedback, setFeedback] = useState(null);
 
+            const hasStockLimit = item && item.stock !== '' && item.stock !== undefined && item.stock !== null;
+            const totalStock = hasStockLimit ? Number(item.stock) : null;
+            const remainingStock = hasStockLimit ? Math.max(0, totalStock - orderedCount) : null;
+
             const handleClick = (e) => {
                 e.stopPropagation();
                 if (onItemAction && item) {
@@ -1165,7 +1169,7 @@ useEffect(() => {
 
             const handleToggleLock = (e) => {
                 e.stopPropagation();
-                setInventory(prev => { const newInv = prev.map(i => i.name === item.name ? { ...i, isLocked: !i.isLocked } : i); saveInventoryToServer(newInv); return newInv; });
+                setInventory(prev => { const newInv = prev.map(i => i.name === item.name ? { ...i, isSoldOut: i.isSoldOut, isLocked: !i.isLocked } : i); saveInventoryToServer(newInv); return newInv; });
             };
 
             const handleDelete = (e) => {
@@ -1190,14 +1194,26 @@ useEffect(() => {
                     <div className={`font-bold truncate flex-1 min-w-0 text-slate-800 dark:text-slate-200`} title={item.name}>
                         {feedback ? <span className={feedback.color}>{feedback.msg}</span> : item.name}
                     </div>
-                    <div className="flex items-center gap-1.5 shrink-0 text-[10px]">
+                    <div className="flex items-center gap-1 shrink-0 text-[10px]">
                         <span className="text-slate-400 shrink-0">{item.price ? Number(item.price).toLocaleString() : '0'}</span>
-                        {(orderedCount > 0 || waitlistCount > 0) && (
-                            <span className={`font-bold shrink-0 ${orderedCount > 0 ? 'text-blue-600 dark:text-blue-400' : 'text-orange-500'}`}>
-                                ({orderedCount}{waitlistCount > 0 ? `+${waitlistCount}` : ''})
-                            </span>
+                        
+                        {/* ✨ 주문건수 및 남은재고 실시간 뱃지 표시 */}
+                        {(orderedCount > 0 || waitlistCount > 0 || hasStockLimit) && (
+                            <div className="flex items-center gap-1 shrink-0 ml-0.5">
+                                {(orderedCount > 0 || waitlistCount > 0) && (
+                                    <span className={`px-1 py-0.5 rounded font-bold leading-none ${orderedCount > 0 ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 border border-blue-200 dark:border-blue-800' : 'bg-orange-50 text-orange-600 border border-orange-200'}`} title="현재 주문 수량 (대기 수량)">
+                                        주문 {orderedCount}{waitlistCount > 0 ? `+대기${waitlistCount}` : ''}
+                                    </span>
+                                )}
+                                {hasStockLimit && (
+                                    <span className={`px-1 py-0.5 rounded font-bold leading-none ${remainingStock === 0 ? 'bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400 border border-red-200 dark:border-red-800' : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'}`} title={`총 설정 재고: ${totalStock}개`}>
+                                        잔여 {remainingStock}
+                                    </span>
+                                )}
+                            </div>
                         )}
-                        <div className="flex items-center gap-0.5 ml-1 border-l dark:border-slate-200 pl-1.5 shrink-0">
+
+                        <div className="flex items-center gap-0.5 ml-0.5 border-l dark:border-slate-700 pl-1 shrink-0">
                             <button onClick={handleToggleSoldOut} className={`px-1.5 py-0.5 rounded text-[9px] font-bold shadow-sm transition-colors ${item.isSoldOut ? 'bg-red-500 text-white hover:bg-red-600 border border-red-600' : 'bg-slate-100 text-slate-400 border border-slate-200 hover:bg-slate-200 dark:bg-slate-800 dark:border-slate-600 dark:hover:bg-slate-700'}`}>{item.isSoldOut ? '품절' : '품절'}</button>
                             <button onClick={handleToggleLock} className={`w-5 h-5 flex justify-center items-center rounded transition-colors shadow-sm ${item.isLocked ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/50 dark:text-amber-400' : 'bg-slate-100 text-slate-400 border border-slate-200 hover:bg-slate-200 dark:bg-slate-800 dark:border-slate-600 dark:hover:bg-slate-700'}`} title={item.isLocked ? "잠금 해제" : "상품 잠금"}><Icon name={item.isLocked ? "lock" : "lock-open"} weight="bold" size={12}/></button>
                             <button onClick={handleDelete} className={`w-5 h-5 flex justify-center items-center rounded transition-colors shadow-sm ${item.isLocked ? 'bg-slate-100 text-slate-300 dark:bg-slate-800 cursor-not-allowed border border-transparent' : 'bg-slate-100 text-slate-400 border border-slate-200 hover:bg-red-50 hover:text-red-500 hover:border-red-200 dark:bg-slate-800 dark:border-slate-600 dark:hover:bg-slate-700'}`} title="삭제"><Icon name="trash" weight="bold" size={12}/></button>
@@ -1207,7 +1223,7 @@ useEffect(() => {
             );
         }, (prev, next) => {
             if (!prev.item || !next.item) return false;
-            if (prev.item.name !== next.item.name || prev.item.price !== next.item.price || prev.item.isSoldOut !== next.item.isSoldOut || prev.item.isLocked !== next.item.isLocked) return false;
+            if (prev.item.name !== next.item.name || prev.item.price !== next.item.price || prev.item.stock !== next.item.stock || prev.item.isSoldOut !== next.item.isSoldOut || prev.item.isLocked !== next.item.isLocked) return false;
             if ((prev.expandedInventoryItem === prev.item.name) !== (next.expandedInventoryItem === next.item.name)) return false;
             
             const prevCount = prev.itemStats ? prev.itemStats.count : 0;
@@ -1795,7 +1811,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                 });
             };
             
-            const [isMenuModalOpen, setIsMenuModalOpen] = useState(false);
+                    const [ isMenuModalOpen, setIsMenuModalOpen ] = useState(false);
             const [batchChangeModal, setBatchChangeModal] = useState({ isOpen: false, oldStr: '', newStr: '' });
             const [liveChatId, setLiveChatId] = useState(null);
             const chatNextPageTokenRef = useRef('');
@@ -1804,6 +1820,13 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             // ✨ 추가: 유튜브 요구 폴링 간격 및 GAS 중복 실행 방지 락
             const chatPollingIntervalRef = useRef(4000);
             const isGasFetchingRef = useRef(false);
+
+            const saveInventoryToServer = useCallback(async (newInvList) => {
+                if (googleScriptUrl && masterSheetId) {
+                    inventorySyncLock.current = Date.now();
+                    try { await fetchGas(googleScriptUrl, { action: 'save_inventory', masterId: getCleanSheetId(masterSheetId), data: newInvList.map(i => ({ name: i.name, price: i.price, status: i.isSoldOut ? '품절' : '' })) }); } catch (e) {}
+                }
+            }, [googleScriptUrl, masterSheetId]);
 
           const inventoryStats = useMemo(() => {
                 const stats = {};
@@ -1940,7 +1963,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                 const handleKeyDown = (e) => {
                     if (e.key === 'Escape') {
                         setSelectedNick(null); setIsFixedProductMode(false); setManualNick(''); setManualProduct('');
-                        setManualPrice(''); setCurrentSearchTerm(''); setIsBatchEditOpen(false); setChatSearch(''); setDepositSearch(''); setAddressSearch(''); setOrderSearch('');
+                        setManualPrice(''); setCurrentSearchTerm(''); setBatchChangeModal(p => ({ ...p, isOpen: false })); setChatSearch(''); setDepositSearch(''); setAddressSearch(''); setOrderSearch('');
                     }
                 };
                 window.addEventListener('keydown', handleKeyDown);
@@ -1958,13 +1981,6 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     setDepositLinks({});
                 });
             }, [openModal, setOrders, setMatchedDeposits, setDepositLinks]);
-
-            const saveInventoryToServer = useCallback(async (newInvList) => {
-                if (googleScriptUrl && masterSheetId) {
-                    inventorySyncLock.current = Date.now();
-                    try { await fetchGas(googleScriptUrl, { action: 'save_inventory', masterId: getCleanSheetId(masterSheetId), data: newInvList.map(i => ({ name: i.name, price: i.price, status: i.isSoldOut ? '품절' : '' })) }); } catch (e) {}
-                }
-            }, [googleScriptUrl, masterSheetId]);
 
             const handleQuickAddressSubmit = async (addrData) => {
                 if (!addrData.timestamp) addrData.timestamp = new Date().toISOString();
@@ -2673,6 +2689,18 @@ const dashboardStats = useMemo(() => {
             useEffect(() => { 
                 if (!isFixedProductMode) setFocusedChatId(null); 
             }, [isFixedProductMode]);
+
+            // ✨ 고정 모드를 켜는 순간 입력창 포커스를 해제하고 첫 번째 채팅을 즉시 선택하여 방향키가 바로 작동하도록 보장
+            useEffect(() => {
+                if (isFixedProductMode) {
+                    if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
+                        document.activeElement.blur();
+                    }
+                    if (!focusedChatId && reversedChats.length > 0) {
+                        setFocusedChatId(reversedChats[0].id);
+                    }
+                }
+            }, [isFixedProductMode, reversedChats, focusedChatId]);
             // ✨ 키보드 네비게이션 로직 종료
 
             const renderChatContent = useCallback((content, keywordsArr) => {
@@ -3387,28 +3415,72 @@ const dashboardStats = useMemo(() => {
                 setNewInvName(''); setNewInvPrice(''); setNewInvStock('');
             };
 
+            // ✨ 띄어쓰기 및 단어 경계를 정확히 인식하여 통째로 찾아 바꾸는 도우미 함수
+            const getExactReplacedName = useCallback((name, oldStr, newStr) => {
+                if (!oldStr) return null;
+                const target = String(name);
+                // 1) 완벽히 일치하는 경우
+                if (target === oldStr) return newStr;
+                // 2) "11번 치마 블랙 55" 처럼 찾으려는 구문 뒤에 공백과 사이즈가 오는 경우 (가장 흔한 케이스)
+                if (target.startsWith(oldStr + ' ')) {
+                    return (newStr ? newStr + ' ' : '') + target.slice(oldStr.length + 1);
+                }
+                // 3) 중간이나 끝에 공백 단위로 정확히 일치하는 경우
+                if (target.includes(' ' + oldStr + ' ')) {
+                    return target.split(' ' + oldStr + ' ').join(' ' + newStr + ' ').trim();
+                }
+                if (target.endsWith(' ' + oldStr)) {
+                    return target.slice(0, target.length - oldStr.length - 1) + (newStr ? ' ' + newStr : '');
+                }
+                // 4) 위 공백 기준에 안 걸리더라도 사용자가 입력한 구문이 그대로 들어있는 경우
+                if (target.includes(oldStr)) {
+                    return target.split(oldStr).join(newStr).trim();
+                }
+                return null;
+            }, []);
+
+            const batchPreviewList = useMemo(() => {
+                const { oldStr, newStr } = batchChangeModal;
+                if (!oldStr) return [];
+                return (inventory || []).map(item => {
+                    const nextName = getExactReplacedName(item.name, oldStr, newStr);
+                    if (nextName !== null && nextName !== item.name) {
+                        return { oldName: item.name, newName: nextName };
+                    }
+                    return null;
+                }).filter(Boolean);
+            }, [inventory, batchChangeModal, getExactReplacedName]);
+
             const executeBatchNameChange = (e) => {
                 e.preventDefault();
                 const { oldStr, newStr } = batchChangeModal;
-                if (!oldStr.trim()) return openModal("변경할 대상(찾을 단어)을 입력해주세요.", "alert");
+                if (!oldStr) return openModal("변경할 대상(찾을 구문)을 입력해주세요.", "alert");
+                if (batchPreviewList.length === 0) return openModal("일치하는 상품이 없습니다.", "alert");
                 
-                openModal(`'${oldStr}' 문자를 모두 '${newStr}'(으)로 변경하시겠습니까?\n(주문서, 실시간 재고 모두 한 번에 변경됩니다)`, 'confirm', () => {
-                    setInventory(prev => {
-                        const next = prev.map(i => ({...i, name: String(i.name).replace(new RegExp(oldStr, 'g'), newStr)}));
-                        saveInventoryToServer(next);
-                        return next;
-                    });
-                    setProductHistory(prev => {
-                        const next = {};
-                        Object.entries(prev).forEach(([k, v]) => {
-                            next[String(k).replace(new RegExp(oldStr, 'g'), newStr)] = v;
-                        });
-                        return next;
-                    });
-                    setOrders(prev => prev.map(o => ({...o, product: String(o.product).replace(new RegExp(oldStr, 'g'), newStr)})));
-                    setBatchChangeModal({ isOpen: false, oldStr: '', newStr: '' });
-                    openModal("일괄 변경이 완료되었습니다.", "alert");
+                const changeMap = {};
+                batchPreviewList.forEach(p => { changeMap[p.oldName] = p.newName; });
+
+                setInventory(prev => {
+                    const next = prev.map(i => changeMap[i.name] ? { ...i, name: changeMap[i.name] } : i);
+                    saveInventoryToServer(next);
+                    return next;
                 });
+                setProductHistory(prev => {
+                    const next = { ...prev };
+                    Object.entries(changeMap).forEach(([oldN, newN]) => {
+                        if (next[oldN] !== undefined) {
+                            next[newN] = next[oldN];
+                        }
+                    });
+                    return next;
+                });
+                setOrders(prev => prev.map(o => {
+                    if (changeMap[o.product]) return { ...o, product: changeMap[o.product] };
+                    const replaced = getExactReplacedName(o.product, oldStr, newStr);
+                    return replaced ? { ...o, product: replaced } : o;
+                }));
+                setBatchChangeModal({ isOpen: false, oldStr: '', newStr: '' });
+                openModal(`총 ${batchPreviewList.length}건의 상품명이 일괄 변경되었습니다.`, "alert");
             };
 
             const panelChat = useResizablePanel('chat', '14%');
@@ -3427,23 +3499,45 @@ const dashboardStats = useMemo(() => {
 
                     {batchChangeModal.isOpen && (
                         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[9999] animate-pop">
-                            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl p-6 w-full max-w-sm mx-4" onClick={e => e.stopPropagation()}>
-                                <div className="mb-4 border-b dark:border-slate-700 pb-3 flex justify-between items-center">
-                                    <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2"><Icon name="magic-wand" weight="fill" className="text-purple-500"/> 상품명 일괄 변경</h3>
+                            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl p-5 w-full max-w-md mx-4 flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
+                                <div className="mb-3 border-b dark:border-slate-700 pb-2.5 flex justify-between items-center shrink-0">
+                                    <h3 className="text-base font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2"><Icon name="magic-wand" weight="fill" className="text-purple-500"/> 상품명 통째로 찾아 바꾸기</h3>
                                     <button onClick={() => setBatchChangeModal({ isOpen: false, oldStr: '', newStr: '' })} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><Icon name="x" weight="bold" size={20}/></button>
                                 </div>
-                                <form onSubmit={executeBatchNameChange} className="space-y-3">
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-500 mb-1">찾을 단어 (예: 01)</label>
-                                        <input type="text" value={batchChangeModal.oldStr} onChange={e=>setBatchChangeModal(p=>({...p, oldStr: e.target.value}))} autoFocus className="w-full border dark:border-slate-600 rounded px-3 py-2 text-sm bg-slate-50 dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500" />
+                                <form onSubmit={executeBatchNameChange} className="flex flex-col flex-1 overflow-hidden gap-3">
+                                    <div className="space-y-2.5 shrink-0">
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">찾을 상품 구문 (띄어쓰기 포함 입력)</label>
+                                            <input type="text" value={batchChangeModal.oldStr} onChange={e=>setBatchChangeModal(p=>({...p, oldStr: e.target.value}))} placeholder="예: 11번 치마 블랙" autoFocus className="w-full border dark:border-slate-600 rounded px-3 py-2 text-sm bg-slate-50 dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500 font-bold" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">바꿀 상품 구문 (띄어쓰기 포함 입력)</label>
+                                            <input type="text" value={batchChangeModal.newStr} onChange={e=>setBatchChangeModal(p=>({...p, newStr: e.target.value}))} placeholder="예: 11번 치마 챠콜" className="w-full border dark:border-slate-600 rounded px-3 py-2 text-sm bg-slate-50 dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500 font-bold" />
+                                        </div>
                                     </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-500 mb-1">바꿀 단어 (예: 14)</label>
-                                        <input type="text" value={batchChangeModal.newStr} onChange={e=>setBatchChangeModal(p=>({...p, newStr: e.target.value}))} className="w-full border dark:border-slate-600 rounded px-3 py-2 text-sm bg-slate-50 dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500" />
+                                    <div className="flex-1 overflow-y-auto border-t dark:border-slate-700 pt-2.5 space-y-1.5 pr-1">
+                                        <div className="text-xs font-bold text-slate-500 flex justify-between items-center mb-1">
+                                            <span>변경될 상품 미리보기</span>
+                                            <span className="text-purple-600 dark:text-purple-400 font-black">{batchPreviewList.length}건 일치</span>
+                                        </div>
+                                        {batchPreviewList.length === 0 ? (
+                                            <div className="text-center py-6 text-slate-400 text-xs bg-slate-50 dark:bg-slate-900/50 rounded border border-dashed dark:border-slate-700">
+                                                일치하는 상품이 없습니다.<br/>(예: '11번 치마 블랙' 입력 시 55, 66, 77 사이즈가 모두 잡힙니다)
+                                            </div>
+                                        ) : (
+                                            batchPreviewList.map((p, idx) => (
+                                                <div key={idx} className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-2 rounded flex flex-col gap-0.5 text-xs">
+                                                    <span className="text-slate-400 line-through text-[11px]">{p.oldName}</span>
+                                                    <span className="text-purple-600 dark:text-purple-400 font-bold flex items-center gap-1">
+                                                        <Icon name="arrow-bend-down-right" weight="bold" /> {p.newName}
+                                                    </span>
+                                                </div>
+                                            ))
+                                        )}
                                     </div>
-                                    <div className="pt-3 flex gap-2">
+                                    <div className="pt-2 border-t dark:border-slate-700 flex gap-2 shrink-0">
                                         <button type="button" onClick={() => setBatchChangeModal({ isOpen: false, oldStr: '', newStr: '' })} className="flex-1 py-2.5 rounded font-bold text-sm bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">취소</button>
-                                        <button type="submit" className="flex-1 py-2.5 rounded font-bold text-sm bg-purple-600 hover:bg-purple-700 text-white">일괄 변경 실행</button>
+                                        <button type="submit" disabled={batchPreviewList.length === 0} className={`flex-1 py-2.5 rounded font-bold text-sm text-white transition-colors ${batchPreviewList.length > 0 ? 'bg-purple-600 hover:bg-purple-700 shadow-sm' : 'bg-slate-300 dark:bg-slate-700 cursor-not-allowed'}`}>일괄 변경 ({batchPreviewList.length}건)</button>
                                     </div>
                                 </form>
                             </div>
@@ -3580,7 +3674,7 @@ const dashboardStats = useMemo(() => {
                                                 }} 
                                                 className={`w-full border dark:border-slate-600 rounded pl-2 pr-9 py-1.5 text-xs outline-none focus:ring-1 focus:ring-slate-500 bg-white dark:bg-slate-900 dark:text-white transition-all ${isFixedProductMode ? 'ring-2 ring-slate-600 border-slate-600' : ''}`} 
                                             />
-                                            <button type="button" onClick={() => setIsFixedProductMode(!isFixedProductMode)} className={`absolute right-1 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors ${isFixedProductMode ? 'bg-slate-700 text-white shadow-inner' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300'}`} title="고정">고정</button>
+                                            <button type="button" onClick={(e) => { e.currentTarget.blur(); setIsFixedProductMode(prev => !prev); }} className={`absolute right-1 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors ${isFixedProductMode ? 'bg-slate-700 text-white shadow-inner' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300'}`} title="고정">고정</button>
                                         </div>
                                         <input type="text" placeholder="단가" value={manualPrice} onChange={e => { const val = e.target.value.replace(/,/g, ''); if (val === '' || val === '-') setManualPrice(val); else if(!isNaN(val)) setManualPrice(Number(val).toLocaleString()); }} className={`w-16 border dark:border-slate-600 rounded px-2 py-1.5 text-xs outline-none text-right bg-white dark:bg-slate-900 transition-all ${isFixedProductMode ? 'ring-2 ring-slate-600 border-slate-600' : ''}`} />
                                     </div>
@@ -3622,7 +3716,7 @@ const dashboardStats = useMemo(() => {
                     </div>
 
                     <div ref={panelDeposit.ref} className="flex flex-col bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg shadow-sm resizable-panel" style={{ width: panelDeposit.width, minWidth: '90px' }}>
-                        <div className="p-2 bg-slate-100 dark:bg-slate-800 border-b dark:border-slate-700 flex flex-col gap-2 shrink-0 relative">
+                        <div className="p-2 bg-slate-100 dark:bg-slate-800 border-b dark:border-slate-700 flex flex-col gap-1.5 shrink-0">
                             <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between shrink-0">
                                 <span className="flex items-center gap-1"><Icon name="money" weight="fill"/> 입금 내역</span>
                                 <div className="flex items-center gap-1.5"><span className="text-[10px] text-slate-500 dark:text-slate-400 mr-1">{filteredDeposits.length}건</span><button onClick={handleRematchAll} className="bg-red-500 hover:bg-red-600 text-white text-[9px] px-1.5 py-0.5 rounded shadow-sm transition-colors flex items-center gap-0.5"><Icon name="arrows-clockwise" weight="bold"/></button></div>
@@ -3634,7 +3728,12 @@ const dashboardStats = useMemo(() => {
                                 </div>
                                 <div className="relative shrink-0"><Icon name="magnifying-glass" className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-400 text-[10px]"/><input type="text" placeholder="검색" value={depositSearch} onChange={e => setDepositSearch(e.target.value)} onKeyDown={e => { if(e.key==='Escape'){ setDepositSearch(''); e.target.blur(); } }} className="w-full text-[10px] pl-6 pr-6 py-1.5 border dark:border-slate-600 rounded focus:ring-1 focus:ring-slate-500 outline-none bg-white dark:bg-slate-900" />{depositSearch && <button onClick={()=>setDepositSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><Icon name="x-circle" weight="fill" size={12}/></button>}</div>
                             </div>
-                            {selectedNick && <div className="absolute top-[calc(100%+4px)] left-1/2 -translate-x-1/2 w-11/12 z-20 text-[10px] text-slate-700 dark:text-slate-300 bg-slate-200 dark:bg-slate-700 p-1 rounded text-center font-bold animate-pulse border border-slate-300 dark:border-slate-600 shadow-lg truncate">👇 '{selectedNick}' 대기</div>}
+                            {selectedNick && (
+                                <div className="w-full text-[10px] text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded text-center font-bold border border-blue-200 dark:border-blue-800 truncate flex items-center justify-between gap-1 shrink-0">
+                                    <span className="truncate">🎯 '{selectedNick}' 매칭중</span>
+                                    <button type="button" onClick={() => setSelectedNick(null)} className="text-blue-400 hover:text-blue-600 shrink-0"><Icon name="x" weight="bold" size={10}/></button>
+                                </div>
+                            )}
                         </div>
                         <div className="flex-1 overflow-y-auto p-1 space-y-1 bg-slate-50 dark:bg-slate-900">
                             {visibleDeposits.map(d => {
@@ -3796,17 +3895,74 @@ const dashboardStats = useMemo(() => {
 
                                 {previewItems.length > 0 && (
                                     <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 pb-2 border-t dark:border-slate-700 pt-3 mt-3">
-                                        <div className="text-[10px] font-bold text-slate-600 dark:text-slate-400 mb-2">미리보기 <span className="text-blue-500">({previewItems.length}개)</span></div>
-                                        {previewItems.map(item => (
-                                            <div key={item.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-2 rounded flex justify-between items-center shadow-sm">
-                                                <div className="flex flex-col min-w-0">
-                                                    <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 truncate">{item.name}</span>
-                                                    <span className="text-[10px] text-blue-600 dark:text-blue-400">{Number(item.price).toLocaleString()}원</span>
+                                        <div className="flex justify-between items-center mb-2">
+                                            <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400">미리보기 <span className="text-blue-500">({previewItems.length}개)</span></span>
+                                            <button type="button" onClick={() => setPreviewItems([])} className="text-[9px] text-red-500 hover:underline font-bold">전체 비우기</button>
+                                        </div>
+                                        {previewItems.map((item, idx) => (
+                                            <div key={item.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-1.5 rounded flex flex-col gap-1.5 shadow-sm">
+                                                <div className="flex justify-between items-center gap-1">
+                                                    <input 
+                                                        type="text" 
+                                                        value={item.name} 
+                                                        onChange={e => {
+                                                            const val = e.target.value;
+                                                            setPreviewItems(prev => prev.map(p => p.id === item.id ? { ...p, name: val } : p));
+                                                        }}
+                                                        className="text-[11px] font-bold text-slate-800 dark:text-slate-200 bg-transparent border-b border-transparent focus:border-blue-400 outline-none flex-1 min-w-0"
+                                                    />
+                                                    <button 
+                                                        type="button"
+                                                        onClick={() => setPreviewItems(prev => prev.filter(p => p.id !== item.id))} 
+                                                        className="text-slate-400 hover:text-red-500 p-0.5 rounded hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors shrink-0"
+                                                        title="이 옵션 삭제"
+                                                    >
+                                                        <Icon name="x" weight="bold" size={12}/>
+                                                    </button>
+                                                </div>
+                                                <div className="flex items-center gap-1">
+                                                    <div className="flex items-center flex-1 border dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded px-1.5 py-0.5">
+                                                        <span className="text-[9px] text-slate-400 mr-1 shrink-0">단가</span>
+                                                        <input 
+                                                            type="text" 
+                                                            value={item.price ? Number(item.price).toLocaleString() : ''} 
+                                                            onChange={e => {
+                                                                const val = e.target.value.replace(/,/g, '');
+                                                                if (!isNaN(val)) {
+                                                                    setPreviewItems(prev => prev.map(p => p.id === item.id ? { ...p, price: val === '' ? 0 : Number(val) } : p));
+                                                                }
+                                                            }}
+                                                            placeholder="0"
+                                                            className="w-full text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-transparent text-right outline-none"
+                                                        />
+                                                    </div>
+                                                    <div className="flex items-center w-20 border dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded px-1.5 py-0.5 shrink-0">
+                                                        <span className="text-[9px] text-slate-400 mr-1 shrink-0">재고</span>
+                                                        <input 
+                                                            id={`preview-stock-${idx}`}
+                                                            type="number" 
+                                                            value={item.stock} 
+                                                            onChange={e => {
+                                                                const val = e.target.value;
+                                                                setPreviewItems(prev => prev.map(p => p.id === item.id ? { ...p, stock: val } : p));
+                                                            }}
+                                                            onKeyDown={e => {
+                                                                if (e.key === 'Enter') {
+                                                                    e.preventDefault();
+                                                                    const nextInput = document.getElementById(`preview-stock-${idx + 1}`);
+                                                                    if (nextInput) nextInput.focus();
+                                                                    else handleRegisterBatch();
+                                                                }
+                                                            }}
+                                                            placeholder="∞"
+                                                            className="w-full text-[10px] font-bold text-slate-700 dark:text-slate-200 bg-transparent text-right outline-none"
+                                                        />
+                                                    </div>
                                                 </div>
                                             </div>
                                         ))}
                                         <button onClick={handleRegisterBatch} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded text-[11px] mt-2 shadow-sm transition-colors">
-                                            실시간 재고로 일괄 등록
+                                            실시간 재고로 일괄 등록 ({previewItems.length}건)
                                         </button>
                                     </div>
                                 )}
