@@ -1080,33 +1080,36 @@ useEffect(() => {
             if (!item) return null;
 
             return (
-                <div onClick={handleClick} className={`p-1.5 flex items-center justify-between gap-1 border rounded cursor-pointer transition-colors shadow-sm text-xs select-none ${isExpanded ? 'bg-blue-100/50 dark:bg-blue-900/40 border-blue-300 ring-1 ring-blue-300' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'}`}>
+                <div onClick={handleClick} className={`group p-1.5 flex items-center justify-between gap-1 border rounded cursor-pointer transition-colors shadow-sm text-xs select-none ${isExpanded ? 'bg-blue-100/50 dark:bg-blue-900/40 border-blue-300 ring-1 ring-blue-300' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'}`}>
                     <div className={`font-bold truncate flex-1 min-w-0 ${item.isSoldOut ? 'text-slate-400 line-through dark:text-slate-500' : 'text-slate-800 dark:text-slate-200'}`} title={item.name}>
                         {feedback ? <span className={feedback.color}>{feedback.msg}</span> : item.name}
                     </div>
                     <div className="flex items-center gap-1 shrink-0 text-[10px]">
                         <span className="text-slate-400 shrink-0">{item.price ? Number(item.price).toLocaleString() : '0'}</span>
                         
-                        {/* ✨ 초슬림 뱃지: '주문/잔여' 글자 제거 및 품절 시 중복되는 '잔여 0' 숨김 */}
+                        {/* ✨ 초슬림 통합 뱃지: 박스 2개를 하나로 합쳐 공간 절약 */}
                         {(orderedCount > 0 || waitlistCount > 0 || (hasStockLimit && remainingStock > 0)) && (
-                            <div className="flex items-center gap-0.5 shrink-0">
+                            <span className="px-1 py-0.5 rounded font-bold leading-none bg-slate-100 dark:bg-slate-700/80 border border-slate-200 dark:border-slate-600 flex items-center gap-0.5 shrink-0" title={`주문 ${orderedCount}개` + (waitlistCount > 0 ? ` / 대기 ${waitlistCount}개` : '') + (hasStockLimit ? ` / 잔여 ${remainingStock}개` : '')}>
                                 {(orderedCount > 0 || waitlistCount > 0) && (
-                                    <span className={`px-1 py-0.5 rounded font-bold leading-none ${orderedCount > 0 ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 border border-blue-200 dark:border-blue-800' : 'bg-orange-50 text-orange-600 border border-orange-200'}`} title={`주문 ${orderedCount}개` + (waitlistCount > 0 ? ` / 대기 ${waitlistCount}개` : '')}>
-                                        {orderedCount}{waitlistCount > 0 ? `(+${waitlistCount})` : ''}
+                                    <span className={orderedCount > 0 ? 'text-blue-600 dark:text-blue-400' : 'text-orange-500'}>
+                                        {orderedCount}{waitlistCount > 0 ? `+${waitlistCount}` : ''}
                                     </span>
                                 )}
+                                {(orderedCount > 0 || waitlistCount > 0) && (hasStockLimit && remainingStock > 0) && (
+                                    <span className="text-slate-300 dark:text-slate-500">/</span>
+                                )}
                                 {hasStockLimit && remainingStock > 0 && (
-                                    <span className="px-1 py-0.5 rounded font-bold leading-none bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800" title={`잔여 ${remainingStock}개 (총 재고 ${totalStock}개)`}>
+                                    <span className="text-emerald-600 dark:text-emerald-400">
                                         잔{remainingStock}
                                     </span>
                                 )}
-                            </div>
+                            </span>
                         )}
 
-                        <div className="flex items-center gap-0.5 ml-0.5 border-l dark:border-slate-700 pl-1 shrink-0">
-                            <button onClick={handleToggleSoldOut} className={`px-1.5 py-0.5 rounded text-[9px] font-bold shadow-sm transition-colors ${item.isSoldOut ? 'bg-red-500 text-white hover:bg-red-600 border border-red-600' : 'bg-slate-100 text-slate-400 border border-slate-200 hover:bg-slate-200 dark:bg-slate-800 dark:border-slate-600 dark:hover:bg-slate-700'}`}>{item.isSoldOut ? '품절' : '품절'}</button>
-                            <button onClick={handleToggleLock} className={`p-0.5 rounded text-[10px] transition-colors ${item.isLocked ? 'text-amber-500 bg-amber-50 dark:bg-amber-900/30' : 'text-slate-300 hover:text-slate-500 dark:text-slate-600 dark:hover:text-slate-400'}`} title={item.isLocked ? "잠금 해제" : "초기화 방지 잠금"}><Icon name={item.isLocked ? "lock-key" : "lock-simple-open"} weight="fill"/></button>
-                            <button onClick={handleDelete} className={`p-0.5 rounded text-[10px] transition-colors ${item.isLocked ? 'text-slate-200 dark:text-slate-700 cursor-not-allowed' : 'text-slate-300 hover:text-red-500 dark:text-slate-600 dark:hover:text-red-400'}`} title="상품 삭제"><Icon name="trash" weight="bold"/></button>
+                        <div className="flex items-center gap-0.5 ml-0.5 shrink-0 group/btns">
+                            <button onClick={handleToggleSoldOut} className={`px-1 py-0.5 rounded text-[9px] font-bold shadow-sm transition-colors ${item.isSoldOut ? 'bg-red-500 text-white hover:bg-red-600 border border-red-600' : 'bg-slate-100 text-slate-400 border border-slate-200 hover:bg-slate-200 dark:bg-slate-800 dark:border-slate-600 dark:hover:bg-slate-700'}`}>{item.isSoldOut ? '품절' : '품'}</button>
+                            <button onClick={handleToggleLock} className={`p-0.5 rounded text-[10px] transition-colors ${item.isLocked ? 'text-amber-500 bg-amber-50 dark:bg-amber-900/30' : 'hidden group-hover/btns:inline-flex text-slate-300 hover:text-slate-500 dark:text-slate-600 dark:hover:text-slate-400'}`} title={item.isLocked ? "잠금 해제" : "초기화 방지 잠금"}><Icon name={item.isLocked ? "lock-key" : "lock-simple-open"} weight="fill"/></button>
+                            <button onClick={handleDelete} className={`hidden group-hover/btns:inline-flex p-0.5 rounded text-[10px] transition-colors ${item.isLocked ? 'text-slate-200 dark:text-slate-700 cursor-not-allowed' : 'text-slate-300 hover:text-red-500 dark:text-slate-600 dark:hover:text-red-400'}`} title="상품 삭제"><Icon name="trash" weight="bold"/></button>
                         </div>
                     </div>
                 </div>
@@ -1202,7 +1205,15 @@ useEffect(() => {
             }
             
             const suggestions = useMemo(() => findAddressSuggestions ? findAddressSuggestions(nick) : [], [nick, findAddressSuggestions]);
-            const isVip = useMemo(() => { const nickNorm = normalizeString(nick); const key = Object.keys(specialCustomers || {}).find(k => normalizeString(k) === nickNorm); return key && specialCustomers[key].type === 'vip'; }, [specialCustomers, nick]);
+            const specialType = useMemo(() => { 
+                const nickNorm = normalizeString(nick); 
+                const direct = specialCustomers?.[nickNorm];
+                if (direct) return direct.type;
+                const key = Object.keys(specialCustomers || {}).find(k => normalizeString(k) === nickNorm); 
+                return key ? specialCustomers[key].type : null; 
+            }, [specialCustomers, nick]);
+            const isVip = specialType === 'vip';
+            const isManager = specialType === 'manager';
             const [showDeposits, setShowDeposits] = useState(false);
 
            const cleanPhoneDisplay = addr && addr.phone ? fixPhoneNumber(addr.phone) : '';
@@ -1215,6 +1226,7 @@ useEffect(() => {
                                 <span onClick={(e) => { e.stopPropagation(); const textArea = document.createElement("textarea"); textArea.value = nick; document.body.appendChild(textArea); textArea.select(); try { document.execCommand('copy'); const el = e.currentTarget; el.classList.add('text-green-500'); setTimeout(() => el.classList.remove('text-green-500'), 500); } catch (err) {} document.body.removeChild(textArea); }} className={`font-bold text-[12px] text-slate-900 truncate max-w-[120px] sm:max-w-[150px] inline-block align-bottom cursor-pointer hover:text-slate-600`} title="클릭하여 닉네임 복사">{nick}</span>
                                 {addrConflict && <button onClick={(e) => { e.stopPropagation(); handlePromoteAddress(nick, addrConflict); }} className="ml-1 bg-red-50 border border-red-300 text-red-600 text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm animate-pulse flex items-center gap-0.5 shrink-0">🚨 정보변경 감지</button>}
                                 {isVip && <span onClick={(e) => e.stopPropagation()} className="ml-1 text-[10px] px-1.5 py-0.5 rounded border bg-slate-800 text-amber-400 font-bold shadow-sm shrink-0 flex items-center gap-0.5"><Icon name="crown" weight="fill"/> VIP</span>}
+                                {isManager && <span onClick={(e) => e.stopPropagation()} className="ml-1 text-[10px] px-1.5 py-0.5 rounded border bg-blue-600 border-blue-700 text-white font-bold shadow-sm shrink-0 flex items-center gap-0.5"><Icon name="shield-check" weight="fill"/> 관리자</span>}
                                 
                                 <button onClick={(e) => { e.stopPropagation(); handleMultiAddOpen(nick); }} className="bg-blue-100 text-blue-600 rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-blue-200 shrink-0 ml-1 shadow-sm transition-colors" title="장바구니에서 일괄 추가"><Icon name="shopping-cart" weight="fill" size={12}/></button>
                                 <button onClick={(e) => { e.stopPropagation(); addOrderLogic(nick, '', 1); }} className="bg-slate-200 text-slate-700 rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold hover:bg-slate-300 shrink-0 ml-1 transition-colors" title="빈 상품줄 추가">+</button>
@@ -1320,9 +1332,9 @@ useEffect(() => {
             if (prev.noShowStatus !== next.noShowStatus) return false;
             if (prev.waitlistStatus !== next.waitlistStatus) return false;
             
-            const pVip = prev.specialCustomers && prev.specialCustomers[normalizeString(prev.nick)]?.type === 'vip';
-            const nVip = next.specialCustomers && next.specialCustomers[normalizeString(next.nick)]?.type === 'vip';
-            if (pVip !== nVip) return false;
+            const pType = prev.specialCustomers && prev.specialCustomers[normalizeString(prev.nick)]?.type;
+            const nType = next.specialCustomers && next.specialCustomers[normalizeString(next.nick)]?.type;
+            if (pType !== nType) return false;
             
             if (prev.items.length !== next.items.length) return false;
             for (let i = 0; i < prev.items.length; i++) {
@@ -1892,9 +1904,16 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             }, [openModal]);
 
             const getCalculatedShipping = useCallback((nick, productTotal) => {
+                // ✨ 1순위: VIP 또는 관리자는 수동 배송비 설정이나 제주도 여부와 상관없이 무조건 무료배송(0원) 고정!
+                const nickNorm = normalizeString(nick); 
+                const directSpecial = specialCustomers?.[nickNorm];
+                const specialType = directSpecial ? directSpecial.type : (() => {
+                    const specialKey = Object.keys(specialCustomers || {}).find(k => normalizeString(k) === nickNorm);
+                    return specialKey ? specialCustomers[specialKey].type : null;
+                })();
+                if (specialType === 'vip' || specialType === 'manager') return 0; 
+
                 if (shippingOverrides[nick] !== undefined) return Number(shippingOverrides[nick]);
-                const nickNorm = normalizeString(nick); const specialKey = Object.keys(specialCustomers || {}).find(k => normalizeString(k) === nickNorm);
-                if (specialKey && specialCustomers[specialKey].type === 'vip') return 0; 
                 const addrRes = addressLookup.get(nick); const isJeju = addrRes && addrRes.data && addrRes.data.address && addrRes.data.address.includes('제주');
                 let calcShip = (freeShippingThreshold > 0 && productTotal >= freeShippingThreshold) ? 0 : Number(quickShipping);
                 if (isJeju) { calcShip += (Number(jejuShipping) - Number(quickShipping)); }
@@ -2131,22 +2150,33 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         
                         res.customerDb.forEach(row => {
                             const nick = String(row['닉네임'] || '').trim();
-                            const status = String(row['고객상태'] || '').trim();
+                            const status = String(row['고객상태'] || '').trim().toLowerCase();
                             const ts = row['저장시간'] || '';
                             if (nick) {
-                                if (status === 'vip' || status === 'manager') {
-                                    parsedSpecial[normalizeString(nick)] = { type: status, originalName: nick, timestamp: ts };
-                                } else if (status === 'noshow') {
+                                if (status === 'vip' || status === 'manager' || status === '관리자') {
+                                    const normType = status === '관리자' ? 'manager' : status;
+                                    parsedSpecial[normalizeString(nick)] = { type: normType, originalName: nick, timestamp: ts };
+                                } else if (status === 'noshow' || status === '노쇼') {
                                     parsedNoShow[nick] = true;
-                                } else if (status === 'waitlist') {
+                                } else if (status === 'waitlist' || status === '대기') {
                                     parsedWaitlist[nick] = true;
                                 }
                             }
                         });
                         
-                        setSpecialCustomers(prev => JSON.stringify(prev) !== JSON.stringify(parsedSpecial) ? parsedSpecial : prev);
-                        setNoShowCustomers(prev => JSON.stringify(prev) !== JSON.stringify(parsedNoShow) ? parsedNoShow : prev);
-                        setWaitlistCustomers(prev => JSON.stringify(prev) !== JSON.stringify(parsedWaitlist) ? parsedWaitlist : prev);
+                        // ✨ 중요: 구글 시트 폴링 시 로컬에 등록된 VIP/관리자 목록이 빈 값으로 초기화되지 않도록 안전하게 병합(Merge) 유지
+                        setSpecialCustomers(prev => {
+                            const merged = { ...prev, ...parsedSpecial };
+                            return JSON.stringify(prev) !== JSON.stringify(merged) ? merged : prev;
+                        });
+                        setNoShowCustomers(prev => {
+                            const merged = { ...prev, ...parsedNoShow };
+                            return JSON.stringify(prev) !== JSON.stringify(merged) ? merged : prev;
+                        });
+                        setWaitlistCustomers(prev => {
+                            const merged = { ...prev, ...parsedWaitlist };
+                            return JSON.stringify(prev) !== JSON.stringify(merged) ? merged : prev;
+                        });
                     }
 
                     setGasStatus(gasMsg);
@@ -2690,7 +2720,8 @@ const dashboardStats = useMemo(() => {
                         printedDeposits[customerVal] = true;
                     }
                     
-                    const isVip = specialCustomers && specialCustomers[normalizeString(customerVal)]?.type === 'vip';
+                    const custType = specialCustomers && specialCustomers[normalizeString(customerVal)]?.type;
+                    const isVip = custType === 'vip' || custType === 'manager';
                     const isNoShow = noShowCustomers && noShowCustomers[customerVal];
                     const isWaitlist = waitlistCustomers && waitlistCustomers[customerVal];
                     
@@ -3811,9 +3842,16 @@ const dashboardStats = useMemo(() => {
             };
 
             const getCalculatedShipping = (nick, productTotal) => {
+                // ✨ 정산/엑셀 출력 시에도 VIP와 관리자는 무조건 배송비 0원 고정!
+                const nickNorm = normalizeString(nick); 
+                const directSpecial = specialCustomers?.[nickNorm];
+                const specialType = directSpecial ? directSpecial.type : (() => {
+                    const specialKey = Object.keys(specialCustomers || {}).find(k => normalizeString(k) === nickNorm);
+                    return specialKey ? specialCustomers[specialKey].type : null;
+                })();
+                if (specialType === 'vip' || specialType === 'manager') return 0;
+
                 if (shippingOverrides && shippingOverrides[nick] !== undefined) return Number(shippingOverrides[nick]);
-                const nickNorm = normalizeString(nick); const specialKey = Object.keys(specialCustomers || {}).find(k => normalizeString(k) === nickNorm);
-                if (specialKey && specialCustomers[specialKey].type === 'vip') return 0;
                 const addr = findAddress(nick); const isJeju = addr && addr.address && addr.address.includes('제주');
                 let calcShip = (freeShippingThreshold > 0 && productTotal >= freeShippingThreshold) ? 0 : Number(quickShipping);
                 if (isJeju) { calcShip += (Number(jejuShipping) - Number(quickShipping)); }
@@ -3890,7 +3928,9 @@ const dashboardStats = useMemo(() => {
                     
                     let cleanPhone = fixPhoneNumber(addrInfo.phone);
 
-                    const isVip = specialCustomers && specialCustomers[normalizeString(nick)]?.type === 'vip';
+                    const specialType = specialCustomers && specialCustomers[normalizeString(nick)]?.type;
+                    const isVip = specialType === 'vip';
+                    const isManager = specialType === 'manager';
                     const isWaitlistToggle = waitlistCustomers && waitlistCustomers[nick];
 
                     let statusColumn = "";
@@ -3930,7 +3970,7 @@ const dashboardStats = useMemo(() => {
                     const createRow = (productValue) => ({ 
                         '날짜시간': new Date().toLocaleString(), 
                         '입금상태': statusColumn, 
-                        '닉네임': isVip ? `[VIP] ${nick}` : nick,
+                        '닉네임': isVip ? `[VIP] ${nick}` : (isManager ? `[관리자] ${nick}` : nick),
                         '주문제품(수량)': productValue, 
                         '이름': addrInfo.realname || '', 
                         '핸드폰번호': cleanPhone, 
