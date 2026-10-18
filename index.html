@@ -916,14 +916,40 @@ useEffect(() => {
                     return;
                 }
 
-                if (newName !== item.name) {
-                    setOrders(prevOrders => prevOrders.map(o => o.product === item.name ? { ...o, product: newName } : o));
+                // ✨ 실시간 재고에서 상품명이나 단가(금액)를 수정하면, 이미 구매한 고객들의 주문서 상품명과 금액(수량×새 단가)도 즉시 일괄 변경!
+                const isNameChanged = newName !== item.name;
+                const isPriceChanged = newPrice !== Number(item.price);
+
+                if (isNameChanged || isPriceChanged) {
+                    const isDiscount = newName === '적립금';
+                    const unitPriceToApply = (isDiscount && newPrice > 0) ? -Math.abs(newPrice) : newPrice;
+
+                    setOrders(prevOrders => prevOrders.map(o => {
+                        if (o.product === item.name) {
+                            const qty = (o.quantity === '' || o.quantity === undefined || o.quantity === null) ? 1 : Number(o.quantity);
+                            return {
+                                ...o,
+                                product: newName,
+                                price: isPriceChanged ? (unitPriceToApply * qty) : o.price
+                            };
+                        }
+                        return o;
+                    }));
+
                     setProductHistory(prevHist => {
                         const next = { ...prevHist };
-                        if (next[item.name] !== undefined) next[newName] = next[item.name];
+                        if (isNameChanged && next[item.name] !== undefined) {
+                            delete next[item.name];
+                        }
+                        if (newPrice > 0) {
+                            next[newName] = newPrice;
+                        }
                         return next;
                     });
-                    if (isBuyerListOpen) setExpandedInventoryItem(newName);
+
+                    if (isNameChanged && isBuyerListOpen) {
+                        setExpandedInventoryItem(newName);
+                    }
                 }
                 setIsEditing(false);
             };
