@@ -159,7 +159,7 @@
         const WS_ID = urlParams.get('ws') || 'default';
         const getLsKey = (key) => `${WS_ID}_${key}`;
 
-        const FIXED_BANK_ACCOUNT = "카카오뱅크 김선정\n7942 18 01611";
+        const FIXED_BANK_ACCOUNT = "카카오뱅크 김선정\n7942 32 84990";
         const EMOJI_LIST = [
             "👗","👚","👕","👖","👔","👙","👘","👠","👡","👢","👞","👟","🥾","🧦","🧤","🧣","🎩","🧢","👒","👑","💍","👝","👛","👜","💼","🎒","🧳","👓","🕶","🌂",
             "💄","💅","💋","🎀","🛍️","🎁","💝","💎","🧴","🪞","🧼","🧽",
@@ -778,7 +778,10 @@ useEffect(() => {
                         
                         <div className="p-3 bg-slate-100 dark:bg-slate-700/50 rounded-lg space-y-2 border border-slate-300 dark:border-slate-600">
                             <SettingsField label="[읽기] 입금 시트 ID" value={depSheetId} onChange={setDepSheetId} placeholder="시트 주소의 /d/ 뒷부분" />
-                            <SettingsField label="[읽기] 외부 폼 주소록 시트 ID" value={addrSheetId} onChange={setAddrSheetId} placeholder="시트 주소의 /d/ 뒷부분" />
+                        </div>
+                        
+                        <div className="p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg space-y-2 border border-amber-200 dark:border-amber-800">
+                            <SettingsField label="[쓰기] 스마트오더 마스터 시트 ID (주문서/찐고객사전 통합)" value={masterSheetId} onChange={setMasterSheetId} placeholder="새로 만든 백업 시트 ID" />
                         </div>
                         
                         <div className="p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg space-y-2 border border-amber-200 dark:border-amber-800">
@@ -840,202 +843,31 @@ useEffect(() => {
             );
         };
 
-        // ✨ 새로 추가됨: 오른쪽 패널에 띄워질 선택된 상품의 상세 관리(수정/명단) 컴포넌트
-        const RightSelectedItemPanel = memo(({ item, itemStats, setInventory, setOrders, setProductHistory, saveInventoryToServer, openModal, customerPaidStatus, cardPayments, setExpandedInventoryItem }) => {
+        const InventoryItemRow = memo(({ item, itemStats, expandedInventoryItem, isPinned, onItemAction, setInventory, setOrders, setProductHistory, saveInventoryToServer, openModal, customerPaidStatus, cardPayments, setExpandedInventoryItem }) => {
+            const isBuyerListOpen = item && expandedInventoryItem === item.name;
+            const [isEditing, setIsEditing] = useState(false);
+            const orderedCount = itemStats ? itemStats.count : 0;
+            const waitlistCount = itemStats ? (itemStats.waitlistCount || 0) : 0;
+            const aggregatedOrders = (itemStats && itemStats.aggregated) ? itemStats.aggregated : [];
+            const waitlistAggregated = (itemStats && itemStats.waitlistAggregated) ? itemStats.waitlistAggregated : [];
+            const [feedback, setFeedback] = useState(null);
+
             const [localName, setLocalName] = useState(item?.name || '');
             const [localPrice, setLocalPrice] = useState(item?.price === 0 || item?.price === '' ? '' : Number(item?.price).toLocaleString());
             const [localStock, setLocalStock] = useState(item?.stock === undefined || item?.stock === '' ? '' : item?.stock);
 
-            useEffect(() => { 
-                if (item) {
-                    setLocalName(item.name); 
-                    setLocalPrice(item.price === 0 || item.price === '' ? '' : Number(item.price).toLocaleString()); 
-                    setLocalStock(item.stock === undefined || item.stock === '' ? '' : item.stock); 
-                }
-            }, [item]);
-
-            const orderedCount = itemStats ? itemStats.count : 0;
-            const aggregatedOrders = (itemStats && itemStats.aggregated) ? itemStats.aggregated : [];
-            const waitlistCount = itemStats ? (itemStats.waitlistCount || 0) : 0;
-            const waitlistAggregated = (itemStats && itemStats.waitlistAggregated) ? itemStats.waitlistAggregated : [];
-
-            const handleSave = () => {
-                if (!item) return;
-                const newName = localName.trim();
-                const newPrice = Number(String(localPrice).replace(/,/g, ''));
-                const newStock = localStock === '' ? '' : parseInt(localStock);
-                if (!newName) return openModal('상품명을 입력해주세요.', 'alert');
-
-                let isDuplicate = false;
-                setInventory(prevInv => {
-                    if (newName !== item.name && prevInv.some(i => i.name === newName && i.name !== item.name)) { 
-                        isDuplicate = true;
-                        return prevInv; 
-                    }
-                    const newInv = prevInv.map(i => i.name === item.name ? { ...i, name: newName, price: newPrice, stock: newStock } : i);
-                    saveInventoryToServer(newInv); 
-                    return newInv;
-                });
-
-                if (isDuplicate) {
-                    openModal('이미 동일한 이름의 상품이 있습니다.', 'alert'); 
+            useEffect(() => {
+                // ✨ 수정창을 열어두고 타이핑 중일 때는 외부 리렌더링이 입력 중인 글자를 덮어쓰지 않도록 완벽 차단
+                if (item && !isEditing) {
                     setLocalName(item.name);
-                    return;
+                    setLocalPrice(item.price === 0 || item?.price === '' ? '' : Number(item.price).toLocaleString());
+                    setLocalStock(item.stock === undefined || item.stock === '' ? '' : item?.stock);
                 }
-                
-                if (newName !== item.name) {
-                    setOrders(prevOrders => prevOrders.map(o => o.product === item.name ? { ...o, product: newName } : o));
-                    setProductHistory(prevHist => {
-                        const next = { ...prevHist };
-                        if (next[item.name] !== undefined) next[newName] = next[item.name];
-                        return next;
-                    });
-                    setExpandedInventoryItem(newName);
-                }
-                openModal('저장되었습니다.', 'alert');
-            };
-
-            const handleDelete = () => {
-                if (!item) return;
-                if (item.isLocked) return openModal('잠금(자물쇠)이 설정된 상품은 삭제할 수 없습니다.', 'alert');
-                openModal(`'${item.name}' 상품을 삭제하시겠습니까?`, 'confirm', () => {
-                    setInventory(prev => {
-                        const newInv = prev.filter(i => i.name !== item.name);
-                        saveInventoryToServer(newInv);
-                        return newInv;
-                    });
-                    setExpandedInventoryItem(null); 
-                });
-            };
-
-            const handleToggleSoldOut = () => {
-                if (!item) return;
-                setInventory(prev => { const newInv = prev.map(i => i.name === item.name ? { ...i, isSoldOut: !i.isSoldOut } : i); saveInventoryToServer(newInv); return newInv; });
-            };
-
-            const handleToggleLock = () => {
-                if (!item) return;
-                setInventory(prev => { const newInv = prev.map(i => i.name === item.name ? { ...i, isLocked: !i.isLocked } : i); saveInventoryToServer(newInv); return newInv; });
-            };
-
-            const handleCopyNames = () => {
-                if (!item || aggregatedOrders.length === 0) return;
-                const title = `🔹 ${item.name} (총 ${orderedCount}개)\n`;
-                const names = aggregatedOrders.map(a => a.quantity > 1 ? `${a.customer}(${a.quantity})` : a.customer).join(', ');
-                const text = title + names;
-                const textArea = document.createElement("textarea"); textArea.value = text; document.body.appendChild(textArea); textArea.select();
-                try { document.execCommand('copy'); openModal('명단이 복사되었습니다.', 'alert'); } catch (err) {} document.body.removeChild(textArea);
-            };
-
-            if (!item) return null;
-
-            return (
-                <div className="flex flex-col gap-2 p-2 border-b-4 border-slate-200 dark:border-slate-900 bg-blue-50/40 dark:bg-blue-900/10">
-                    <div className="flex justify-between items-center mb-1">
-                        <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1"><Icon name="magnifying-glass-plus" weight="bold"/> 선택된 상품 관리</span>
-                        <button onClick={() => setExpandedInventoryItem(null)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><Icon name="x" weight="bold"/></button>
-                    </div>
-
-                    <div className="flex flex-col gap-1.5">
-                        <input type="text" value={localName} onChange={e=>setLocalName(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')handleSave();}} className="w-full border border-blue-200 dark:border-blue-800 bg-white dark:bg-slate-900 dark:text-white px-2 py-1.5 rounded text-[11px] outline-none focus:ring-1 focus:ring-blue-500 font-bold" placeholder="상품명" />
-                        <div className="flex items-center gap-1.5">
-                            <div className="flex items-center flex-1 border border-blue-200 dark:border-blue-800 bg-white dark:bg-slate-900 rounded overflow-hidden">
-                                <span className="px-1.5 text-[10px] text-slate-500 bg-blue-50 dark:bg-slate-800 h-full flex items-center shrink-0">단가</span>
-                                <input type="text" value={localPrice} onChange={e=>{const v = e.target.value.replace(/,/g, ''); if (v === '' || v === '-') setLocalPrice(v); else if(!isNaN(v)) setLocalPrice(Number(v).toLocaleString());}} onKeyDown={e=>{if(e.key==='Enter')handleSave();}} className="w-full bg-transparent dark:text-white px-1 py-1.5 text-[11px] text-right outline-none font-bold" placeholder="0" />
-                            </div>
-                            <div className="flex items-center flex-1 border border-blue-200 dark:border-blue-800 bg-white dark:bg-slate-900 rounded overflow-hidden">
-                                <span className="px-1.5 text-[10px] text-slate-500 bg-blue-50 dark:bg-slate-800 h-full flex items-center shrink-0">재고</span>
-                                <input type="number" value={localStock} onChange={e=>setLocalStock(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')handleSave();}} className="w-full bg-transparent dark:text-white px-1 py-1.5 text-[11px] text-right outline-none font-bold" placeholder="∞" />
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-1 mt-1">
-                            <button onClick={handleSave} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-2 py-1.5 rounded shadow-sm text-[10px] font-bold transition-colors">저장</button>
-                            <button onClick={handleToggleSoldOut} className={`flex-1 px-2 py-1.5 rounded text-[10px] font-bold shadow-sm transition-colors ${item.isSoldOut ? 'bg-red-500 text-white hover:bg-red-600 border border-red-600' : 'bg-slate-200 text-slate-600 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600'}`}>{item.isSoldOut ? '판매' : '품절'}</button>
-                            <button onClick={handleToggleLock} className={`px-2 py-1.5 rounded text-[10px] transition-colors shadow-sm flex justify-center items-center ${item.isLocked ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/50 dark:text-amber-400' : 'bg-slate-200 text-slate-400 hover:text-slate-600 dark:bg-slate-700 dark:hover:bg-slate-600'}`} title={item.isLocked ? "잠금 해제" : "상품 잠금"}><Icon name={item.isLocked ? "lock" : "lock-open"} weight="bold" size={13}/></button>
-                            <button onClick={handleDelete} className={`px-2 py-1.5 rounded text-[10px] transition-colors shadow-sm flex justify-center items-center ${item.isLocked ? 'bg-slate-100 text-slate-300 dark:bg-slate-800 cursor-not-allowed' : 'bg-slate-200 text-slate-400 hover:bg-red-100 hover:text-red-500 dark:bg-slate-700 dark:hover:bg-slate-600'}`} title="삭제"><Icon name="trash" weight="bold" size={13}/></button>
-                        </div>
-                    </div>
-
-                    <div className="mt-2 pt-2 border-t border-blue-100 dark:border-blue-900 flex flex-col gap-1">
-                        <div className="flex justify-between items-center mb-1">
-                            <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1"><Icon name="users" weight="fill" className="text-slate-400"/> 확정 명단 ({orderedCount})</span>
-                            <button onClick={handleCopyNames} className="text-[9px] bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-500 hover:bg-slate-100 px-1.5 py-0.5 rounded font-bold shadow-sm transition-colors">명단 복사</button>
-                        </div>
-                        {aggregatedOrders.length === 0 ? (
-                            <div className="text-center text-[10px] text-slate-400 py-3 bg-white/50 dark:bg-slate-900/50 rounded border border-dashed border-slate-300 dark:border-slate-700">확정된 주문이 없습니다.</div>
-                        ) : (
-                            <div className="grid grid-cols-2 gap-1 max-h-[140px] overflow-y-auto pr-1">
-                                {aggregatedOrders.map(agg => {
-                                    const isPaid = customerPaidStatus && customerPaidStatus[agg.customer];
-                                    const isCard = cardPayments && cardPayments[agg.customer];
-                                    let textColor = "text-slate-700 dark:text-slate-300";
-                                    if (isCard) textColor = "text-purple-600 font-bold dark:text-purple-400";
-                                    else if (!isPaid) textColor = "text-red-500 font-bold dark:text-red-400";
-
-                                    return (
-                                        <div key={agg.customer} className="flex justify-between items-center bg-white dark:bg-slate-800 px-1.5 py-1 rounded border border-slate-200 dark:border-slate-700 shadow-sm text-[10px] group hover:border-slate-300 min-w-0">
-                                            <span className={`cursor-pointer hover:underline truncate flex-1 flex items-center gap-0.5 ${textColor}`} onClick={(e) => {
-                                                e.stopPropagation();
-                                                const textArea = document.createElement("textarea"); textArea.value = agg.customer; document.body.appendChild(textArea); textArea.select();
-                                                try { document.execCommand('copy'); } catch (err) {} document.body.removeChild(textArea);
-                                                const el = e.currentTarget; el.classList.add('text-green-500'); setTimeout(() => el.classList.remove('text-green-500'), 500);
-                                            }} title="클릭하여 닉네임 복사">
-                                                <span className="truncate">{agg.customer}</span> {agg.quantity > 1 && <span className="text-slate-500 ml-0.5 shrink-0">({agg.quantity}개)</span>}
-                                                {isCard && <span className="text-[8px] bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-300 border border-purple-200 dark:border-purple-700 px-1 py-0.5 rounded shrink-0 leading-none">카드</span>}
-                                            </span>
-                                            <button onClick={(e) => {
-                                                e.stopPropagation();
-                                                openModal(`'${agg.customer}'님의 주문을 삭제하시겠습니까?`, 'confirm', () => { setOrders(prev => prev.filter(order => !agg.orderIds.includes(order.id))); });
-                                            }} className="text-red-400 hover:text-red-600 bg-red-50 hover:bg-red-100 px-1 py-0.5 rounded font-bold shrink-0 ml-1 opacity-0 group-hover:opacity-100">삭제</button>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        )}
-
-                        {waitlistAggregated.length > 0 && (
-                            <>
-                                <div className="flex justify-between items-center mt-2 mb-1 border-t border-slate-200 dark:border-slate-700 pt-2">
-                                    <span className="text-[10px] font-bold text-orange-500 flex items-center gap-1"><Icon name="hourglass" weight="fill" /> 대기 명단 ({waitlistCount})</span>
-                                </div>
-                                <div className="grid grid-cols-2 gap-1 max-h-[120px] overflow-y-auto pr-1">
-                                    {waitlistAggregated.map(agg => (
-                                        <div key={agg.customer} className="flex justify-between items-center bg-orange-50 dark:bg-orange-900/20 px-1.5 py-1 rounded border border-orange-200 dark:border-orange-800 shadow-sm text-[10px] group hover:border-orange-300 min-w-0">
-                                            <span className="cursor-pointer hover:underline truncate flex-1 flex items-center gap-0.5 text-orange-700 dark:text-orange-400" onClick={(e) => {
-                                                e.stopPropagation();
-                                                const textArea = document.createElement("textarea"); textArea.value = agg.customer; document.body.appendChild(textArea); textArea.select();
-                                                try { document.execCommand('copy'); } catch (err) {} document.body.removeChild(textArea);
-                                                const el = e.currentTarget; el.classList.add('text-green-500'); setTimeout(() => el.classList.remove('text-green-500'), 500);
-                                            }} title="클릭하여 닉네임 복사">
-                                                <span className="truncate">{agg.customer}</span> {agg.quantity > 1 && <span className="text-orange-500 ml-0.5 shrink-0">({agg.quantity}개)</span>}
-                                            </span>
-                                            <button onClick={(e) => {
-                                                e.stopPropagation();
-                                                openModal(`'${agg.customer}'님의 대기를 삭제하시겠습니까?`, 'confirm', () => { setOrders(prev => prev.filter(order => !agg.orderIds.includes(order.id))); });
-                                            }} className="text-red-400 hover:text-red-600 bg-red-50 hover:bg-red-100 px-1 py-0.5 rounded font-bold shrink-0 ml-1 opacity-0 group-hover:opacity-100">삭제</button>
-                                        </div>
-                                    ))}
-                                </div>
-                            </>
-                        )}
-                    </div>
-                </div>
-            );
-        }, (prev, next) => {
-            if (!prev.item || !next.item) return false;
-            return prev.item.name === next.item.name && prev.item.price === next.item.price && prev.item.stock === next.item.stock && prev.item.isSoldOut === next.item.isSoldOut && prev.item.isLocked === next.item.isLocked && prev.itemStats === next.itemStats && prev.customerPaidStatus === next.customerPaidStatus && prev.cardPayments === next.cardPayments;
-        });
-
-        // ✨ 안전성 극대화 및 품절 마크 디자인 변경된 InventoryItemRow
-        const InventoryItemRow = memo(({ item, itemStats, expandedInventoryItem, onItemAction, setInventory, saveInventoryToServer, openModal, setExpandedInventoryItem }) => {
-            const isExpanded = item && expandedInventoryItem === item.name;
-            const orderedCount = itemStats ? itemStats.count : 0;
-            const waitlistCount = itemStats ? (itemStats.waitlistCount || 0) : 0;
-            const [feedback, setFeedback] = useState(null);
+            }, [item, isEditing]);
 
             const hasStockLimit = item && item.stock !== '' && item.stock !== undefined && item.stock !== null;
             const totalStock = hasStockLimit ? Number(item.stock) : null;
-            const remainingStock = hasStockLimit ? Math.max(0, totalStock - orderedCount) : null;
+            const remainingStock = hasStockLimit ? Math.max(0, totalStock - orderedCount) : '∞';
 
             const handleClick = (e) => {
                 e.stopPropagation();
@@ -1044,12 +876,56 @@ useEffect(() => {
                     if (res) {
                         setFeedback(res);
                         setTimeout(() => setFeedback(null), 1000);
-                    } else {
-                        const target = e.currentTarget;
-                        target.classList.add('text-blue-600', 'dark:text-blue-400');
-                        setTimeout(() => target.classList.remove('text-blue-600', 'dark:text-blue-400'), 500);
                     }
                 }
+            };
+
+            const handlePinClick = (e) => {
+                e.stopPropagation();
+                if (onItemAction && item) {
+                    const res = onItemAction(item, 'pin');
+                    if (res) {
+                        setFeedback(res);
+                        setTimeout(() => setFeedback(null), 1000);
+                    }
+                }
+            };
+
+            const handleSave = (e) => {
+                if (e) e.stopPropagation();
+                if (!item) return;
+                const newName = localName.trim();
+                const newPrice = Number(String(localPrice).replace(/,/g, ''));
+                const newStock = localStock === '' ? '' : parseInt(localStock);
+                if (!newName) return openModal('상품명을 입력해주세요.', 'alert');
+
+                let isDuplicate = false;
+                setInventory(prevInv => {
+                    if (newName !== item.name && prevInv.some(i => i.name === newName && i.name !== item.name)) {
+                        isDuplicate = true;
+                        return prevInv;
+                    }
+                    const newInv = prevInv.map(i => i.name === item.name ? { ...i, name: newName, price: newPrice, stock: newStock } : i);
+                    saveInventoryToServer(newInv);
+                    return newInv;
+                });
+
+                if (isDuplicate) {
+                    openModal('이미 동일한 이름의 상품이 있습니다.', 'alert');
+                    setLocalName(item.name);
+                    return;
+                }
+
+                if (newName !== item.name) {
+                    setOrders(prevOrders => prevOrders.map(o => o.product === item.name ? { ...o, product: newName } : o));
+                    setProductHistory(prevHist => {
+                        const next = { ...prevHist };
+                        if (next[item.name] !== undefined) next[newName] = next[item.name];
+                        return next;
+                    });
+                    if (isBuyerListOpen) setExpandedInventoryItem(newName);
+                }
+                setIsEditing(false);
             };
 
             const handleToggleSoldOut = (e) => {
@@ -1071,64 +947,150 @@ useEffect(() => {
                         saveInventoryToServer(newInv);
                         return newInv;
                     });
-                    if (expandedInventoryItem === item.name) {
-                        setExpandedInventoryItem(null); 
+                    if (isBuyerListOpen) {
+                        setExpandedInventoryItem(null);
                     }
                 });
+            };
+
+            const handleCopyNames = (e) => {
+                e.stopPropagation();
+                if (!item || aggregatedOrders.length === 0) return;
+                const title = `🔹 ${item.name} (총 ${orderedCount}개)\n`;
+                const names = aggregatedOrders.map(a => a.quantity > 1 ? `${a.customer}(${a.quantity})` : a.customer).join(', ');
+                const text = title + names;
+                const textArea = document.createElement("textarea"); textArea.value = text; document.body.appendChild(textArea); textArea.select();
+                try { document.execCommand('copy'); openModal('명단이 복사되었습니다.', 'alert'); } catch (err) {} document.body.removeChild(textArea);
             };
 
             if (!item) return null;
 
             return (
-                <div onClick={handleClick} className={`group p-1.5 flex items-center justify-between gap-1 border rounded cursor-pointer transition-colors shadow-sm text-xs select-none ${isExpanded ? 'bg-blue-100/50 dark:bg-blue-900/40 border-blue-300 ring-1 ring-blue-300' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'}`}>
-                    <div className={`font-bold truncate flex-1 min-w-0 ${item.isSoldOut ? 'text-slate-400 line-through dark:text-slate-500' : 'text-slate-800 dark:text-slate-200'}`} title={item.name}>
-                        {feedback ? <span className={feedback.color}>{feedback.msg}</span> : item.name}
+                <div className={`border-b border-slate-200 dark:border-slate-700/80 transition-colors select-none py-1.5 px-2 ${isPinned ? 'bg-purple-50/60 dark:bg-purple-900/20' : 'bg-white dark:bg-slate-800 hover:bg-slate-50/70 dark:hover:bg-slate-700/40'}`}>
+                    {}
+                    {/* 1번째 줄: 다른 패널과 자연스럽게 어울리는 12px 굵기 상품명 */}
+                    <div className="flex items-center justify-between gap-1.5">
+                        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                            <button type="button" onClick={handlePinClick} className={`p-0.5 rounded transition-colors shrink-0 ${isPinned ? 'text-purple-600 dark:text-purple-400 font-bold' : 'text-slate-300 hover:text-purple-600'}`} title={isPinned ? "고정 해제" : "클릭하여 이 상품 즉시 고정"}>
+                                <Icon name="push-pin" weight={isPinned ? "fill" : "regular"} size={13} />
+                            </button>
+                            <div onClick={handleClick} className="flex-1 min-w-0 cursor-pointer group" title="1클릭: 상품명 복사 / 2클릭: 상품 고정 / 3클릭: 메뉴 텍스트 복사">
+                                <span className={`font-bold text-[12px] truncate block leading-snug ${item.isSoldOut ? 'text-slate-400 line-through dark:text-slate-500 font-normal' : (isPinned ? 'text-purple-700 dark:text-purple-300' : 'text-slate-800 dark:text-slate-200 group-hover:text-blue-600 dark:group-hover:text-blue-400')}`}>
+                                    {feedback ? <span className={feedback.color}>{feedback.msg}</span> : item.name}
+                                </span>
+                            </div>
+                        </div>
+                        <button onClick={handleToggleSoldOut} className={`px-1.5 py-0.5 rounded text-[10px] font-bold leading-none shrink-0 transition-colors ${item.isSoldOut ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-slate-100 text-slate-400 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-400 dark:hover:bg-slate-600'}`}>
+                            품절
+                        </button>
                     </div>
-                    <div className="flex items-center gap-1 shrink-0 text-[10px]">
-                        <span className="text-slate-400 shrink-0">{item.price ? Number(item.price).toLocaleString() : '0'}</span>
-                        
-                        {/* ✨ 초슬림 통합 뱃지: 박스 2개를 하나로 합쳐 공간 절약 */}
-                        {(orderedCount > 0 || waitlistCount > 0 || (hasStockLimit && remainingStock > 0)) && (
-                            <span className="px-1 py-0.5 rounded font-bold leading-none bg-slate-100 dark:bg-slate-700/80 border border-slate-200 dark:border-slate-600 flex items-center gap-0.5 shrink-0" title={`주문 ${orderedCount}개` + (waitlistCount > 0 ? ` / 대기 ${waitlistCount}개` : '') + (hasStockLimit ? ` / 잔여 ${remainingStock}개` : '')}>
-                                {(orderedCount > 0 || waitlistCount > 0) && (
-                                    <span className={orderedCount > 0 ? 'text-blue-600 dark:text-blue-400' : 'text-orange-500'}>
-                                        {orderedCount}{waitlistCount > 0 ? `+${waitlistCount}` : ''}
-                                    </span>
-                                )}
-                                {(orderedCount > 0 || waitlistCount > 0) && (hasStockLimit && remainingStock > 0) && (
-                                    <span className="text-slate-300 dark:text-slate-500">/</span>
-                                )}
-                                {hasStockLimit && remainingStock > 0 && (
-                                    <span className="text-emerald-600 dark:text-emerald-400">
-                                        잔{remainingStock}
-                                    </span>
-                                )}
-                            </span>
-                        )}
 
-                        <div className="flex items-center gap-0.5 ml-0.5 shrink-0 group/btns">
-                            <button onClick={handleToggleSoldOut} className={`px-1 py-0.5 rounded text-[9px] font-bold shadow-sm transition-colors ${item.isSoldOut ? 'bg-red-500 text-white hover:bg-red-600 border border-red-600' : 'bg-slate-100 text-slate-400 border border-slate-200 hover:bg-slate-200 dark:bg-slate-800 dark:border-slate-600 dark:hover:bg-slate-700'}`}>{item.isSoldOut ? '품절' : '품'}</button>
-                            <button onClick={handleToggleLock} className={`p-0.5 rounded text-[10px] transition-colors ${item.isLocked ? 'text-amber-500 bg-amber-50 dark:bg-amber-900/30' : 'hidden group-hover/btns:inline-flex text-slate-300 hover:text-slate-500 dark:text-slate-600 dark:hover:text-slate-400'}`} title={item.isLocked ? "잠금 해제" : "초기화 방지 잠금"}><Icon name={item.isLocked ? "lock-key" : "lock-simple-open"} weight="fill"/></button>
-                            <button onClick={handleDelete} className={`hidden group-hover/btns:inline-flex p-0.5 rounded text-[10px] transition-colors ${item.isLocked ? 'text-slate-200 dark:text-slate-700 cursor-not-allowed' : 'text-slate-300 hover:text-red-500 dark:text-slate-600 dark:hover:text-red-400'}`} title="상품 삭제"><Icon name="trash" weight="bold"/></button>
+                    {/* 2번째 줄: 배경색이나 박스 없이 깔끔하게 들여쓰기된 부가 정보 */}
+                    <div className="mt-0.5 pl-5 flex items-center justify-between gap-1 text-[11px] leading-none">
+                        <div onClick={handleClick} className="flex items-center gap-1.5 text-slate-400 dark:text-slate-500 min-w-0 cursor-pointer">
+                            <span className="text-slate-500 dark:text-slate-400 font-medium tabular-nums">{item.price ? Number(item.price).toLocaleString() : '0'}</span>
+                            <span className="text-slate-200 dark:text-slate-700">|</span>
+                            <span>잔여 <strong className={`font-bold tabular-nums ${!hasStockLimit ? 'text-blue-500 dark:text-blue-400' : (remainingStock > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500')}`}>{remainingStock}</strong></span>
+                            <span className="text-slate-200 dark:text-slate-700">|</span>
+                            <span>주문 <strong className={`font-bold tabular-nums ${orderedCount > 0 ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500'}`}>{orderedCount}</strong>{waitlistCount > 0 && <strong className="text-orange-500 font-bold ml-0.5">(+{waitlistCount})</strong>}</span>
+                        </div>
+
+                        <div className="flex items-center gap-1 shrink-0 text-slate-400">
+                            <button onClick={handleToggleLock} className={`p-0.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors ${item.isLocked ? 'text-amber-500' : 'text-slate-300 hover:text-slate-600 dark:hover:text-slate-200'}`} title={item.isLocked ? "잠금 해제" : "초기화 방지 잠금"}>
+                                <Icon name={item.isLocked ? "lock-key" : "lock-simple"} weight={item.isLocked ? "fill" : "regular"} size={12} />
+                            </button>
+                            <button onClick={(e) => { e.stopPropagation(); setIsEditing(prev => !prev); }} className={`p-0.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors ${isEditing ? 'text-blue-600' : 'text-slate-300 hover:text-slate-600 dark:hover:text-slate-200'}`} title="상품 정보 수정">
+                                <Icon name="pencil-simple" weight={isEditing ? "fill" : "regular"} size={12} />
+                            </button>
+                            <button onClick={handleDelete} className={`p-0.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors ${item.isLocked ? 'text-slate-200 dark:text-slate-700 cursor-not-allowed' : 'text-slate-300 hover:text-red-500'}`} title="상품 삭제">
+                                <Icon name="trash" weight="regular" size={12} />
+                            </button>
+                            <button onClick={(e) => { e.stopPropagation(); setExpandedInventoryItem(prev => prev === item.name ? null : item.name); }} className={`ml-0.5 px-1 py-0.5 flex items-center justify-center rounded transition-colors ${isBuyerListOpen || orderedCount > 0 || waitlistCount > 0 ? 'text-blue-600 dark:text-blue-400 font-bold' : 'text-slate-300 hover:text-slate-600'}`} title="구매자 명단 접기/펴기">
+                                <Icon name={isBuyerListOpen ? "caret-up" : "caret-down"} weight="bold" size={11} />
+                            </button>
                         </div>
                     </div>
+
+                    {/* ✏️ 연필 아이콘 클릭 시에만 열리는 인라인 상품 수정창 */}
+                    {isEditing && (
+                        <div onClick={e => e.stopPropagation()} className="mt-1.5 pt-1.5 border-t border-dashed border-slate-200 dark:border-slate-700 flex flex-col gap-1 text-[10px]">
+                            <input type="text" value={localName} onChange={e=>setLocalName(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')handleSave(e); if(e.key==='Escape')setIsEditing(false);}} className="w-full border border-blue-300 dark:border-blue-700 bg-white dark:bg-slate-800 dark:text-white px-1.5 py-0.5 rounded text-[11px] outline-none focus:ring-1 focus:ring-blue-500 font-bold" placeholder="상품명" autoFocus />
+                            <div className="flex items-center gap-1">
+                                <div className="flex items-center flex-1 border border-blue-300 dark:border-blue-700 bg-white dark:bg-slate-800 rounded overflow-hidden">
+                                    <span className="px-1 text-[9px] text-slate-500 bg-slate-50 dark:bg-slate-700 h-full flex items-center shrink-0">단가</span>
+                                    <input type="text" value={localPrice} onChange={e=>{const v = e.target.value.replace(/,/g, ''); if (v === '' || v === '-') setLocalPrice(v); else if(!isNaN(v)) setLocalPrice(Number(v).toLocaleString());}} onKeyDown={e=>{if(e.key==='Enter')handleSave(e); if(e.key==='Escape')setIsEditing(false);}} className="w-full bg-transparent dark:text-white px-1 py-0.5 text-[10px] text-right outline-none font-bold" placeholder="0" />
+                                </div>
+                                <div className="flex items-center w-16 border border-blue-300 dark:border-blue-700 bg-white dark:bg-slate-800 rounded overflow-hidden shrink-0">
+                                    <span className="px-1 text-[9px] text-slate-500 bg-slate-50 dark:bg-slate-700 h-full flex items-center shrink-0">재고</span>
+                                    <input type="number" value={localStock} onChange={e=>setLocalStock(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')handleSave(e); if(e.key==='Escape')setIsEditing(false);}} className="w-full bg-transparent dark:text-white px-1 py-0.5 text-[10px] text-right outline-none font-bold" placeholder="∞" />
+                                </div>
+                                <button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700 text-white px-2 py-0.5 rounded text-[10px] font-bold shrink-0">저장</button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ⌄ 화살표 아이콘 클릭 시 열리는 확정/대기 명단 영역 */}
+                    {isBuyerListOpen && (
+                        <div onClick={e => e.stopPropagation()} className="mt-1.5 pt-1.5 border-t border-dashed border-slate-200 dark:border-slate-700 flex flex-col gap-1.5 text-[10px]">
+                            <div>
+                                <div className="flex justify-between items-center mb-1">
+                                    <span className="font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1 text-[10px]">
+                                        <Icon name="users" weight="bold" size={11} /> 확정 명단 (총 {orderedCount}개)
+                                    </span>
+                                    <button onClick={handleCopyNames} className="text-[9px] bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600 font-bold">
+                                        명단 복사
+                                    </button>
+                                </div>
+                                {aggregatedOrders.length === 0 ? (
+                                    <div className="text-center py-1 text-slate-400 dark:text-slate-500 text-[10px]">
+                                        확정된 주문이 없습니다.
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-wrap gap-1">
+                                        {aggregatedOrders.map(agg => {
+                                            const isPaid = customerPaidStatus && customerPaidStatus[agg.customer];
+                                            const isCard = cardPayments && cardPayments[agg.customer];
+                                            let textColor = isCard ? "text-purple-600 font-bold" : (!isPaid ? "text-red-500 font-bold" : "text-slate-700 dark:text-slate-300 font-semibold");
+                                            return (
+                                                <div key={agg.customer} className="inline-flex items-center bg-slate-50 dark:bg-slate-900 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+                                                    <span className={`truncate max-w-[90px] ${textColor}`}>{agg.customer}{agg.quantity > 1 ? `(${agg.quantity})` : ''}</span>
+                                                    <button onClick={() => openModal(`'${agg.customer}'님의 '${item.name}' 주문을 삭제하시겠습니까?`, 'confirm', () => setOrders(prev => prev.filter(o => !agg.orderIds.includes(o.id))))} className="text-slate-400 hover:text-red-500 ml-1 font-bold leading-none" title="이 주문 삭제">×</button>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+
+                            {waitlistAggregated.length > 0 && (
+                                <div className="pt-1 border-t border-slate-100 dark:border-slate-700/60">
+                                    <span className="font-bold text-orange-500 text-[9px] block mb-0.5">대기 명단 ({waitlistCount}개)</span>
+                                    <div className="flex flex-wrap gap-1">
+                                        {waitlistAggregated.map(agg => (
+                                            <div key={agg.customer} className="inline-flex items-center bg-orange-50 dark:bg-orange-900/20 px-1.5 py-0.5 rounded border border-orange-200 dark:border-orange-800">
+                                                <span className="truncate max-w-[90px] text-orange-700 dark:text-orange-400 font-bold">{agg.customer}{agg.quantity > 1 ? `(${agg.quantity})` : ''}</span>
+                                                <button onClick={() => openModal(`'${agg.customer}'님의 '${item.name}' 대기를 삭제하시겠습니까?`, 'confirm', () => setOrders(prev => prev.filter(o => !agg.orderIds.includes(o.id))))} className="text-orange-400 hover:text-red-600 ml-1 font-bold leading-none" title="이 대기 삭제">×</button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
             );
         }, (prev, next) => {
             if (!prev.item || !next.item) return false;
             if (prev.item.name !== next.item.name || prev.item.price !== next.item.price || prev.item.stock !== next.item.stock || prev.item.isSoldOut !== next.item.isSoldOut || prev.item.isLocked !== next.item.isLocked) return false;
-            if ((prev.expandedInventoryItem === prev.item.name) !== (next.expandedInventoryItem === next.item.name)) return false;
-            
-            const prevCount = prev.itemStats ? prev.itemStats.count : 0;
-            const nextCount = next.itemStats ? next.itemStats.count : 0;
-            if (prevCount !== nextCount) return false;
-            const prevWCount = prev.itemStats ? (prev.itemStats.waitlistCount||0) : 0;
-            const nextWCount = next.itemStats ? (next.itemStats.waitlistCount||0) : 0;
-            if (prevWCount !== nextWCount) return false;
+            if (prev.isPinned !== next.isPinned) return false;
+            const prevExp = prev.expandedInventoryItem === prev.item.name;
+            const nextExp = next.expandedInventoryItem === next.item.name;
+            if (prevExp !== nextExp) return false;
+            if (prev.itemStats !== next.itemStats || prev.customerPaidStatus !== next.customerPaidStatus || prev.cardPayments !== next.cardPayments) return false;
             return true;
         });
 
- const OrderItem = memo(({ item, nick, nextItemId, isLast, handleProductChange, handleQuantityUpdate, handleOrderCancel, handleOrderDelete, addOrderLogic, setSelectedNick, inventory, productHistory }) => {
+        const OrderItem = memo(({ item, nick, nextItemId, isLast, handleProductChange, handleQuantityUpdate, handleOrderCancel, handleOrderDelete, addOrderLogic, setSelectedNick, inventory, productHistory }) => {
             const [localProduct, setLocalProduct] = useState(item.product); 
             const [localQty, setLocalQty] = useState(item.quantity === '' ? '' : item.quantity); 
             const [localPrice, setLocalPrice] = useState(item.price === '' || item.price === 0 ? '' : Number(item.price).toLocaleString());
@@ -1188,18 +1150,17 @@ useEffect(() => {
             );
         });
 
-        const CustomerBlock = memo(({ nick, items, isSelected, currentShipping, isCard, isPaidState, grandTotal, depositTotal, balance, baseGrandTotal, baseBalance, addr, addrType, addrConflict, addressMapping, autoDepositorName, displayDepositorName, isAutoDepositor, depositorNames, copyStatus, isOrderConfirmed, isEditingShipping, setSelectedNick, addOrderLogic, handleNicknameEdit, toggleCardPayment, handleShippingChange, setEditingShippingNick, openModal, setDepositorNames, handleFullDepositToggle, copyOrderSheet, handleOrderCheckToggle, handleAddressUnmapping, handleAddressMapping, handlePromoteAddress, handleProductChange, handleQuantityUpdate, handleOrderCancel, handleOrderDelete, toggleVIP, specialCustomers, handleOpenQuickAddress, findAddressSuggestions, cashReceiptStatus, toggleCashReceipt, inventory, productHistory, customerDeposits, handleDepositUnmatch, handleMultiAddOpen, toggleNoShow, toggleWaitlist, noShowStatus, waitlistStatus }) => {
+        const CustomerBlock = memo(({ nick, items, isSelected, currentShipping, isCard, isPaidState, grandTotal, depositTotal, balance, baseGrandTotal, baseBalance, addr, addrType, addressMapping, autoDepositorName, displayDepositorName, isAutoDepositor, depositorNames, copyStatus, isOrderConfirmed, isEditingShipping, setSelectedNick, addOrderLogic, handleNicknameEdit, toggleCardPayment, handleShippingChange, setEditingShippingNick, openModal, setDepositorNames, handleFullDepositToggle, copyOrderSheet, handleOrderCheckToggle, handleAddressUnmapping, handleAddressMapping, handleProductChange, handleQuantityUpdate, handleOrderCancel, handleOrderDelete, toggleVIP, specialCustomers, handleOpenQuickAddress, findAddressSuggestions, cashReceiptStatus, toggleCashReceipt, inventory, productHistory, customerDeposits, handleDepositUnmatch, handleMultiAddOpen, toggleNoShow, toggleWaitlist, noShowStatus, waitlistStatus, customerPassword, handleSetCustomerPassword }) => {
             let borderClass = 'border-transparent', headerBgClass = 'bg-white dark:bg-slate-800';
             
-            // ✨ 미납/과납 시 카드 전체 테두리와 배경색을 강력하게 변경
             if (isSelected) { 
                 headerBgClass = 'bg-slate-100 dark:bg-slate-700'; borderClass = 'border-slate-500 ring-2 ring-slate-500 shadow-lg relative z-10'; 
             } else if (isCard) { 
                 borderClass = 'border-slate-300 ring-1 ring-slate-300'; headerBgClass = 'bg-slate-50 dark:bg-slate-800/80'; 
             } else if (!isPaidState && balance > 0) { 
-                borderClass = 'border-red-500 ring-2 ring-red-500 shadow-md'; headerBgClass = 'bg-red-50 dark:bg-red-900/20'; // 🔥 미납 시 강력한 빨간색
+                borderClass = 'border-red-500 ring-2 ring-red-500 shadow-md'; headerBgClass = 'bg-red-50 dark:bg-red-900/20';
             } else if (balance < 0 && !isCard) { 
-                borderClass = 'border-blue-500 ring-2 ring-blue-500 shadow-md'; headerBgClass = 'bg-blue-50 dark:bg-blue-900/20'; // 💧 과납 시 강력한 파란색
+                borderClass = 'border-blue-500 ring-2 ring-blue-500 shadow-md'; headerBgClass = 'bg-blue-50 dark:bg-blue-900/20';
             } else if (isPaidState) { 
                 borderClass = 'border-slate-200 dark:border-slate-700'; headerBgClass = 'bg-white dark:bg-slate-800'; 
             }
@@ -1216,15 +1177,15 @@ useEffect(() => {
             const isManager = specialType === 'manager';
             const [showDeposits, setShowDeposits] = useState(false);
 
-           const cleanPhoneDisplay = addr && addr.phone ? fixPhoneNumber(addr.phone) : '';
+            const cleanPhoneDisplay = addr && addr.phone ? fixPhoneNumber(addr.phone) : '';
+            const effectivePin = customerPassword || (cleanPhoneDisplay.length >= 4 ? cleanPhoneDisplay.slice(-4) : '');
 
             return (
                 <div onClick={() => setSelectedNick(prev => prev === nick ? null : nick)} className={`bg-white dark:bg-slate-800 rounded shadow-sm transition-all overflow-hidden cursor-pointer ${borderClass} border mb-1.5`}>
                     <div className={`px-2 py-1 flex justify-between items-start border-b dark:border-slate-700 ${headerBgClass}`}>
                         <div className="flex flex-col gap-0.5 flex-1 min-w-[50%] pr-2">
                             <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
-                                <span onClick={(e) => { e.stopPropagation(); const textArea = document.createElement("textarea"); textArea.value = nick; document.body.appendChild(textArea); textArea.select(); try { document.execCommand('copy'); const el = e.currentTarget; el.classList.add('text-green-500'); setTimeout(() => el.classList.remove('text-green-500'), 500); } catch (err) {} document.body.removeChild(textArea); }} className={`font-bold text-[12px] text-slate-900 truncate max-w-[120px] sm:max-w-[150px] inline-block align-bottom cursor-pointer hover:text-slate-600`} title="클릭하여 닉네임 복사">{nick}</span>
-                                {addrConflict && <button onClick={(e) => { e.stopPropagation(); handlePromoteAddress(nick, addrConflict); }} className="ml-1 bg-red-50 border border-red-300 text-red-600 text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm animate-pulse flex items-center gap-0.5 shrink-0">🚨 정보변경 감지</button>}
+                                <span onClick={(e) => { e.stopPropagation(); const textArea = document.createElement("textarea"); textArea.value = nick; document.body.appendChild(textArea); textArea.select(); try { document.execCommand('copy'); const el = e.currentTarget; el.classList.add('text-green-500'); setTimeout(() => el.classList.remove('text-green-500'), 500); } catch (err) {} document.body.removeChild(textArea); }} className={`font-bold text-[12px] text-slate-900 dark:text-slate-100 truncate max-w-[120px] sm:max-w-[150px] inline-block align-bottom cursor-pointer hover:text-slate-600`} title="클릭하여 닉네임 복사">{nick}</span>
                                 {isVip && <span onClick={(e) => e.stopPropagation()} className="ml-1 text-[10px] px-1.5 py-0.5 rounded border bg-slate-800 text-amber-400 font-bold shadow-sm shrink-0 flex items-center gap-0.5"><Icon name="crown" weight="fill"/> VIP</span>}
                                 {isManager && <span onClick={(e) => e.stopPropagation()} className="ml-1 text-[10px] px-1.5 py-0.5 rounded border bg-blue-600 border-blue-700 text-white font-bold shadow-sm shrink-0 flex items-center gap-0.5"><Icon name="shield-check" weight="fill"/> 관리자</span>}
                                 
@@ -1247,9 +1208,10 @@ useEffect(() => {
                                 </div>
                                 
                                 <div onClick={(e) => { e.stopPropagation(); openModal(`'${nick}'님의 입금자명(실명)을 입력하세요.`, 'prompt', (newName) => { if(newName !== null) setDepositorNames(prev => ({...prev, [nick]: newName})); }, null, depositorNames[nick] || ''); }} className={`cursor-pointer flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border hover:bg-slate-100 transition-colors ml-1 shrink-0 ${depositorNames[nick] ? 'bg-slate-200 text-slate-700 border-slate-400' : (isAutoDepositor ? 'bg-green-50 text-green-700 border-green-200' : 'bg-white text-slate-500 border-slate-300')}`} title={isAutoDepositor ? "주소록 실명 연동됨" : "실명 입금자 등록"}><Icon name="user" weight={depositorNames[nick] || isAutoDepositor ? "fill" : "regular"}/> <span>{displayDepositorName}</span></div>
+                                <button type="button" onClick={(e) => { e.stopPropagation(); handleSetCustomerPassword(nick, effectivePin); }} className={`ml-1 flex items-center gap-0.5 px-1.5 py-0.5 rounded border text-[10px] font-bold transition-colors shrink-0 ${effectivePin ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100' : 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100 animate-pulse'}`} title="고객 주문서 조회용 비밀번호(핸드폰 뒤 4자리) 설정"><Icon name="key" weight="fill" size={11}/><span>{effectivePin ? effectivePin : '비번설정'}</span></button>
                                 <div onClick={(e) => { e.stopPropagation(); handleFullDepositToggle(nick, baseGrandTotal, depositTotal); }} className={`cursor-pointer ml-1 flex items-center gap-1 px-1.5 py-0.5 rounded border transition-colors shrink-0 ${isPaidState ? 'bg-green-600 border-green-700 text-white shadow-inner' : 'bg-white border-slate-300 text-slate-500 hover:bg-slate-100'}`} title={isPaidState ? "입금 완료됨 (클릭시 취소)" : "클릭시 전액 입금 처리"}><Icon name={isPaidState ? "toggle-right" : "toggle-left"} weight="fill" size={16} /><span className="text-[10px] font-bold">{isPaidState ? "완납" : "미납"}</span></div>
                                 <button onClick={(e) => { e.stopPropagation(); copyOrderSheet(nick, items, baseGrandTotal, depositTotal, balance, isCard, cashReceiptStatus, addr, e); }} className="ml-1 flex items-center gap-1 px-2 py-0.5 rounded border transition-colors shrink-0 bg-[#FEE500] border-[#E5CE00] text-gray-900 hover:bg-[#FADA0A] active:scale-95" title="주문서 카톡 복사"><Icon name="chat-circle-dots" weight="fill" size={16}/><span className="text-[10px] font-bold">카톡</span></button>
-                                <div onClick={(e) => { e.stopPropagation(); handleOrderCheckToggle(nick); }} className="ml-1 cursor-pointer flex items-center shrink-0" title="주문 확인 체크"><input type="checkbox" checked={isOrderConfirmed} readOnly className="custom-checkbox" /></div>
+                                <div onClick={(e) => { e.stopPropagation(); handleOrderCheckToggle(nick); }} className="ml-1 cursor-pointer flex items-center gap-0.5 shrink-0" title="고객 주문서 확인 여부"><input type="checkbox" checked={isOrderConfirmed} readOnly className="custom-checkbox" /><span className={`text-[9px] font-bold ${isOrderConfirmed ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'}`}>{isOrderConfirmed ? '확인됨' : '미확인'}</span></div>
                             </div>
                             <div className="flex flex-col items-start gap-1 text-xs mt-1 w-full overflow-hidden">
                                 {addr ? (
@@ -1257,12 +1219,13 @@ useEffect(() => {
                                         <span className="text-green-700 dark:text-green-400 shrink-0 flex items-center gap-0.5"><Icon name="house-line" weight="fill" /> <span className="font-bold">{addr.realname}</span></span>
                                         <span className="text-slate-500 shrink-0 font-medium">{cleanPhoneDisplay}</span>
                                         <span className="text-slate-700 dark:text-slate-300 truncate flex-1 ml-1" title={`${addr.address} ${addr.memo}`}>{addr.address}{addr.memo && <span className="text-red-500 font-bold ml-1.5">[{addr.memo}]</span>}</span>
+                                        <button onClick={(e) => { e.stopPropagation(); handleOpenQuickAddress(nick, addr); }} className="shrink-0 bg-slate-100 hover:bg-slate-200 text-slate-600 border px-1.5 py-0.5 rounded text-[9px] font-bold ml-1 flex items-center gap-0.5 shadow-sm"><Icon name="pencil-simple" weight="bold"/> 수정</button>
                                         <button onClick={(e) => { e.stopPropagation(); handleAddressUnmapping(nick); }} className="shrink-0 bg-red-50 hover:bg-red-100 text-red-500 border px-1.5 py-0.5 rounded text-[9px] font-bold ml-1 flex items-center gap-0.5 shadow-sm"><Icon name="link-break" weight="bold"/> 해제</button>
                                     </div>
                                 ) : (
                                     <div className="flex items-center gap-1 flex-wrap mt-0.5">
-                                        {addrType === 'raw' ? (<span className="text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded border border-orange-200 text-[10px] flex items-center gap-1 font-bold animate-pulse shrink-0"><Icon name="warning-diamond" weight="fill"/> ⚠️ 새 주소 접수됨</span>) : (<span className="text-red-400 text-[10px] flex items-center gap-1 shrink-0"><Icon name="warning-circle" weight="fill"/> 주소없음</span>)}
-                                        <button onClick={(e) => { e.stopPropagation(); openModal("연결할 주소록의 닉네임을 입력하세요.", "prompt", (targetNick) => { if(targetNick) handleAddressMapping(nick, targetNick); }); }} className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border hover:bg-slate-200 flex items-center gap-1 shrink-0"><Icon name="link" weight="bold" /> 연결</button>
+                                        <span className="text-red-400 text-[10px] flex items-center gap-1 shrink-0"><Icon name="warning-circle" weight="fill"/> 주소없음</span>
+                                        <button onClick={(e) => { e.stopPropagation(); openModal("연결할 찐고객사전의 닉네임을 입력하세요.", "prompt", (targetNick) => { if(targetNick) handleAddressMapping(nick, targetNick); }); }} className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border hover:bg-slate-200 flex items-center gap-1 shrink-0"><Icon name="link" weight="bold" /> 연결</button>
                                         <button onClick={(e) => { e.stopPropagation(); handleOpenQuickAddress(nick); }} className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border hover:bg-slate-200 flex items-center gap-1 shrink-0 shadow-sm"><Icon name="pencil-line" weight="bold" /> 직접입력</button>
                                         {suggestions && suggestions.length > 0 && (<div className="flex flex-wrap gap-1 items-center bg-orange-50 px-1 py-0.5 rounded"><span className="text-[9px] text-orange-700 font-bold shrink-0">유사:</span>{suggestions.map(s => (<button key={s} onClick={(e) => {e.stopPropagation(); handleAddressMapping(nick, s);}} className="bg-white border border-orange-200 text-orange-700 px-1.5 py-0.5 rounded text-[9px] hover:bg-orange-100 shadow-sm shrink-0">{s}</button>))}</div>)}
                                     </div>
@@ -1270,13 +1233,11 @@ useEffect(() => {
                             </div>
                         </div>
                         <div className="flex flex-col items-end justify-start gap-0.5 text-xs shrink-0 whitespace-nowrap ml-2 mt-0.5">
-                            {/* ✨ 총 주문금액 숫자 자체도 금액이 안 맞으면 크기를 키우고 빨간/파란색으로 강조 */}
                             <div className={`font-black text-right ${isPaidState && balance === 0 ? 'text-green-600 text-sm' : (balance < 0 ? 'text-blue-600 text-[15px]' : (balance > 0 ? 'text-red-600 text-[15px]' : 'text-slate-800 text-sm'))}`}>{grandTotal.toLocaleString()}원</div>
                             {isCard ? (
                                 <div className="flex flex-col items-end"><div className="text-[10px] text-slate-600 font-bold text-right leading-tight mt-0.5">입금: {depositTotal.toLocaleString()}<br/>카드: {Math.max(0, balance).toLocaleString()}</div></div>
                             ) : (
                                 <>
-                                    {/* ✨ 미납/과납 발생 시 입금액과 미납액을 색상 박스와 굵은 폰트로 확 띄게 처리 */}
                                     {balance !== 0 && depositTotal > 0 && (<div className={`text-[11px] font-black text-right mt-0.5 ${balance > 0 ? 'text-red-500' : 'text-blue-500'}`}>입금: {depositTotal.toLocaleString()}</div>)}
                                     {balance > 0 && (<div className="text-[12px] font-black text-red-600 bg-red-100 dark:bg-red-900/40 px-1.5 py-0.5 rounded text-right mt-0.5">미납: {balance.toLocaleString()}</div>)}
                                     {balance < 0 && (<div className="text-[12px] font-black text-blue-600 bg-blue-100 dark:bg-blue-900/40 px-1.5 py-0.5 rounded text-right mt-0.5">과납: {Math.abs(balance).toLocaleString()}</div>)}
@@ -1290,47 +1251,45 @@ useEffect(() => {
                         ))}
                     </div>
                     {customerDeposits && customerDeposits.length > 0 && (
-    <div className="bg-blue-50 dark:bg-blue-900/20 border-t border-blue-100 dark:border-blue-800">
-        <div 
-            className="flex justify-between items-center p-1.5 px-2 cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors" 
-            onClick={(e) => { e.stopPropagation(); setShowDeposits(!showDeposits); }}
-        >
-            <span className="text-[10px] font-bold text-blue-700 dark:text-blue-300">
-                🔗 연결된 입금 내역 ({customerDeposits.length}건)
-            </span>
-            
-            {/* [수정됨] 토글을 열지 않아도 보이도록 화살표 바로 옆에 총액을 파란색으로 배치했습니다. */}
-            <div className="flex items-center gap-2">
-                <span className="text-[11px] font-black text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/50 px-1.5 py-0.5 rounded">
-                    합계: {customerDeposits.reduce((sum, d) => sum + Number(d.amount), 0).toLocaleString()}원
-                </span>
-                <Icon name={showDeposits ? "caret-up" : "caret-down"} className="text-blue-500" />
-            </div>
-        </div>
-        
-        {showDeposits && (
-            <div className="p-1 space-y-0.5 bg-blue-100/50 dark:bg-blue-900/30">
-                {customerDeposits.map(d => (
-                    <div key={d.id} className="flex justify-between items-center px-2 py-1 bg-white dark:bg-slate-800 rounded shadow-sm border border-blue-100 dark:border-blue-700">
-                        <span className="text-[10px] text-slate-700 dark:text-slate-300 font-bold">{d.name}</span>
-                        <div className="flex gap-2 items-center">
-                            <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400">+{Number(d.amount).toLocaleString()}원</span>
-                            <button onClick={(e) => { e.stopPropagation(); handleDepositUnmatch(d, nick); }} className="text-[9px] bg-red-50 text-red-500 border border-red-200 hover:bg-red-100 px-1.5 py-0.5 rounded font-bold shadow-sm transition-colors">해제</button>
+                        <div className="bg-blue-50 dark:bg-blue-900/20 border-t border-blue-100 dark:border-blue-800">
+                            <div 
+                                className="flex justify-between items-center p-1.5 px-2 cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors" 
+                                onClick={(e) => { e.stopPropagation(); setShowDeposits(!showDeposits); }}
+                            >
+                                <span className="text-[10px] font-bold text-blue-700 dark:text-blue-300">
+                                    🔗 연결된 입금 내역 ({customerDeposits.length}건)
+                                </span>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[11px] font-black text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/50 px-1.5 py-0.5 rounded">
+                                        합계: {customerDeposits.reduce((sum, d) => sum + Number(d.amount), 0).toLocaleString()}원
+                                    </span>
+                                    <Icon name={showDeposits ? "caret-up" : "caret-down"} className="text-blue-500" />
+                                </div>
+                            </div>
+                            
+                            {showDeposits && (
+                                <div className="p-1 space-y-0.5 bg-blue-100/50 dark:bg-blue-900/30">
+                                    {customerDeposits.map(d => (
+                                        <div key={d.id} className="flex justify-between items-center px-2 py-1 bg-white dark:bg-slate-800 rounded shadow-sm border border-blue-100 dark:border-blue-700">
+                                            <span className="text-[10px] text-slate-700 dark:text-slate-300 font-bold">{d.name}</span>
+                                            <div className="flex gap-2 items-center">
+                                                <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400">+{Number(d.amount).toLocaleString()}원</span>
+                                                <button onClick={(e) => { e.stopPropagation(); handleDepositUnmatch(d, nick); }} className="text-[9px] bg-red-50 text-red-500 border border-red-200 hover:bg-red-100 px-1.5 py-0.5 rounded font-bold shadow-sm transition-colors">해제</button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
-                    </div>
-                ))}
-            </div>
-        )}
-    </div>
-)}
-        
+                    )}
                 </div>
             );
         }, (prev, next) => {
-            if (prev.nick !== next.nick || prev.isSelected !== next.isSelected || prev.currentShipping !== next.currentShipping || prev.isCard !== next.isCard || prev.isPaidState !== next.isPaidState || prev.grandTotal !== next.grandTotal || prev.depositTotal !== next.depositTotal || prev.balance !== next.balance || prev.isOrderConfirmed !== next.isOrderConfirmed || prev.isEditingShipping !== next.isEditingShipping || prev.displayDepositorName !== next.displayDepositorName || prev.addr?.address !== next.addr?.address || prev.addr?.realname !== next.addr?.realname || prev.addr?.phone !== next.addr?.phone || prev.copyStatus[prev.nick] !== next.copyStatus[next.nick] || !!prev.addrConflict !== !!next.addrConflict) return false;
+            if (prev.nick !== next.nick || prev.isSelected !== next.isSelected || prev.currentShipping !== next.currentShipping || prev.isCard !== next.isCard || prev.isPaidState !== next.isPaidState || prev.grandTotal !== next.grandTotal || prev.depositTotal !== next.depositTotal || prev.balance !== next.balance || prev.isOrderConfirmed !== next.isOrderConfirmed || prev.isEditingShipping !== next.isEditingShipping || prev.displayDepositorName !== next.displayDepositorName || prev.addr?.address !== next.addr?.address || prev.addr?.realname !== next.addr?.realname || prev.addr?.phone !== next.addr?.phone || prev.copyStatus[prev.nick] !== next.copyStatus[next.nick]) return false;
             if (prev.cashReceiptStatus !== next.cashReceiptStatus) return false;
             if (prev.noShowStatus !== next.noShowStatus) return false;
             if (prev.waitlistStatus !== next.waitlistStatus) return false;
+            if (prev.customerPassword !== next.customerPassword) return false;
             
             const pType = prev.specialCustomers && prev.specialCustomers[normalizeString(prev.nick)]?.type;
             const nType = next.specialCustomers && next.specialCustomers[normalizeString(next.nick)]?.type;
@@ -1339,7 +1298,7 @@ useEffect(() => {
             if (prev.items.length !== next.items.length) return false;
             for (let i = 0; i < prev.items.length; i++) {
                 const pItem = prev.items[i], nItem = next.items[i];
-                if (pItem.id !== nItem.id || pItem.product !== nItem.product || pItem.quantity !== nItem.quantity || pItem.price !== nItem.price || pItem.isCancelled !== nItem.isCancelled || pItem.deposit !== nItem.deposit || pItem.isUnmodified !== nItem.isUnmodified) return false;
+                if (pItem.id !== nItem.id || pItem.product !== nItem.product || pItem.quantity !== nItem.quantity || pItem.price !== nItem.price || pItem.isCancelled !== nItem.isCancelled || pItem.deposit !== nItem.deposit || pItem.isUnmodified !== nItem.isUnmodified || pItem.isWaitlist !== nItem.isWaitlist) return false;
             }
             
             if (prev.customerDeposits?.length !== next.customerDeposits?.length) return false;
@@ -1456,7 +1415,7 @@ useEffect(() => {
     );
 };
 
-const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHistory, setProductHistory, quickShipping, jejuShipping, freeShippingThreshold, shippingOverrides, setShippingOverrides, bankAccount, googleScriptUrl, depSheetId, addrSheetId, masterSheetId, addresses, setAddresses, cardPayments, setCardPayments, manualDeposits, setManualDeposits, matchedDeposits, setMatchedDeposits, depositorNames, setDepositorNames, clickedChats, setClickedChats, openModal, keywords, setKeywords, sentAddressRequests, setSentAddressRequests, deletedDepositIds, setDeletedDepositIds, checkedOrders, setCheckedOrders, addressMapping, setAddressMapping, templateConfig, specialCustomers, setSpecialCustomers, inventory, setInventory, quickMessages, handleResetAllData, broadcastName, setGlobalError, cashReceipts, setCashReceipts, soundEnabled, soundVolume, depositLinks, setDepositLinks, noShowCustomers, setNoShowCustomers, waitlistCustomers, setWaitlistCustomers }) => {
+const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHistory, setProductHistory, quickShipping, jejuShipping, freeShippingThreshold, shippingOverrides, setShippingOverrides, bankAccount, googleScriptUrl, depSheetId, masterSheetId, addresses, setAddresses, cardPayments, setCardPayments, manualDeposits, setManualDeposits, matchedDeposits, setMatchedDeposits, depositorNames, setDepositorNames, clickedChats, setClickedChats, openModal, keywords, setKeywords, sentAddressRequests, setSentAddressRequests, deletedDepositIds, setDeletedDepositIds, checkedOrders, setCheckedOrders, addressMapping, setAddressMapping, templateConfig, specialCustomers, setSpecialCustomers, inventory, setInventory, quickMessages, handleResetAllData, broadcastName, setGlobalError, cashReceipts, setCashReceipts, soundEnabled, soundVolume, depositLinks, setDepositLinks, noShowCustomers, setNoShowCustomers, waitlistCustomers, setWaitlistCustomers, customerPasswords, setCustomerPasswords }) => {
             const [serverDeposits, setServerDeposits] = useState([]);
             const [selectedNick, setSelectedNick] = useState(null);
             
@@ -1500,9 +1459,6 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             const [depositSearch, setDepositSearch] = useState('');
             const deferredDepositSearch = React.useDeferredValue(depositSearch);
             
-            const [addressSearch, setAddressSearch] = useState(''); 
-            const deferredAddressSearch = React.useDeferredValue(addressSearch);
-            
             const [orderSearch, setOrderSearch] = useState('');
             const deferredOrderSearch = React.useDeferredValue(orderSearch);
             
@@ -1514,15 +1470,25 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             const [filterStatus, setFilterStatus] = useState('all');
             const [expandedInventoryItem, setExpandedInventoryItem] = useState(null);
             
-            // ✨ 에러 예방을 위해 Try-Catch로 묶인 안전한 클릭 액션 핸들러
             const handleInventoryItemAction = useCallback((item, clickCount) => {
                 try {
                     if (!item) return null;
+                    if (clickCount === 'pin') {
+                        if (isFixedProductMode && manualProduct === item.name) {
+                            setIsFixedProductMode(false);
+                            return { msg: '📌 고정해제', color: 'text-slate-500' };
+                        } else {
+                            setManualProduct(item.name);
+                            const uPrice = item.price > 0 ? item.price : (productHistoryRef.current[item.name] || 0);
+                            if (uPrice > 0) setManualPrice(Number(uPrice).toLocaleString()); else setManualPrice('');
+                            setIsFixedProductMode(true);
+                            return { msg: '📌 고정됨', color: 'text-purple-600 dark:text-purple-400' };
+                        }
+                    }
                     if (clickCount === 1) {
                         const textArea = document.createElement("textarea"); textArea.value = item.name.trim(); document.body.appendChild(textArea); textArea.select();
                         try { document.execCommand('copy'); } catch (err) {} document.body.removeChild(textArea);
-                        setExpandedInventoryItem(item.name);
-                        return null;
+                        return { msg: '📋 복사됨', color: 'text-blue-600 dark:text-blue-400' };
                     } 
                     else if (clickCount === 2) {
                         setManualProduct(item.name);
@@ -1540,13 +1506,13 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         const textArea = document.createElement("textarea"); textArea.value = textToCopy; document.body.appendChild(textArea); textArea.select();
                         try { document.execCommand('copy'); } catch (err) {} document.body.removeChild(textArea);
                         
-                        return { msg: '✅ 복사완료', color: 'text-green-600 dark:text-green-400' };
+                        return { msg: '✅ 메뉴복사', color: 'text-green-600 dark:text-green-400' };
                     }
                 } catch (e) {
                     console.error("Inventory Action Error: ", e);
                     return null;
                 }
-            }, [setExpandedInventoryItem, setManualProduct, setManualPrice, setIsFixedProductMode]);
+            }, [isFixedProductMode, manualProduct, setManualProduct, setManualPrice, setIsFixedProductMode]);
             
             const [multiAddNick, setMultiAddNick] = useState(null);
             
@@ -1796,8 +1762,30 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             useEffect(() => {
                 const handleKeyDown = (e) => {
                     if (e.key === 'Escape') {
-                        setSelectedNick(null); setIsFixedProductMode(false); setManualNick(''); setManualProduct('');
-                        setManualPrice(''); setCurrentSearchTerm(''); setBatchChangeModal(p => ({ ...p, isOpen: false })); setChatSearch(''); setDepositSearch(''); setAddressSearch(''); setOrderSearch('');
+                        setSelectedNick(null); 
+                        setIsFixedProductMode(false); 
+                        setManualNick(''); 
+                        setManualProduct('');
+                        setManualPrice(''); 
+                        setNewInvName('');
+                        setNewInvPrice('');
+                        setNewInvStock('');
+                        setBatchBaseName('');
+                        setBatchOpt1('');
+                        setBatchOpt2('');
+                        setBatchBasePrice('');
+                        setPreviewItems([]);
+                        setKeywordInput('');
+                        setCurrentSearchTerm(''); 
+                        setBatchChangeModal(p => ({ ...p, isOpen: false })); 
+                        setChatSearch(''); 
+                        setDepositSearch(''); 
+                        setOrderSearch('');
+                        setShowNickSuggestions(false);
+                        setExpandedInventoryItem(null);
+                        if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
+                            document.activeElement.blur();
+                        }
                     }
                 };
                 window.addEventListener('keydown', handleKeyDown);
@@ -1971,7 +1959,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
 
         const fetchYoutubeData = useCallback(async () => {
             if (!activeApiKey || !liveChatId) {
-                setYoutubeStatus("채팅(대기)");
+                setYoutubeStatus(prev => prev === "채팅(대기)" ? prev : "채팅(대기)");
                 return;
             }
             try {
@@ -1984,9 +1972,10 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                 if (!res.ok) {
                     if (res.status === 403) {
                         handleKeySwitch();
-                        setYoutubeStatus(`채팅(키교체중⚡)`);
+                        setYoutubeStatus(prev => prev === `채팅(키교체중⚡)` ? prev : `채팅(키교체중⚡)`);
                     } else {
-                        setYoutubeStatus(`채팅(에러:${res.status})`);
+                        const errStr = `채팅(에러:${res.status})`;
+                        setYoutubeStatus(prev => prev === errStr ? prev : errStr);
                     }
                 } else {
                     if (data.nextPageToken) chatNextPageTokenRef.current = data.nextPageToken;
@@ -2010,36 +1999,40 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         if (googleScriptUrl && masterSheetId && broadcastName) {
                             unsavedChatsRef.current.push(...newChats);
                         }
-                        setYoutubeStatus(`채팅(${newChats.length})`);
+                        const okStr = `채팅(${newChats.length})`;
+                        setYoutubeStatus(prev => prev === okStr ? prev : okStr);
                     } else {
-                        setYoutubeStatus(`채팅(없음)`);
+                        setYoutubeStatus(prev => prev === `채팅(없음)` ? prev : `채팅(없음)`);
                     }
                 }
             } catch (e) {
-                setYoutubeStatus(`채팅(오류)`);
+                setYoutubeStatus(prev => prev === `채팅(오류)` ? prev : `채팅(오류)`);
             }
         }, [activeApiKey, liveChatId, handleKeySwitch, setChats, googleScriptUrl, masterSheetId, broadcastName]);
 
         const fetchGasData = useCallback(async () => {
             if (!googleScriptUrl) {
-                setGasStatus("설정 ⚙️: 스크립트 URL 입력!");
+                setGasStatus(prev => prev === "설정 ⚙️: 스크립트 URL 입력!" ? prev : "설정 ⚙️: 스크립트 URL 입력!");
+                return;
+            }
+            const activeEl = document.activeElement;
+            if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA') && activeEl.type !== 'checkbox') {
                 return;
             }
             if (isGasFetchingRef.current) return;
 
             isGasFetchingRef.current = true;
             
-            // ✨ 추가: 8초 이상 응답이 없을 경우 지연 경고 표시 (빈 행 삭제 유도)
             const slowWarningTimer = setTimeout(() => {
                 setGasStatus("⏳ 시트 로딩 지연 (빈 행/열을 삭제해주세요!)");
             }, 8000);
 
             try {
                 let gasMsg = "";
-                const fetchUrl = `${googleScriptUrl}?action=get_all&depId=${getCleanSheetId(depSheetId)}&addrId=${getCleanSheetId(addrSheetId)}&masterId=${getCleanSheetId(masterSheetId)}&skipHeavy=false&t=${Date.now()}`;
+                const fetchUrl = `${googleScriptUrl}?action=get_all&depId=${getCleanSheetId(depSheetId)}&masterId=${getCleanSheetId(masterSheetId)}&skipHeavy=false&t=${Date.now()}`;
                 const res = await fetchGas(fetchUrl);
                 
-                clearTimeout(slowWarningTimer); // ✨ 정상 응답 시 경고 타이머 해제
+                clearTimeout(slowWarningTimer);
                 
                 if (res && res.status === 'success') {
                     if (res.deposits && Array.isArray(res.deposits)) {
@@ -2077,37 +2070,19 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     } else { gasMsg += `입금(연결실패) `; }
 
                     let mergedAddr = [];
-                    if (res.rawAddresses && Array.isArray(res.rawAddresses)) {
-                        if (res.rawAddresses.length > 1) {
-                            const headers = res.rawAddresses[0].map(h => String(h || '').trim());
-                            const addrRows = res.rawAddresses.slice(1);
-                            const mappedRaw = addrRows.map(row => {
-                                let obj = {}; headers.forEach((h, i) => { obj[h] = row[i]; });
-                                const getVal = (...keys) => { for (let k of keys) { if (obj[k]) return String(obj[k]).trim(); } return ''; };
-                                const tsRaw = getVal('입력시간', '타임스탬프', '날짜', '시간', '제출시간');
-                                return {
-                                    nickname: getVal('닉네임', '아이디', '주문자', '유튜브닉네임'),
-                                    realname: getVal('이름', '수령인', '입금자명', '입금자'),
-                                    phone: fixPhoneNumber(getVal('연락처', '전화번호', '휴대폰')),
-                                    address: getVal('주소', '전체주소', '배송지', '주소(동,호수 필수)'),
-                                    zipcode: getVal('우편번호', '우편', '우편 번호'),
-                                    memo: getVal('배송메모', '메모', '요청사항'),
-                                    timestamp: tsRaw,
-                                    _parsedTime: parseSafeDate(tsRaw).getTime(),
-                                    _source: 'raw'
-                                };
-                            }).filter(a => a.nickname || a.realname);
-                            mergedAddr = [...mergedAddr, ...mappedRaw];
-                            gasMsg += `주소(${mappedRaw.length}) `;
-                        } else { gasMsg += `주소(없음) `; }
-                    } else { gasMsg += `주소(연결실패) `; }
-                    
                     if (res.masterAddresses && Array.isArray(res.masterAddresses)) {
-                        const masterAddrs = res.masterAddresses.map(a => ({...a, phone: fixPhoneNumber(String(a.phone || '').trim()), _parsedTime: parseSafeDate(a.timestamp).getTime(), _source: 'master'}));
-                        mergedAddr = [...mergedAddr, ...masterAddrs];
+                        const masterAddrs = res.masterAddresses.map(a => ({
+                            ...a,
+                            nickname: String(a.nickname || a['닉네임'] || '').trim(),
+                            phone: fixPhoneNumber(String(a.phone || '').trim()),
+                            _parsedTime: parseSafeDate(a.timestamp).getTime(),
+                            _source: 'master'
+                        })).filter(a => a.nickname || a.realname);
+                        mergedAddr = [...masterAddrs];
+                        gasMsg += `주소(${masterAddrs.length}) `;
                     }
                     
-                    const addrKeys = mergedAddr.map(a => a.nickname + (a.timestamp||'')).join(',');
+                    const addrKeys = mergedAddr.map(a => a.nickname + (a.address||'') + (a.phone||'')).join(',');
                     if (addrKeys !== prevAddrsStr.current) {
                         if (mergedAddr.length > prevAddrCount.current && prevAddrCount.current !== 0) playBellSound();
                         if (mergedAddr.length > 0) setAddresses(mergedAddr);
@@ -2147,10 +2122,14 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         const parsedSpecial = {};
                         const parsedNoShow = {};
                         const parsedWaitlist = {};
+                        const parsedPins = {};
+                        const confirmedNicksFromServer = [];
                         
                         res.customerDb.forEach(row => {
                             const nick = String(row['닉네임'] || '').trim();
                             const status = String(row['고객상태'] || '').trim().toLowerCase();
+                            const pin = String(row['비밀번호'] || '').replace(/[^0-9]/g, '').slice(-4);
+                            const confirmed = String(row['주문확인'] || '').trim();
                             const ts = row['저장시간'] || '';
                             if (nick) {
                                 if (status === 'vip' || status === 'manager' || status === '관리자') {
@@ -2161,10 +2140,15 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                 } else if (status === 'waitlist' || status === '대기') {
                                     parsedWaitlist[nick] = true;
                                 }
+                                if (pin) {
+                                    parsedPins[nick] = pin;
+                                }
+                                if (confirmed === 'O' || confirmed === '확인완료') {
+                                    confirmedNicksFromServer.push(nick);
+                                }
                             }
                         });
                         
-                        // ✨ 중요: 구글 시트 폴링 시 로컬에 등록된 VIP/관리자 목록이 빈 값으로 초기화되지 않도록 안전하게 병합(Merge) 유지
                         setSpecialCustomers(prev => {
                             const merged = { ...prev, ...parsedSpecial };
                             return JSON.stringify(prev) !== JSON.stringify(merged) ? merged : prev;
@@ -2177,21 +2161,41 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                             const merged = { ...prev, ...parsedWaitlist };
                             return JSON.stringify(prev) !== JSON.stringify(merged) ? merged : prev;
                         });
+                        if (Object.keys(parsedPins).length > 0) {
+                            setCustomerPasswords(prev => {
+                                const merged = { ...prev, ...parsedPins };
+                                return JSON.stringify(prev) !== JSON.stringify(merged) ? merged : prev;
+                            });
+                        }
+                        if (confirmedNicksFromServer.length > 0) {
+                            setCheckedOrders(prev => {
+                                let changed = false;
+                                const next = new Set(prev);
+                                confirmedNicksFromServer.forEach(cn => {
+                                    if (!next.has(cn)) {
+                                        next.add(cn);
+                                        changed = true;
+                                    }
+                                });
+                                return changed ? next : prev;
+                            });
+                        }
                     }
 
-                    setGasStatus(gasMsg);
-                    setGlobalError('');
+                    setGasStatus(prev => prev === gasMsg ? prev : gasMsg);
+                    setGlobalError(prev => prev === '' ? prev : '');
                 } else { 
                     const errMsg = res ? (res.message || res.error || "서버 응답 오류") : "서버 응답 없음";
-                    setGasStatus(`통신 실패: ${errMsg}`); 
+                    const failStr = `통신 실패: ${errMsg}`;
+                    setGasStatus(prev => prev === failStr ? prev : failStr); 
                 }
             } catch(e) { 
-                clearTimeout(slowWarningTimer); // ✨ 에러 시에도 경고 타이머 해제
-                setGasStatus("네트워크 에러 발생"); 
+                clearTimeout(slowWarningTimer);
+                setGasStatus(prev => prev === "네트워크 에러 발생" ? prev : "네트워크 에러 발생"); 
             } finally {
                 isGasFetchingRef.current = false;
             }
-        }, [googleScriptUrl, depSheetId, addrSheetId, masterSheetId, setAddresses, setInventory, setSpecialCustomers, setNoShowCustomers, setWaitlistCustomers, setGlobalError, playCoinSound, playBellSound]);
+        }, [googleScriptUrl, depSheetId, masterSheetId, setAddresses, setInventory, setSpecialCustomers, setNoShowCustomers, setWaitlistCustomers, setCustomerPasswords, setCheckedOrders, setGlobalError, playCoinSound, playBellSound]);
 
         const fetchYoutubeDataRef = useRef(fetchYoutubeData);
         const fetchGasDataRef = useRef(fetchGasData);
@@ -2494,10 +2498,8 @@ const dashboardStats = useMemo(() => {
                     const isInputActive = document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA');
 
                     if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-                        // 입력창에 커서가 있어도 강제로 포커스를 해제하고 채팅창 이동
-                        if (isInputActive) {
-                            document.activeElement.blur();
-                        }
+                        // ✨ 입력창에서 타이핑하거나 자동완성 목록을 고르는 중일 때는 방향키가 포커스를 뺏지 않도록 보호
+                        if (isInputActive) return;
                         e.preventDefault(); // 스크롤 이동 방지
                         
                         const currentIndex = reversedChats.findIndex(c => c.id === focusedChatId);
@@ -2591,25 +2593,6 @@ const dashboardStats = useMemo(() => {
             const handleAddKeyword = (e) => { e.preventDefault(); const kw = keywordInput.trim(); if(!kw) return; setKeywords(prev => { const next = [...(prev || [])]; if(!next.includes(kw)) next.push(kw); return next; }); setKeywordInput(''); };
             const handleRemoveKeyword = (keyword) => { setKeywords(prev => (prev || []).filter(k => k !== keyword)); };
 
-            const handleResetAddresses = useCallback(() => { openModal("현재 화면의 주소록 목록만 삭제하시겠습니까?\n(수집기 시트에 저장된 데이터는 지워지지 않습니다)", 'confirm', () => { setAddresses([]); }); }, [openModal, setAddresses]);
-
-            const handleAddressNickEdit = useCallback((addr) => {
-                openModal(`[${addr.nickname}] 님의 주소록 닉네임을 변경합니다.\n수정할 닉네임을 입력하세요.`, 'prompt', (newNick) => {
-                    if (newNick && newNick.trim() !== '' && newNick !== addr.nickname) {
-                        const finalNick = newNick.trim(); const updatedAddr = { ...addr, nickname: finalNick, _source: 'master', timestamp: new Date().toISOString() };
-                        setAddresses(prev => { const filtered = prev.filter(a => a.nickname !== addr.nickname); return [...filtered, updatedAddr]; });
-                        if (googleScriptUrl && masterSheetId) {
-                            const payloadToGas = { 
-                                ...updatedAddr, 
-                                '닉네임': updatedAddr.nickname, name: updatedAddr.nickname, nick: updatedAddr.nickname, '주문자': updatedAddr.nickname, '아이디': updatedAddr.nickname, '고객명': updatedAddr.nickname, 
-                                phone: updatedAddr.phone ? "'" + updatedAddr.phone : '', zipcode: updatedAddr.zipcode ? "'" + updatedAddr.zipcode : '' 
-                            };
-                            fetchGas(googleScriptUrl, { action: 'save_master_address', masterId: getCleanSheetId(masterSheetId), data: payloadToGas }).catch(()=>{});
-                        }
-                    }
-                }, null, addr.nickname);
-            }, [openModal, setAddresses, googleScriptUrl, masterSheetId]);
-
             const handleNoAddressClick = useCallback((e) => {
                 setFilterStatus('no-address');
                 const missing = Array.from(new Set(orders.filter(o => !o.isCancelled && !addressLookup.get(o.customer)?.data?.address).map(o => o.customer)));
@@ -2623,7 +2606,23 @@ const dashboardStats = useMemo(() => {
                 }
             }, [orders, addressLookup]);
 
-            const handleOpenQuickAddress = useCallback((nick) => setQuickAddrModal({ isOpen: true, nick, editData: null }), []);
+            const handleOpenQuickAddress = useCallback((nick, editAddr = null) => setQuickAddrModal({ isOpen: true, nick, editData: editAddr }), []);
+
+            const handleSetCustomerPassword = useCallback((nick, currentPin = '') => {
+                openModal(`'${nick}' 님의 주문서 열람 비밀번호(핸드폰 뒤 4자리)를 설정하세요.`, 'prompt', (newPin) => {
+                    if (newPin !== null) {
+                        const cleanPin = String(newPin).replace(/[^0-9]/g, '').slice(-4);
+                        setCustomerPasswords(prev => ({ ...prev, [nick]: cleanPin }));
+                        if (googleScriptUrl && masterSheetId) {
+                            fetchGas(googleScriptUrl, {
+                                action: 'save_customer_password',
+                                masterId: getCleanSheetId(masterSheetId),
+                                data: { nickname: nick, password: cleanPin }
+                            }).catch(() => {});
+                        }
+                    }
+                }, null, currentPin || '');
+            }, [openModal, setCustomerPasswords, googleScriptUrl, masterSheetId]);
 
             useEffect(() => {
                 const timer = setTimeout(() => {
@@ -2689,8 +2688,12 @@ const dashboardStats = useMemo(() => {
 
             const lastSavedDataStr = useRef('');
 
-            const autoSaveToGoogleSheet = useCallback(async () => { 
+            const autoSaveToGoogleSheet = useCallback(async (isManual = false) => { 
                 if (!googleScriptUrl || !masterSheetId || Object.keys(orders).length === 0) return; 
+                if (!isManual) {
+                    const activeEl = document.activeElement;
+                    if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) return;
+                }
                 
                 const customerTotalsForShipping = {}; 
                 const customerTotalDeposits = {}; 
@@ -2713,17 +2716,29 @@ const dashboardStats = useMemo(() => {
                     const isCard = cardPayments[o.customer] ? true : false; 
                     const customerVal = o.customer || '';
                     
-                    // 주문 품목 중 하나가 취소되어도 해당 고객의 입금 총액이 마스터 시트에 정상 보존되도록 개선
                     let depositToSave = 0;
+                    let customerDepsJson = '';
                     if (!printedDeposits[customerVal]) {
                         depositToSave = customerTotalDeposits[customerVal] || 0;
+                        const matchedDepsForCust = (allDepositsRef.current || []).filter(d => depositLinks[d.id] === customerVal && matchedDeposits.has(d.id)).map(d => ({
+                            id: d.id,
+                            time: formatTimeOnly(d.time || d.date),
+                            name: d.name,
+                            amount: Number(d.amount)
+                        }));
+                        if (matchedDepsForCust.length > 0) {
+                            customerDepsJson = JSON.stringify(matchedDepsForCust);
+                        }
                         printedDeposits[customerVal] = true;
                     }
                     
                     const custType = specialCustomers && specialCustomers[normalizeString(customerVal)]?.type;
                     const isVip = custType === 'vip' || custType === 'manager';
                     const isNoShow = noShowCustomers && noShowCustomers[customerVal];
-                    const isWaitlist = waitlistCustomers && waitlistCustomers[customerVal];
+                    const isWaitlist = (waitlistCustomers && waitlistCustomers[customerVal]) || o.isWaitlist;
+                    const cleanPhone = addr.phone ? fixPhoneNumber(addr.phone) : '';
+                    const pinToSave = (customerPasswords && customerPasswords[customerVal]) || (cleanPhone.length >= 4 ? cleanPhone.slice(-4) : '');
+                    const isConfirmedOrder = checkedOrders && checkedOrders.has(customerVal);
                     
                     return { 
                         '닉네임': customerVal,
@@ -2740,12 +2755,15 @@ const dashboardStats = useMemo(() => {
                         '요청사항': addr.memo || '',
                         'VIP여부': isVip ? 'O' : '',
                         '노쇼여부': isNoShow ? 'O' : '',
-                        '대기여부': isWaitlist ? 'O' : ''
+                        '대기여부': isWaitlist ? 'O' : '',
+                        '비밀번호': pinToSave ? "'" + pinToSave : '',
+                        '주문확인': isConfirmedOrder ? 'O' : '',
+                        '입금내역JSON': customerDepsJson
                     }; 
                 }); 
 
                 const currentDataStr = JSON.stringify(saveList);
-                if (currentDataStr === lastSavedDataStr.current) return; // 변경된 데이터가 없으면 불필요한 구글 시트 저장(통신) 스킵
+                if (currentDataStr === lastSavedDataStr.current) return;
 
                 setIsSaving(true); 
 
@@ -2755,8 +2773,8 @@ const dashboardStats = useMemo(() => {
                     saveList.unshift({ 
                         '닉네임': metaCustomer,
                         '상품명': bn,
-                        '수량': 0,
-                        '단가(제품금액)': 0,
+                        '수량': Number(freeShippingThreshold) || 200000,
+                        '단가(제품금액)': Number(quickShipping) || 4000,
                         '배송비': 0,
                         '입금액': 0,
                         '카드결제': '',
@@ -2767,17 +2785,20 @@ const dashboardStats = useMemo(() => {
                         '요청사항': '',
                         'VIP여부': '',
                         '노쇼여부': '',
-                        '대기여부': ''
+                        '대기여부': '',
+                        '비밀번호': '',
+                        '주문확인': '',
+                        '입금내역JSON': ''
                     }); 
                 }
                 try { 
                     const actualSheetId = getCleanSheetId(masterSheetId); 
                     if(actualSheetId) { 
                         await fetchGas(googleScriptUrl, { action: 'save_orders', masterId: actualSheetId, data: saveList, nicknames: uniqueNicknames }); 
-                        lastSavedDataStr.current = currentDataStr; // 성공 시 스냅샷 업데이트
+                        lastSavedDataStr.current = currentDataStr;
                     } 
                 } catch(e) {} finally { setIsSaving(false); } 
-            }, [orders, cardPayments, getCalculatedShipping, googleScriptUrl, addressLookup, masterSheetId, broadcastName, specialCustomers, noShowCustomers, waitlistCustomers]);
+            }, [orders, cardPayments, getCalculatedShipping, googleScriptUrl, addressLookup, masterSheetId, broadcastName, specialCustomers, noShowCustomers, waitlistCustomers, customerPasswords, checkedOrders, depositLinks, matchedDeposits, freeShippingThreshold, quickShipping]);
 
             const autoSaveRef = useRef(); useEffect(() => { autoSaveRef.current = autoSaveToGoogleSheet; }, [autoSaveToGoogleSheet]);
             useEffect(() => { const saveInterval = setInterval(() => { if (autoSaveRef.current) autoSaveRef.current(); }, 10000); return () => clearInterval(saveInterval); }, []); 
@@ -3146,7 +3167,6 @@ const dashboardStats = useMemo(() => {
                 } catch (err) {} document.body.removeChild(textArea);
             };
 
-            const handleAddressClick = (addr) => { if (!selectedNick) return openModal("주소를 수동 연결할 주문자를 노란색으로 선택해주세요.", "alert"); handleAddressMapping(selectedNick, addr.nickname); };
             const handleCopyQuickMessage = (e, msg, idx) => { 
                 if (!msg || !msg.trim()) return; 
                 const textArea = document.createElement("textarea"); textArea.value = msg; document.body.appendChild(textArea); textArea.select(); 
@@ -3173,83 +3193,6 @@ const dashboardStats = useMemo(() => {
                 });
                 return [...unmatched, ...matched, ...sijae];
             }, [filteredDeposits, deferredDepositSearch, matchedDeposits]);
-
-            const usedAddressNicks = useMemo(() => {
-                const set = new Set();
-                orders.forEach(o => { 
-                    if (!o.isCancelled) { 
-                        const mappedTarget = addressMapping[o.customer]; 
-                        if (mappedTarget === '__UNMAPPED__') return;
-                        if (mappedTarget) set.add(normalizeString(mappedTarget)); else set.add(normalizeString(o.customer)); 
-                    } 
-                });
-                return set;
-            }, [orders, addressMapping]);
-
-            const visibleAddresses = useMemo(() => {
-                const latestMap = {};
-                addresses.forEach(a => {
-                    const cleanNick = normalizeString(a.nickname);
-                    const ts = a._parsedTime || parseSafeDate(a.timestamp).getTime();
-                    if (!latestMap[cleanNick] || ts > (latestMap[cleanNick]._parsedTime || parseSafeDate(latestMap[cleanNick].timestamp).getTime())) latestMap[cleanNick] = a;
-                });
-                let res = Object.values(latestMap);
-                if (deferredAddressSearch) { const term = String(deferredAddressSearch).toLowerCase(); res = res.filter(a => String(a.nickname).toLowerCase().includes(term) || String(a.realname).toLowerCase().includes(term) || String(a.phone).includes(term)); }
-                
-                if (selectedNick) {
-                    const targetNickClean = cleanForMatch(selectedNick);
-                    const targetNickKo = extractKo(selectedNick);
-                    const targetReal = depositorNames[selectedNick];
-                    const targetRealClean = targetReal ? cleanForMatch(targetReal) : '';
-                    const targetRealKo = targetReal ? extractKo(targetReal) : '';
-
-                    const checkMatch = (tClean, tKo, vClean, vKo) => {
-                        if (!tClean && !tKo) return 10;
-                        if (tClean && vClean && tClean === vClean) return 0;
-                        if (tKo && vKo && tKo === vKo && tKo.length >= 2) return 0;
-                        if (tClean && vClean && (tClean.includes(vClean) || vClean.includes(tClean)) && Math.min(tClean.length, vClean.length) >= 2) return 1;
-                        if (tKo && vKo && (tKo.includes(vKo) || vKo.includes(tKo)) && Math.min(tKo.length, vKo.length) >= 2) return 1;
-                        if (tClean && vClean && (getChosung(tClean).includes(getChosung(vClean)) || getChosung(vClean).includes(getChosung(tClean))) && Math.min(tClean.length, vClean.length) >= 2) return 2;
-                        return 10;
-                    };
-
-                    res.forEach(a => {
-                        const aNickClean = cleanForMatch(a.nickname);
-                        const aNickKo = extractKo(a.nickname);
-                        const aRealClean = cleanForMatch(a.realname);
-                        const aRealKo = extractKo(a.realname);
-                        
-                        const scoreNick = Math.min(
-                            checkMatch(targetNickClean, targetNickKo, aNickClean, aNickKo),
-                            checkMatch(targetRealClean, targetRealKo, aNickClean, aNickKo)
-                        );
-                        const scoreReal = Math.min(
-                            checkMatch(targetNickClean, targetNickKo, aRealClean, aRealKo),
-                            checkMatch(targetRealClean, targetRealKo, aRealClean, aRealKo)
-                        );
-
-                        a._tempScore = Math.min(scoreNick, scoreReal);
-                    });
-
-                    res.sort((a, b) => {
-                        const aIsSimilar = a._tempScore < 10;
-                        const bIsSimilar = b._tempScore < 10;
-                        
-                        if (aIsSimilar && !bIsSimilar) return -1;
-                        if (!aIsSimilar && bIsSimilar) return 1;
-                        
-                        if (aIsSimilar && bIsSimilar) {
-                            if (a._tempScore !== b._tempScore) return a._tempScore - b._tempScore;
-                            return (b._parsedTime || parseSafeDate(b.timestamp).getTime()) - (a._parsedTime || parseSafeDate(a.timestamp).getTime());
-                        }
-                        
-                        return (b._parsedTime || parseSafeDate(b.timestamp).getTime()) - (a._parsedTime || parseSafeDate(a.timestamp).getTime());
-                    });
-                } else {
-                    res.sort((a, b) => { const tA = a._parsedTime || parseSafeDate(a.timestamp).getTime(); const tB = b._parsedTime || parseSafeDate(b.timestamp).getTime(); return tB - tA; });
-                }
-                return res;
-            }, [addresses, deferredAddressSearch, selectedNick, addressMapping, depositorNames]);
 
             const handleQuickAddProduct = async (e) => {
                 e.preventDefault(); const cleanName = String(newInvName).trim();
@@ -3336,11 +3279,10 @@ const dashboardStats = useMemo(() => {
                 openModal(`총 ${batchPreviewList.length}건의 상품명이 일괄 변경되었습니다.`, "alert");
             };
 
-            const panelChat = useResizablePanel('chat', '14%');
-            const panelOrder = useResizablePanel('order', '30%');
-            const panelDeposit = useResizablePanel('deposit', '10%');
-            const panelAddr = useResizablePanel('addr', '13%');
-            const panelInv = useResizablePanel('inv', '17%');
+            const panelChat = useResizablePanel('chat', '16%');
+            const panelOrder = useResizablePanel('order', '36%');
+            const panelDeposit = useResizablePanel('deposit', '13%');
+            const panelInv = useResizablePanel('inv', '19%');
             const panelOpt = useResizablePanel('opt', '16%');
 
             return (
@@ -3466,7 +3408,7 @@ const dashboardStats = useMemo(() => {
                         <div className="grid grid-cols-5 gap-1 p-2 bg-slate-100 dark:bg-slate-800 border-b dark:border-slate-700 text-center text-[10px] shrink-0">
                             {[{id:'all', label:'총매출', val:dashboardStats.totalSales, isCurrency:true, colSpan:2}, 
                               {id:'no-address', label:'주소없음', val:dashboardStats.missingAddressCount, isCurrency:false, onClick:handleNoAddressClick},
-                              {id:'no-kakao', label:'카톡없음', val:noKakaoCount, isCurrency:false},
+                              {id:'no-kakao', label:'주문미확인', val:noKakaoCount, isCurrency:false},
                               {id:'noshow', label:'노쇼', val:Object.values(noShowCustomers).filter(Boolean).length, isCurrency:false},
                               {id:'waitlist', label:'대기', val:dashboardStats.waitlistCount, isCurrency:false},
                               {id:'paid', label:'완납', val:dashboardStats.totalDeposit, isCurrency:true}, 
@@ -3489,7 +3431,7 @@ const dashboardStats = useMemo(() => {
                                     {isSaving && <Icon name="spinner" className="animate-spin text-blue-500 ml-2" />}
                                 </span>
                                 <div className="flex items-center gap-1.5">
-                                    <button onClick={autoSaveToGoogleSheet} disabled={isSaving} className={`px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 shadow-sm transition-colors ${isSaving ? 'bg-slate-400 text-slate-200 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 text-white'}`} title="마스터 시트에 즉시 저장">
+                                    <button onClick={() => autoSaveToGoogleSheet(true)} disabled={isSaving} className={`px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 shadow-sm transition-colors ${isSaving ? 'bg-slate-400 text-slate-200 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 text-white'}`} title="마스터 시트에 즉시 저장">
                                         <Icon name="floppy-disk" weight="fill" /> 수동 저장
                                     </button>
                                     <button onClick={handleResetAllData} className="bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 shadow-sm transition-colors"><Icon name="trash" weight="fill"/> 초기화</button>
@@ -3560,15 +3502,15 @@ const dashboardStats = useMemo(() => {
                                 const baseGrand = prodSum + (activeItems.length > 0 ? ship : 0); const baseBal = baseGrand - depSum;
                                 const isCard = cardPayments[nick]; const cardFee = (isCard && baseBal > 0) ? Math.round(baseBal * 0.1) : 0;
                                 const grand = baseGrand + cardFee; const bal = baseBal + cardFee;
-                                const { data: addrData, conflict: addrConflict, type: addrType } = addressLookup.get(nick);
+                                const { data: addrData, type: addrType } = addressLookup.get(nick);
                                 const customerDeps = allDeposits.filter(d => depositLinks[d.id] === nick && matchedDeposits.has(d.id));
                                 
-                                return (<CustomerBlock key={nick} nick={nick} items={items} isSelected={selectedNick === nick} currentShipping={ship} isCard={isCard} isPaidState={bal <= 0 && activeItems.length > 0} grandTotal={grand} depositTotal={depSum} balance={bal} baseGrandTotal={baseGrand} baseBalance={baseBal} addr={addrData} addrType={addrType} addrConflict={addrConflict} addressMapping={addressMapping} autoDepositorName={addrData?.realname || ''} displayDepositorName={depositorNames[nick] || addrData?.realname || '입금자'} isAutoDepositor={!depositorNames[nick] && addrData?.realname} depositorNames={depositorNames} copyStatus={copyStatus} isOrderConfirmed={checkedOrders.has(nick)} isEditingShipping={editingShippingNick === nick} setSelectedNick={setSelectedNick} addOrderLogic={addOrderLogic} handleNicknameEdit={handleNicknameEdit} toggleCardPayment={toggleCardPayment} handleShippingChange={handleShippingChange} setEditingShippingNick={setEditingShippingNick} openModal={openModal} setDepositorNames={setDepositorNames} handleFullDepositToggle={handleFullDepositToggle} copyOrderSheet={copyOrderSheet} handleOrderCheckToggle={handleOrderCheckToggle} handleAddressUnmapping={handleAddressUnmapping} handleAddressMapping={handleAddressMapping} handlePromoteAddress={handlePromoteAddress} handleProductChange={handleProductChange} handleQuantityUpdate={handleQuantityUpdate} handleOrderCancel={handleOrderCancel} handleOrderDelete={handleOrderDelete} toggleVIP={specialCustomers} specialCustomers={specialCustomers} handleOpenQuickAddress={handleOpenQuickAddress} findAddressSuggestions={findAddressSuggestions} cashReceiptStatus={cashReceipts[nick]} toggleCashReceipt={toggleCashReceipt} inventory={inventory} productHistory={productHistory} customerDeposits={customerDeps} handleDepositUnmatch={handleDepositUnmatch} handleMultiAddOpen={setMultiAddNick} toggleNoShow={toggleNoShow} toggleWaitlist={toggleWaitlist} noShowStatus={noShowCustomers[nick]} waitlistStatus={waitlistCustomers[nick]} />);
+                                return (<CustomerBlock key={nick} nick={nick} items={items} isSelected={selectedNick === nick} currentShipping={ship} isCard={isCard} isPaidState={bal <= 0 && activeItems.length > 0} grandTotal={grand} depositTotal={depSum} balance={bal} baseGrandTotal={baseGrand} baseBalance={baseBal} addr={addrData} addrType={addrType} addressMapping={addressMapping} autoDepositorName={addrData?.realname || ''} displayDepositorName={depositorNames[nick] || addrData?.realname || '입금자'} isAutoDepositor={!depositorNames[nick] && addrData?.realname} depositorNames={depositorNames} copyStatus={copyStatus} isOrderConfirmed={checkedOrders.has(nick)} isEditingShipping={editingShippingNick === nick} setSelectedNick={setSelectedNick} addOrderLogic={addOrderLogic} handleNicknameEdit={handleNicknameEdit} toggleCardPayment={toggleCardPayment} handleShippingChange={handleShippingChange} setEditingShippingNick={setEditingShippingNick} openModal={openModal} setDepositorNames={setDepositorNames} handleFullDepositToggle={handleFullDepositToggle} copyOrderSheet={copyOrderSheet} handleOrderCheckToggle={handleOrderCheckToggle} handleAddressUnmapping={handleAddressUnmapping} handleAddressMapping={handleAddressMapping} handleProductChange={handleProductChange} handleQuantityUpdate={handleQuantityUpdate} handleOrderCancel={handleOrderCancel} handleOrderDelete={handleOrderDelete} toggleVIP={specialCustomers} specialCustomers={specialCustomers} handleOpenQuickAddress={handleOpenQuickAddress} findAddressSuggestions={findAddressSuggestions} cashReceiptStatus={cashReceipts[nick]} toggleCashReceipt={toggleCashReceipt} inventory={inventory} productHistory={productHistory} customerDeposits={customerDeps} handleDepositUnmatch={handleDepositUnmatch} handleMultiAddOpen={setMultiAddNick} toggleNoShow={toggleNoShow} toggleWaitlist={toggleWaitlist} noShowStatus={noShowCustomers[nick]} waitlistStatus={waitlistCustomers[nick]} customerPassword={customerPasswords && customerPasswords[nick]} handleSetCustomerPassword={handleSetCustomerPassword} />);
                             })}
                         </div>
                     </div>
 
-                    <div ref={panelDeposit.ref} className="flex flex-col bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg shadow-sm resizable-panel" style={{ width: panelDeposit.width, minWidth: '90px' }}>
+                    <div ref={panelDeposit.ref} className="flex flex-col bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg shadow-sm resizable-panel" style={{ width: panelDeposit.width, minWidth: '100px' }}>
                         <div className="p-2 bg-slate-100 dark:bg-slate-800 border-b dark:border-slate-700 flex flex-col gap-1.5 shrink-0">
                             <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between shrink-0">
                                 <span className="flex items-center gap-1"><Icon name="money" weight="fill"/> 입금 내역</span>
@@ -3623,34 +3565,8 @@ const dashboardStats = useMemo(() => {
                         </div>
                         <div className="p-1 bg-white dark:bg-slate-800 text-center font-bold text-[10px] border-t dark:border-slate-700 shrink-0">총: <span className="text-slate-800 dark:text-slate-200 text-xs">{totalDepositAmount.toLocaleString()}</span>원</div>
                     </div>
-                    
-                    <div ref={panelAddr.ref} className="flex flex-col bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg shadow-sm resizable-panel" style={{ width: panelAddr.width, minWidth: '130px' }}>
-                        <div className="p-2 bg-slate-100 dark:bg-slate-800 border-b dark:border-slate-700 flex flex-col gap-2 shrink-0">
-                            <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between shrink-0">
-                                <span className="flex items-center gap-1"><Icon name="address-book" weight="fill"/> 실시간 주소록</span>
-                                <div className="flex items-center gap-1.5"><span className="text-xs text-slate-500 dark:text-slate-400 mr-1">{visibleAddresses.length}명</span><button onClick={handleResetAddresses} className="bg-slate-500 hover:bg-slate-600 text-white text-[10px] px-1.5 py-0.5 rounded shadow-sm transition-colors flex items-center gap-0.5"><Icon name="trash" weight="bold"/> 비우기</button></div>
-                            </div>
-                            <div className="relative shrink-0"><Icon name="magnifying-glass" className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-400 text-[10px]"/><input type="text" placeholder="이름/연락처 검색" value={addressSearch} onChange={e => setAddressSearch(e.target.value)} onKeyDown={e => { if(e.key==='Escape'){ setAddressSearch(''); e.target.blur(); } }} className="w-full text-[10px] pl-6 pr-6 py-1.5 border dark:border-slate-600 rounded focus:ring-1 focus:ring-slate-500 outline-none bg-white dark:bg-slate-900" />{addressSearch && <button onClick={()=>setAddressSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><Icon name="x-circle" weight="fill" size={12}/></button>}</div>
-                        </div>
-                        <div className="flex-1 overflow-y-auto p-1 space-y-1 bg-slate-50 dark:bg-slate-900">
-                            {visibleAddresses.map((addr, idx) => {
-                                const isUsed = usedAddressNicks.has(normalizeString(addr.nickname));
-                                const tsDate = parseSafeDate(addr.timestamp);
-                                const tsStr = tsDate.getTime() > 0 ? `${String(tsDate.getMonth()+1).padStart(2, '0')}/${String(tsDate.getDate()).padStart(2, '0')}` : '';
-                                return (
-                                    <div key={`${addr.phone}-${idx}`} onClick={() => handleAddressClick(addr)} className={`relative flex flex-col p-1.5 border rounded cursor-pointer transition-all ${isUsed ? 'opacity-60 bg-slate-100 dark:bg-slate-800/80 border-transparent' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm'}`}>
-                                        <div className="flex justify-between items-center gap-1">
-                                            <div className="flex items-center min-w-0 flex-1"><span className={`text-[12px] font-bold truncate ${isUsed ? 'text-slate-500 dark:text-slate-400' : 'text-slate-800 dark:text-slate-200'}`} title={addr.nickname}>{addr.nickname}</span><button onClick={(e) => { e.stopPropagation(); handleAddressNickEdit(addr); }} className="text-slate-400 hover:text-blue-500 shrink-0 ml-1 p-0.5"><Icon name="pencil-simple" weight="bold" size={10}/></button></div>
-                                            <div className="flex items-center gap-1 shrink-0">{isUsed ? <span className="text-[8px] font-bold text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900/30 px-1 py-0.5 rounded shrink-0">연결됨</span> : <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 shrink-0">{tsStr}</span>}<button onClick={(e) => { e.stopPropagation(); setQuickAddrModal({ isOpen: true, nick: addr.nickname, editData: addr }); }} className="text-slate-400 hover:text-slate-700 transition-colors bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 rounded p-0.5"><Icon name="pencil-simple" weight="bold" size={12}/></button></div>
-                                        </div>
-                                        <div className="text-[11px] text-slate-600 dark:text-slate-400 font-medium flex items-center gap-1 w-full overflow-hidden mt-0.5"><span className="shrink-0">{addr.realname}</span><span className="text-slate-400 shrink-0">|</span><span className="shrink-0">{fixPhoneNumber(addr.phone)}</span><span className="text-slate-700 dark:text-slate-300 truncate flex-1 ml-1" title={`${addr.address} ${addr.memo}`}>{addr.address}{addr.memo && <span className="text-red-500 font-bold ml-1.5">[{addr.memo}]</span>}</span></div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
 
-                    {/* ✨ 5번째 패널: 오직 실시간 재고 1줄 리스트업 (가벼워짐) */}
+                    {/* 실시간 재고 2줄 컴팩트 리스트 (클릭 시 제자리에서 열림) */}
                     <div ref={panelInv.ref} className="flex flex-col bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg shadow-sm resizable-panel" style={{ width: panelInv.width, minWidth: '160px' }}>
                         <div className="p-2 bg-slate-100 dark:bg-slate-800 border-b dark:border-slate-700 flex flex-col gap-2 shrink-0">
                             <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between shrink-0">
@@ -3663,7 +3579,7 @@ const dashboardStats = useMemo(() => {
                                 <div className="relative w-full"><Icon name="magnifying-glass" className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-[10px]"/><input type="text" placeholder="검색" value={currentSearchTerm} onChange={e => setCurrentSearchTerm(e.target.value)} className="w-full text-[10px] pl-6 pr-2 py-1.5 border dark:border-slate-600 rounded outline-none bg-white dark:bg-slate-900 dark:text-white shadow-sm" /></div>
                             </div>
                         </div>
-                        <div className="flex-1 overflow-y-auto p-1.5 space-y-1 bg-slate-50 dark:bg-slate-900">
+                        <div className="flex-1 overflow-y-auto bg-white dark:bg-slate-800">
                             {inventory
                                 .filter(i => !deferredSearchTerm || String(i.name).toLowerCase().includes(String(deferredSearchTerm).toLowerCase()))
                                 .sort((a, b) => String(b.name).localeCompare(String(a.name), 'ko', { numeric: true }))
@@ -3673,21 +3589,26 @@ const dashboardStats = useMemo(() => {
                                         item={item} 
                                         itemStats={inventoryStats[item.name]} 
                                         expandedInventoryItem={expandedInventoryItem} 
+                                        isPinned={isFixedProductMode && manualProduct === item.name}
                                         onItemAction={handleInventoryItemAction}
                                         setInventory={setInventory}
+                                        setOrders={setOrders}
+                                        setProductHistory={setProductHistory}
                                         saveInventoryToServer={saveInventoryToServer}
                                         openModal={openModal}
+                                        customerPaidStatus={customerPaidStatus}
+                                        cardPayments={cardPayments}
                                         setExpandedInventoryItem={setExpandedInventoryItem}
                                     />
                             ))}
                         </div>
                     </div>
 
-                    {/* ✨ 6번째 패널: 상단(선택 상품 상세 관리) + 하단(옵션 생성기) 통합 구조 */}
+                    {/* ✨ 6번째 패널: 오른쪽 '선택된 상품 관리' 창을 완전히 없애고 옵션 생성기를 최상단으로 고정 */}
                     <div ref={panelOpt.ref} className="flex flex-col bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg shadow-sm resizable-panel shrink-0" style={{ width: panelOpt.width, minWidth: '180px' }}>
                         <div className="p-2 bg-slate-100 dark:bg-slate-800 border-b dark:border-slate-700 flex flex-col gap-2 shrink-0">
                             <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between shrink-0">
-                                <span className="flex items-center gap-1 text-[13px]"><Icon name="magic-wand" weight="fill" className="text-slate-500" /> 상세 & 옵션 관리</span>
+                                <span className="flex items-center gap-1 text-[13px]"><Icon name="magic-wand" weight="fill" className="text-slate-500" /> 옵션 상품 등록</span>
                             </div>
                             <div className="flex gap-1.5 shrink-0">
                                 <button onClick={() => setIsMenuModalOpen(true)} className="flex-1 bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800 text-[10px] py-1.5 rounded shadow-sm transition-colors flex items-center justify-center gap-1 font-bold"><Icon name="clipboard-text" weight="bold"/> 메뉴판</button>
@@ -3696,25 +3617,8 @@ const dashboardStats = useMemo(() => {
                         </div>
                         
                         <div className="flex-1 overflow-y-auto flex flex-col bg-white dark:bg-slate-800">
-                            
-                            {/* 선택된 상품 관리 영역 렌더링 (선택된 상품이 있을 때만 표시) */}
-                            {expandedInventoryItem && inventory.find(i => i.name === expandedInventoryItem) && (
-                                <RightSelectedItemPanel 
-                                    item={inventory.find(i => i.name === expandedInventoryItem)}
-                                    itemStats={inventoryStats[expandedInventoryItem]}
-                                    setInventory={setInventory}
-                                    setOrders={setOrders}
-                                    setProductHistory={setProductHistory}
-                                    saveInventoryToServer={saveInventoryToServer}
-                                    openModal={openModal}
-                                    customerPaidStatus={customerPaidStatus}
-                                    cardPayments={cardPayments}
-                                    setExpandedInventoryItem={setExpandedInventoryItem}
-                                />
-                            )}
-
-                            {/* 옵션 생성기 영역 렌더링 */}
-                            <div className="p-3 flex flex-col gap-3">
+                            {/* 최상단으로 올라온 옵션 생성기 영역 */}
+                            <div className="p-2.5 flex flex-col gap-2.5">
                                 <div>
                                     <label className="block text-[10px] font-bold text-slate-500 mb-1">기본 상품명</label>
                                     <input id="batch-basename-input" type="text" value={batchBaseName} onChange={e => setBatchBaseName(e.target.value)} onKeyDown={(e) => { if(e.key === 'Enter') { e.preventDefault(); document.getElementById('batch-opt1-input')?.focus(); } }} placeholder="예: 나그랑 티셔츠" className="w-full border dark:border-slate-600 rounded px-2 py-1.5 text-xs bg-slate-50 dark:bg-slate-900 outline-none dark:text-white" />
@@ -3990,7 +3894,7 @@ const dashboardStats = useMemo(() => {
                 const templateConfigStr = localStorage.getItem(getLsKey('templateConfig'));
                 const templateConfigLocal = templateConfigStr ? JSON.parse(templateConfigStr) : { emoji: '💙', paidMsg: '😍 완납 확인! 감사합니다 😍', unpaidPrefix: '[미입금]\n총 입금하실 금액\n👉', overpaidMsg: '과납 금액이 있습니다.\n환불 또는 적립 여부를 알려주세요!', addrNotice: '', surveyNotice: '', alwaysRequestAddress: false };
                 const overpaidMsg = templateConfigLocal.overpaidMsg || '과납 금액이 있습니다.\n환불 또는 적립 여부를 알려주세요!';
-                const bankStr = localStorage.getItem(getLsKey('bankAccount')) || "카카오뱅크 김선정\n7942 18 01611";
+                const bankStr = localStorage.getItem(getLsKey('bankAccount')) || "카카오뱅크 김선정\n7942 32 84990";
                 const sentAddressRequestsStr = localStorage.getItem(getLsKey('sentAddressRequests')); const sentAddressRequestsLocal = sentAddressRequestsStr ? new Set(JSON.parse(sentAddressRequestsStr)) : new Set();
                 const data = []; 
                 Object.entries(groups).forEach(([nick, items]) => {
@@ -4223,6 +4127,7 @@ const dashboardStats = useMemo(() => {
             
             const [noShowCustomers, setNoShowCustomers] = useLocalStorage('noShowCustomers', {});
             const [waitlistCustomers, setWaitlistCustomers] = useLocalStorage('waitlistCustomers', {});
+            const [customerPasswords, setCustomerPasswords] = useLocalStorage('customerPasswords', {});
 
             const [matchedDeposits, setMatchedDeposits] = useState(() => { try { const s = localStorage.getItem(getLsKey('matchedDeposits')); const p = JSON.parse(s); return Array.isArray(p) ? new Set(p) : new Set(); } catch(e){ return new Set(); } });
             const [depositLinks, setDepositLinks] = useLocalStorage('depositLinks', {});
@@ -4260,6 +4165,12 @@ const dashboardStats = useMemo(() => {
                     return changed ? updated : prev;
                 });
             }, [setTemplateConfig]);
+
+            useEffect(() => {
+                if (bankAccount && bankAccount.includes('7942 18 01611')) {
+                    setBankAccount(FIXED_BANK_ACCOUNT);
+                }
+            }, [bankAccount, setBankAccount]);
 
             useEffect(() => {
                 const handleGlobalKeyDown = (e) => {
@@ -4410,7 +4321,7 @@ const dashboardStats = useMemo(() => {
 
                     <div className="flex-1 overflow-hidden flex flex-col">
                         <div className={`flex-1 overflow-hidden ${activeTab === 'live' ? 'flex' : 'hidden'}`}>
-                            <LiveTab youtubeApiKey={youtubeApiKey} youtubeVideoId={youtubeVideoId} orders={orders} setOrders={setOrders} productHistory={productHistory} setProductHistory={setProductHistory} quickShipping={quickShipping} jejuShipping={jejuShipping} freeShippingThreshold={freeShippingThreshold} shippingOverrides={shippingOverrides} setShippingOverrides={setShippingOverrides} bankAccount={bankAccount} googleScriptUrl={googleScriptUrl} depSheetId={depSheetId} addrSheetId={addrSheetId} masterSheetId={masterSheetId} addresses={addresses} setAddresses={setAddresses} cardPayments={cardPayments} setCardPayments={setCardPayments} manualDeposits={manualDeposits} setManualDeposits={setManualDeposits} matchedDeposits={matchedDeposits} setMatchedDeposits={setMatchedDeposits} depositLinks={depositLinks} setDepositLinks={setDepositLinks} depositorNames={depositorNames} setDepositorNames={setDepositorNames} clickedChats={clickedChats} setClickedChats={setClickedChats} openModal={openModal} keywords={keywords} setKeywords={setKeywords} sentAddressRequests={sentAddressRequests} setSentAddressRequests={setSentAddressRequests} deletedDepositIds={deletedDepositIds} setDeletedDepositIds={setDeletedDepositIds} checkedOrders={checkedOrders} setCheckedOrders={setCheckedOrders} addressMapping={addressMapping} setAddressMapping={setAddressMapping} templateConfig={templateConfig} specialCustomers={specialCustomers} setSpecialCustomers={setSpecialCustomers} inventory={inventory} setInventory={setInventory} quickMessages={quickMessages} handleResetAllData={handleResetAllData} broadcastName={broadcastName} setGlobalError={setGlobalError} cashReceipts={cashReceipts} setCashReceipts={setCashReceipts} soundEnabled={soundEnabled} soundVolume={soundVolume} noShowCustomers={noShowCustomers} setNoShowCustomers={setNoShowCustomers} waitlistCustomers={waitlistCustomers} setWaitlistCustomers={setWaitlistCustomers} />
+                            <LiveTab youtubeApiKey={youtubeApiKey} youtubeVideoId={youtubeVideoId} orders={orders} setOrders={setOrders} productHistory={productHistory} setProductHistory={setProductHistory} quickShipping={quickShipping} jejuShipping={jejuShipping} freeShippingThreshold={freeShippingThreshold} shippingOverrides={shippingOverrides} setShippingOverrides={setShippingOverrides} bankAccount={bankAccount} googleScriptUrl={googleScriptUrl} depSheetId={depSheetId} masterSheetId={masterSheetId} addresses={addresses} setAddresses={setAddresses} cardPayments={cardPayments} setCardPayments={setCardPayments} manualDeposits={manualDeposits} setManualDeposits={setManualDeposits} matchedDeposits={matchedDeposits} setMatchedDeposits={setMatchedDeposits} depositLinks={depositLinks} setDepositLinks={setDepositLinks} depositorNames={depositorNames} setDepositorNames={setDepositorNames} clickedChats={clickedChats} setClickedChats={setClickedChats} openModal={openModal} keywords={keywords} setKeywords={setKeywords} sentAddressRequests={sentAddressRequests} setSentAddressRequests={setSentAddressRequests} deletedDepositIds={deletedDepositIds} setDeletedDepositIds={setDeletedDepositIds} checkedOrders={checkedOrders} setCheckedOrders={setCheckedOrders} addressMapping={addressMapping} setAddressMapping={setAddressMapping} templateConfig={templateConfig} specialCustomers={specialCustomers} setSpecialCustomers={setSpecialCustomers} inventory={inventory} setInventory={setInventory} quickMessages={quickMessages} handleResetAllData={handleResetAllData} broadcastName={broadcastName} setGlobalError={setGlobalError} cashReceipts={cashReceipts} setCashReceipts={setCashReceipts} soundEnabled={soundEnabled} soundVolume={soundVolume} noShowCustomers={noShowCustomers} setNoShowCustomers={setNoShowCustomers} waitlistCustomers={waitlistCustomers} setWaitlistCustomers={setWaitlistCustomers} customerPasswords={customerPasswords} setCustomerPasswords={setCustomerPasswords} />
                         </div>
                         <div className={`flex-1 overflow-y-auto ${activeTab === 'management' ? 'block' : 'hidden'}`}>
                             <OrderManagementTab orders={orders} shippingOverrides={shippingOverrides} quickShipping={quickShipping} jejuShipping={jejuShipping} freeShippingThreshold={freeShippingThreshold} broadcastName={broadcastName} addresses={addresses} handleExportBackup={handleExportBackup} handleImportBackup={handleImportBackup} addressMapping={addressMapping} cardPayments={cardPayments} specialCustomers={specialCustomers} openModal={openModal} cashReceipts={cashReceipts} inventory={inventory} productHistory={productHistory} noShowCustomers={noShowCustomers} waitlistCustomers={waitlistCustomers} />
