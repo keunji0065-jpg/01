@@ -2872,11 +2872,8 @@ const dashboardStats = useMemo(() => {
             const lastSavedDataStr = useRef('');
 
             const autoSaveToGoogleSheet = useCallback(async (isManual = false) => { 
-                if (!googleScriptUrl || !masterSheetId || Object.keys(orders).length === 0) return; 
-                if (!isManual) {
-                    const activeEl = document.activeElement;
-                    if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) return;
-                }
+                if (!googleScriptUrl || !masterSheetId) return; 
+                if (orders.length === 0 && !isManual) return;
                 
                 const customerTotalsForShipping = {}; 
                 const customerTotalDeposits = {}; 
@@ -2986,6 +2983,9 @@ const dashboardStats = useMemo(() => {
                     if(actualSheetId) { 
                         const confirmedNicknames = uniqueNicknames.filter(n => checkedOrders && checkedOrders.has(n));
                         await fetchGas(googleScriptUrl, { action: 'save_orders', masterId: actualSheetId, data: saveList, nicknames: uniqueNicknames, confirmedNicknames: confirmedNicknames }); 
+                        if (isManual && Array.isArray(inventoryRef.current)) {
+                            await fetchGas(googleScriptUrl, { action: 'save_inventory', masterId: actualSheetId, data: inventoryRef.current.map(i => ({ name: i.name, price: i.price, status: i.isSoldOut ? '품절' : '' })) });
+                        }
                         lastSavedDataStr.current = currentDataStr;
                     } 
                 } catch(e) {} finally { if (isManual) setIsSaving(false); } 
@@ -4339,7 +4339,7 @@ const dashboardStats = useMemo(() => {
             const [orders, setOrders] = useLocalStorage('youtubeOrders', []);
             const [activeTab, setActiveTab] = useState('live');
             
-            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxV73sRur4NVs3XIG9-kwRMed6wcql6kvCauLYvp-RmZOwj-frT3LiDcmvFoDPFLtTX/exec';
+            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbygYRyEJboWJE_LB_EOApSuJYqIwmTEiIomzqmyPtMwe5He6LMElLqU5Sylf85a5K3Q/exec';
             const [googleScriptUrl, setGoogleScriptUrl] = useLocalStorage('googleScriptUrl', NEW_SCRIPT_URL);
         
         const [youtubeApiKey, setYoutubeApiKey] = useLocalStorage('youtubeApiKey', '');
@@ -4358,7 +4358,7 @@ const dashboardStats = useMemo(() => {
 
             useEffect(() => {
                 const currentUrl = window.localStorage.getItem(getLsKey('googleScriptUrl'));
-                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbxV73sRur4NVs3XIG9-kwRMed6wcql6kvCauLYvp-RmZOwj-frT3LiDcmvFoDPFLtTX')) {
+                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbygYRyEJboWJE_LB_EOApSuJYqIwmTEiIomzqmyPtMwe5He6LMElLqU5Sylf85a5K3Q')) {
                     setGoogleScriptUrl(NEW_SCRIPT_URL);
                 }
             }, [setGoogleScriptUrl]);
