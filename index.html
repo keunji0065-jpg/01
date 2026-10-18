@@ -2765,6 +2765,42 @@ const dashboardStats = useMemo(() => {
                     if (allDeposits.length === 0 || orders.length === 0) return;
                     let updatedOrders = [...orders]; let newMatchedIds = new Set(matchedDeposits); let hasChanges = false; const customerBalances = {};
                     let newDepositLinks = { ...depositLinks };
+
+                    // ✨ [자동 복구 로직] ID 변경(legacyId -> id)으로 인해 동일 입금건이 2번 중복 합산된 경우 실제 연결된 고유 입금건 합계로 즉시 정상화!
+                    const linkedSumByCustomer = {};
+                    const seenDepRow = new Set();
+                    allDeposits.forEach(dep => {
+                        const isMatched = newMatchedIds.has(dep.id) || (dep.legacyId && newMatchedIds.has(dep.legacyId));
+                        const linkedCust = newDepositLinks[dep.id] || (dep.legacyId && newDepositLinks[dep.legacyId]);
+                        if (isMatched && linkedCust) {
+                            const uniqueKey = dep.legacyId || dep.id;
+                            if (!seenDepRow.has(uniqueKey)) {
+                                seenDepRow.add(uniqueKey);
+                                linkedSumByCustomer[linkedCust] = (linkedSumByCustomer[linkedCust] || 0) + Number(dep.amount);
+                            }
+                        }
+                    });
+
+                    // 고객의 현재 주문서 입금 총액이 실제 연결된 입금내역 합계의 정확히 2배(중복 매칭)로 잘못 들어가 있다면 즉시 정상 금액으로 복구
+                    const currentOrderDepSum = {};
+                    updatedOrders.forEach(o => {
+                        currentOrderDepSum[o.customer] = (currentOrderDepSum[o.customer] || 0) + (o.deposit || 0);
+                    });
+                    Object.keys(linkedSumByCustomer).forEach(cust => {
+                        const trueSum = linkedSumByCustomer[cust];
+                        const curSum = currentOrderDepSum[cust] || 0;
+                        if (curSum === trueSum * 2 && trueSum > 0) {
+                            let fixed = false;
+                            updatedOrders = updatedOrders.map(o => {
+                                if (o.customer === cust) {
+                                    if (!fixed) { fixed = true; return { ...o, deposit: trueSum }; }
+                                    return { ...o, deposit: 0 };
+                                }
+                                return o;
+                            });
+                            hasChanges = true;
+                        }
+                    });
                     
                     updatedOrders.forEach(o => {
                         if (!customerBalances[o.customer]) { customerBalances[o.customer] = { productTotal: 0, productTotalForShipping: 0, depositTotal: 0, activeItemsCount: 0, isCloud: false }; }
@@ -2792,7 +2828,11 @@ const dashboardStats = useMemo(() => {
                     });
 
                     allDeposits.forEach(deposit => {
-                        if (newMatchedIds.has(deposit.id) || deletedDepositIds.has(deposit.id) || ignoredAutoMatch.has(deposit.id)) return;
+                        const alreadyMatched = newMatchedIds.has(deposit.id) || (deposit.legacyId && newMatchedIds.has(deposit.legacyId));
+                        const alreadyDeleted = deletedDepositIds.has(deposit.id) || (deposit.legacyId && deletedDepositIds.has(deposit.legacyId));
+                        const alreadyIgnored = ignoredAutoMatch.has(deposit.id) || (deposit.legacyId && ignoredAutoMatch.has(deposit.legacyId));
+                        if (alreadyMatched || alreadyDeleted || alreadyIgnored) return;
+
                         const depositNameClean = cleanForMatch(deposit.name); if (depositNameClean.length < 1) return; 
                         let exactMatches = matchLookup[depositNameClean] || []; exactMatches = [...new Set(exactMatches)];
                         let matchedCustomer = null; const depositAmount = Number(deposit.amount);
@@ -2813,6 +2853,7 @@ const dashboardStats = useMemo(() => {
                             });
                             cb.depositTotal += depositAmount; cb.balance -= depositAmount; cb.isCloud = false; 
                             newMatchedIds.add(deposit.id);
+                            if (deposit.legacyId) newMatchedIds.add(deposit.legacyId);
                             newDepositLinks[deposit.id] = matchedCustomer;
                             hasChanges = true;
                         }
@@ -3274,20 +3315,60 @@ const dashboardStats = useMemo(() => {
                 setManualNick(''); 
                 if (!isFixedProductMode) { setManualProduct(''); setManualPrice(''); } 
             };
+
+            const deductCustomerDeposit = useCallback((targetNick, amountToSubtract) => {
+                setOrders(prev => {
+                    let totalDep = 0;
+                    prev.forEach(o => {
+                        if (o.customer === targetNick) totalDep += Number(o.deposit || 0);
+                    });
+                    const nextDep = Math.max(0, totalDep - Number(amountToSubtract || 0));
+                    let assigned = false;
+                    return prev.map(o => {
+                        if (o.customer === targetNick) {
+                            if (!assigned) {
+                                assigned = true;
+                                return { ...o, deposit: nextDep };
+                            }
+                            return { ...o, deposit: 0 };
+                        }
+                        return o;
+                    });
+                });
+            }, [setOrders]);
+
+            const clearDepositMatchState = useCallback((dep) => {
+                setMatchedDeposits(p => {
+                    const next = new Set(p);
+                    next.delete(dep.id);
+                    if (dep.legacyId) next.delete(dep.legacyId);
+                    return next;
+                });
+                setDepositLinks(p => {
+                    const next = { ...p };
+                    delete next[dep.id];
+                    if (dep.legacyId) delete next[dep.legacyId];
+                    return next;
+                });
+                setIgnoredAutoMatch(p => {
+                    const next = new Set(p);
+                    next.add(dep.id);
+                    if (dep.legacyId) next.add(dep.legacyId);
+                    return next;
+                });
+            }, [setMatchedDeposits, setDepositLinks, setIgnoredAutoMatch]);
             
             const handleDepositClick = (dep, forceAction = null) => {
-                const isUsed = matchedDeposits?.has(dep.id);
+                const isUsed = matchedDeposits?.has(dep.id) || (dep.legacyId && matchedDeposits?.has(dep.legacyId));
                 const action = forceAction || (isUsed ? 'unmatch' : 'match');
 
                 if (action === 'unmatch') {
-                    const targetNick = depositLinks[dep.id] || orders.find(o => !o.isCancelled && cleanForMatch(o.customer) === cleanForMatch(dep.name))?.customer || selectedNick;
+                    const targetNick = depositLinks[dep.id] || (dep.legacyId && depositLinks[dep.legacyId]) || orders.find(o => !o.isCancelled && cleanForMatch(o.customer) === cleanForMatch(dep.name))?.customer || selectedNick;
                     openModal(`'${dep.name}' 님의 입금 매칭을 취소(해제)하시겠습니까?`, 'confirm', () => {
                         if (targetNick) { 
-                            setOrders(prev => { let done = false; return prev.map(o => { if (!done && o.customer === targetNick) { done = true; return { ...o, deposit: Math.max(0, (o.deposit || 0) - Number(dep.amount)) }; } return o; }); }); 
+                            deductCustomerDeposit(targetNick, dep.amount);
                         }
-                        setMatchedDeposits(p => { const next = new Set(p); next.delete(dep.id); return next; });
-                        setDepositLinks(p => { const next = { ...p }; delete next[dep.id]; return next; });
-                        setIgnoredAutoMatch(p => new Set(p).add(dep.id)); 
+                        clearDepositMatchState(dep);
                     });
                     return;
                 }
@@ -3295,22 +3376,15 @@ const dashboardStats = useMemo(() => {
                 const targetNick = selectedNick || orders.find(o => !o.isCancelled && cleanForMatch(o.customer) === cleanForMatch(dep.name))?.customer;
                 if (!targetNick) return openModal("입금을 연결할 주문자(닉네임)를 먼저 클릭하여 노란색으로 선택해주세요.", "alert");
                 setOrders(prev => { let done = false; return prev.map(o => { if (!done && o.customer === targetNick) { done = true; return { ...o, deposit: (o.deposit || 0) + Number(dep.amount) }; } return o; }); });
-                setMatchedDeposits(p => new Set(p).add(dep.id)); setIgnoredAutoMatch(p => new Set(p).add(dep.id));
+                setMatchedDeposits(p => { const next = new Set(p); next.add(dep.id); if (dep.legacyId) next.add(dep.legacyId); return next; });
+                setIgnoredAutoMatch(p => { const next = new Set(p); next.add(dep.id); if (dep.legacyId) next.add(dep.legacyId); return next; });
                 setDepositLinks(p => ({ ...p, [dep.id]: targetNick }));
             };
 
             const handleDepositUnmatch = useCallback((dep, nick) => {
-                setOrders(prev => {
-                    let done = false;
-                    return prev.map(o => {
-                        if (!done && o.customer === nick) { done = true; return { ...o, deposit: Math.max(0, (o.deposit || 0) - Number(dep.amount)) }; }
-                        return o;
-                    });
-                });
-                setMatchedDeposits(p => { const next = new Set(p); next.delete(dep.id); return next; });
-                setDepositLinks(p => { const next = { ...p }; delete next[dep.id]; return next; });
-                setIgnoredAutoMatch(p => new Set(p).add(dep.id));
-            }, [setOrders, setMatchedDeposits, setDepositLinks, setIgnoredAutoMatch]);
+                deductCustomerDeposit(nick, dep.amount);
+                clearDepositMatchState(dep);
+            }, [deductCustomerDeposit, clearDepositMatchState]);
 
             const handleCopyDepositName = (e, name) => {
                 e.stopPropagation();
@@ -3346,7 +3420,7 @@ const dashboardStats = useMemo(() => {
                 const unmatched = []; const matched = []; const sijae = [];
                 filteredDeposits.forEach(d => { 
                     if (String(d.name).trim() === '시재') sijae.push(d);
-                    else if (matchedDeposits?.has(d.id)) matched.push(d); 
+                    else if (matchedDeposits?.has(d.id) || (d.legacyId && matchedDeposits?.has(d.legacyId))) matched.push(d); 
                     else unmatched.push(d); 
                 });
                 return [...unmatched, ...matched, ...sijae];
@@ -3708,7 +3782,7 @@ const dashboardStats = useMemo(() => {
                                             <div className="text-[10px] text-blue-600 dark:text-blue-400 font-bold truncate pr-1">
                                                 {isUsed && linkedNick && `🔗 ${linkedNick} 연결됨`}
                                             </div>
-                                            <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 shrink-0">
+                                            <div className="flex gap-1 shrink-0">
                                                 {isUsed ? (
                                                     <button onClick={(e) => { e.stopPropagation(); handleDepositClick(d, 'unmatch'); }} className="bg-red-50 border border-red-200 text-red-600 px-2 py-0.5 rounded text-[9px] font-bold hover:bg-red-100 shadow-sm z-10 relative">해제</button>
                                                 ) : (
@@ -4247,7 +4321,7 @@ const dashboardStats = useMemo(() => {
             const [orders, setOrders] = useLocalStorage('youtubeOrders', []);
             const [activeTab, setActiveTab] = useState('live');
             
-            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzI-x2P-hVWCpbi6oGjs6Anct4kePcR1Yfj1dMpwt9XoIP6eUYHpkNCa6EfGWVii2FH/exec';
+            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw18_LWGYGClzcQbfGYb8D9ftdaroUXEN9j-QXMga69aChKwj0DuPZ64135tPlikOo4/exec';
             const [googleScriptUrl, setGoogleScriptUrl] = useLocalStorage('googleScriptUrl', NEW_SCRIPT_URL);
         
         const [youtubeApiKey, setYoutubeApiKey] = useLocalStorage('youtubeApiKey', '');
@@ -4266,7 +4340,7 @@ const dashboardStats = useMemo(() => {
 
             useEffect(() => {
                 const currentUrl = window.localStorage.getItem(getLsKey('googleScriptUrl'));
-                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbzI-x2P-hVWCpbi6oGjs6Anct4kePcR1Yfj1dMpwt9XoIP6eUYHpkNCa6EfGWVii2FH')) {
+                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbw18_LWGYGClzcQbfGYb8D9ftdaroUXEN9j-QXMga69aChKwj0DuPZ64135tPlikOo4')) {
                     setGoogleScriptUrl(NEW_SCRIPT_URL);
                 }
             }, [setGoogleScriptUrl]);
