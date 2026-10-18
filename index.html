@@ -1495,6 +1495,19 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             
             const [filterStatus, setFilterStatus] = useState('all');
             const [expandedInventoryItem, setExpandedInventoryItem] = useState(null);
+            const recentlyUncheckedRef = useRef({});
+
+            const resetCustomerConfirmation = useCallback((rawNick) => {
+                if (!rawNick) return;
+                const cleanN = String(rawNick).replace(/@/g, '').trim();
+                recentlyUncheckedRef.current[cleanN] = Date.now();
+                setCheckedOrders(prev => {
+                    if (!prev.has(cleanN)) return prev;
+                    const next = new Set(prev);
+                    next.delete(cleanN);
+                    return next;
+                });
+            }, [setCheckedOrders]);
             
             const handleInventoryItemAction = useCallback((item, clickCount) => {
                 try {
@@ -2197,7 +2210,12 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                             setCheckedOrders(prev => {
                                 let changed = false;
                                 const next = new Set(prev);
+                                const now = Date.now();
                                 confirmedNicksFromServer.forEach(cn => {
+                                    // 최근 45초 이내에 주문 추가/수정으로 인해 미확인으로 풀린 고객은 구버전 서버 캐시가 덮어쓰지 못하도록 방어
+                                    if (recentlyUncheckedRef.current[cn] && (now - recentlyUncheckedRef.current[cn] < 45000)) {
+                                        return;
+                                    }
                                     if (!next.has(cn)) {
                                         next.add(cn);
                                         changed = true;
@@ -2820,7 +2838,8 @@ const dashboardStats = useMemo(() => {
                 try { 
                     const actualSheetId = getCleanSheetId(masterSheetId); 
                     if(actualSheetId) { 
-                        await fetchGas(googleScriptUrl, { action: 'save_orders', masterId: actualSheetId, data: saveList, nicknames: uniqueNicknames }); 
+                        const confirmedNicknames = uniqueNicknames.filter(n => checkedOrders && checkedOrders.has(n));
+                        await fetchGas(googleScriptUrl, { action: 'save_orders', masterId: actualSheetId, data: saveList, nicknames: uniqueNicknames, confirmedNicknames: confirmedNicknames }); 
                         lastSavedDataStr.current = currentDataStr;
                     } 
                 } catch(e) {} finally { setIsSaving(false); } 
@@ -2875,8 +2894,11 @@ const dashboardStats = useMemo(() => {
                 });
             }, [setWaitlistCustomers, googleScriptUrl, masterSheetId]);
 
-            const handleShippingChange = useCallback((nick, val) => { setShippingOverrides(prev => ({ ...prev, [nick]: val === '' ? 0 : Number(val) })); }, [setShippingOverrides]);
-            const handleOrderCheckToggle = useCallback((nick) => setCheckedOrders(prev => { const next = new Set(prev); if (next.has(nick)) next.delete(nick); else next.add(nick); return next; }), [setCheckedOrders]);
+            const handleShippingChange = useCallback((nick, val) => { resetCustomerConfirmation(nick); setShippingOverrides(prev => ({ ...prev, [nick]: val === '' ? 0 : Number(val) })); }, [setShippingOverrides, resetCustomerConfirmation]);
+            const handleOrderCheckToggle = useCallback((nick) => {
+                recentlyUncheckedRef.current[nick] = Date.now();
+                setCheckedOrders(prev => { const next = new Set(prev); if (next.has(nick)) next.delete(nick); else next.add(nick); return next; });
+            }, [setCheckedOrders]);
             
             const handleAddressMapping = useCallback((orderNick, addressNick) => { 
                 openModal(`'${orderNick}' 주문자에게 '${addressNick}' 님의 주소를 연결하시겠습니까?`, 'confirm', async () => {
@@ -2903,6 +2925,9 @@ const dashboardStats = useMemo(() => {
             const handleProductChange = useCallback((id, field, value) => { 
                 setOrders(prev => prev.map(o => { 
                     if (o.id === id) { 
+                        if (field === 'product' || field === 'price' || field === 'isWaitlist') {
+                            resetCustomerConfirmation(o.customer);
+                        }
                         const newOrder = { ...o, [field]: value, isUnmodified: false }; 
                         const isDiscount = (name) => {
                             const n = String(name || '').trim();
@@ -2955,11 +2980,12 @@ const dashboardStats = useMemo(() => {
                     } 
                     return o; 
                 })); 
-            }, [setOrders, setProductHistory, setInventory, saveInventoryToServer]);
+            }, [setOrders, setProductHistory, setInventory, saveInventoryToServer, resetCustomerConfirmation]);
 
             const handleQuantityUpdate = useCallback((itemId, newQtyVal) => { 
                 setOrders(prev => prev.map(o => { 
                     if (o.id === itemId) { 
+                        resetCustomerConfirmation(o.customer);
                         const cleanProd = String(o.product || '').trim(); const inv = inventoryRef.current; const hist = productHistoryRef.current;
                         const invItem = Array.isArray(inv) ? inv.find(i => String(i.name).trim() === cleanProd) : null;
                         const isDiscount = cleanProd === '적립금';
@@ -2970,14 +2996,21 @@ const dashboardStats = useMemo(() => {
                     } 
                     return o; 
                 })); 
-            }, [setOrders]);
+            }, [setOrders, resetCustomerConfirmation]);
 
-            const handleOrderCancel = useCallback((id) => setOrders(prev => prev.map(o => o.id === id ? { ...o, isCancelled: !o.isCancelled } : o)), [setOrders]);
+            const handleOrderCancel = useCallback((id) => setOrders(prev => prev.map(o => {
+                if (o.id === id) {
+                    resetCustomerConfirmation(o.customer);
+                    return { ...o, isCancelled: !o.isCancelled };
+                }
+                return o;
+            })), [setOrders, resetCustomerConfirmation]);
             const handleOrderDelete = useCallback((id) => {
                 openModal("주문 삭제하시겠습니까?", 'confirm', () => {
                     setOrders(prev => {
                         const orderToDelete = prev.find(o => o.id === id);
                         if (!orderToDelete) return prev;
+                        resetCustomerConfirmation(orderToDelete.customer);
                         const depositToShift = orderToDelete.deposit || 0;
                         
                         let shifted = false;
@@ -2992,7 +3025,7 @@ const dashboardStats = useMemo(() => {
                         return next;
                     });
                 });
-            }, [openModal, setOrders]);
+            }, [openModal, setOrders, resetCustomerConfirmation]);
 
             const copyOrderSheet = useCallback((nick, items, grandTotal, depositTotal, balance, isCard, hasCashReceipt, addrData, e) => {
                 // ✨ 확정 상품과 대기 상품 분리 및 내림차순 정렬 강제 적용
@@ -3103,7 +3136,9 @@ const dashboardStats = useMemo(() => {
                     }
                 }
 
-                if (!isAuto) { setCheckedOrders(prev => { const n = new Set(prev); n.delete(cNick); return n; }); setSelectedNick(cNick); }
+                // 새 주문이 추가되면(채팅 클릭 포함) 무조건 주문확인 체크를 풀어서 고객이 다시 확인 버튼을 누를 수 있게 활성화
+                resetCustomerConfirmation(cNick);
+                if (!isAuto) { setSelectedNick(cNick); }
                 
                 const newOrder = { id: Date.now() + Math.random(), customer: cNick, product: cContent, quantity: qty, price: Number(price) * qty, deposit: 0, isCancelled: false, isUnmodified: !markAsModified, isSentToEmp: false };
                 setOrders(prev => {
@@ -3114,7 +3149,7 @@ const dashboardStats = useMemo(() => {
                     if (afterId) { const idx = prev.findIndex(o => o.id === afterId); if (idx !== -1) { const next = [...prev]; next.splice(idx + 1, 0, newOrder); return next; } }
                     return [newOrder, ...prev];
                 });
-            }, [setCheckedOrders, setOrders, setInventory, setProductHistory, saveInventoryToServer]);
+            }, [resetCustomerConfirmation, setOrders, setInventory, setProductHistory, saveInventoryToServer]);
 
             const handleManualSubmit = (e) => { 
                 e.preventDefault(); 
@@ -4115,7 +4150,7 @@ const dashboardStats = useMemo(() => {
             const [orders, setOrders] = useLocalStorage('youtubeOrders', []);
             const [activeTab, setActiveTab] = useState('live');
             
-            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwVXGZ_JYVHrQ7s_wuz6fyk4FdNU2nz8knujH2id7WYstRlDuLeZ18-cLqDlqH6A31W/exec';
+            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwHEmT--neCHkg1QbbJkzvmzVrF8BQWSniLJLNMRQh8CYNUuBJdA-hHhHz92B6VnGHs/exec';
             const [googleScriptUrl, setGoogleScriptUrl] = useLocalStorage('googleScriptUrl', NEW_SCRIPT_URL);
         
         const [youtubeApiKey, setYoutubeApiKey] = useLocalStorage('youtubeApiKey', '');
@@ -4134,7 +4169,7 @@ const dashboardStats = useMemo(() => {
 
             useEffect(() => {
                 const currentUrl = window.localStorage.getItem(getLsKey('googleScriptUrl'));
-                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbwVXGZ_JYVHrQ7s_wuz6fyk4FdNU2nz8knujH2id7WYstRlDuLeZ18-cLqDlqH6A31W')) {
+                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbwHEmT--neCHkg1QbbJkzvmzVrF8BQWSniLJLNMRQh8CYNUuBJdA-hHhHz92B6VnGHs')) {
                     setGoogleScriptUrl(NEW_SCRIPT_URL);
                 }
             }, [setGoogleScriptUrl]);
