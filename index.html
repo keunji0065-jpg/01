@@ -2794,10 +2794,15 @@ const dashboardStats = useMemo(() => {
             }, [openModal, setCustomerPasswords, googleScriptUrl, masterSheetId]);
 
             const handleSetTrackingNumber = useCallback((nick, currentTrk = '') => {
-                openModal(`'${nick}' 님의 롯데택배 송장번호를 입력하세요.\n(여러 개일 경우 쉼표로 구분)`, 'prompt', (newTrk) => {
+                openModal(`'${nick}' 님의 롯데택배 송장번호를 입력하세요.\n(비우고 확인을 누르면 삭제됩니다)`, 'prompt', (newTrk) => {
                     if (newTrk !== null) {
                         const cleanTrk = String(newTrk).replace(/[^0-9,-]/g, '').trim();
-                        setTrackingNumbers(prev => Object.assign({}, prev, { [nick]: cleanTrk }));
+                        setTrackingNumbers(prev => {
+                            const next = Object.assign({}, prev);
+                            if (cleanTrk) next[nick] = cleanTrk;
+                            else delete next[nick];
+                            return next;
+                        });
                         if (googleScriptUrl && masterSheetId) {
                             fetchGas(googleScriptUrl, {
                                 action: 'save_tracking_numbers',
@@ -4605,7 +4610,7 @@ const dashboardStats = useMemo(() => {
             const [orders, setOrders] = useLocalStorage('youtubeOrders', []);
             const [activeTab, setActiveTab] = useState('live');
             
-            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxQ9Of1vp9-_BGHyxx4Ci8gVPZGmBqvrZ1esnIGqe23LPiW2vdoNPAV13UgfST0vye-/exec';
+            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyB-Ihh0Il0TbsdtPdkvcrGwRazejxgWbXbC0y9AnAjcOC-lYTFVY6xApIijRmaKsxa/exec';
             const [googleScriptUrl, setGoogleScriptUrl] = useLocalStorage('googleScriptUrl', NEW_SCRIPT_URL);
         
         const [youtubeApiKey, setYoutubeApiKey] = useLocalStorage('youtubeApiKey', '');
@@ -4624,7 +4629,7 @@ const dashboardStats = useMemo(() => {
 
             useEffect(() => {
                 const currentUrl = window.localStorage.getItem(getLsKey('googleScriptUrl'));
-                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbxQ9Of1vp9-_BGHyxx4Ci8gVPZGmBqvrZ1esnIGqe23LPiW2vdoNPAV13UgfST0vye-')) {
+                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbyB-Ihh0Il0TbsdtPdkvcrGwRazejxgWbXbC0y9AnAjcOC-lYTFVY6xApIijRmaKsxa')) {
                     setGoogleScriptUrl(NEW_SCRIPT_URL);
                 }
             }, [setGoogleScriptUrl]);
