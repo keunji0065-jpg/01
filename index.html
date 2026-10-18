@@ -4089,7 +4089,8 @@ const dashboardStats = useMemo(() => {
             const [orders, setOrders] = useLocalStorage('youtubeOrders', []);
             const [activeTab, setActiveTab] = useState('live');
             
-            const [googleScriptUrl, setGoogleScriptUrl] = useLocalStorage('googleScriptUrl', 'https://script.google.com/macros/s/AKfycbyujXVimwiq1y93a_th91vp1H6rXeFfi_mdfQ1o-RZHwm7sRJtMxxqQH0i-JNsl6IYa/exec');
+            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwVXGZ_JYVHrQ7s_wuz6fyk4FdNU2nz8knujH2id7WYstRlDuLeZ18-cLqDlqH6A31W/exec';
+            const [googleScriptUrl, setGoogleScriptUrl] = useLocalStorage('googleScriptUrl', NEW_SCRIPT_URL);
         
         const [youtubeApiKey, setYoutubeApiKey] = useLocalStorage('youtubeApiKey', '');
         const [youtubeVideoId, setYoutubeVideoId] = useLocalStorage('youtubeVideoId', '');
@@ -4107,10 +4108,10 @@ const dashboardStats = useMemo(() => {
 
             useEffect(() => {
                 const currentUrl = window.localStorage.getItem(getLsKey('googleScriptUrl'));
-                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || currentUrl.includes('AKfycbxXEa-gMKOGWXJjS_RjOZHhz7UwSVwF0WTjxjgsfIBOw3P_74JP3LNazBA2L-GQjvKo') || currentUrl.includes('AKfycbyKLkXw705MVTcjr02UqCDUDg-BKUTwgF3wKDzo2ZFoshofc8BSse838PfsKd7ShtuM') || currentUrl.includes('AKfycbzar453ATgpbTQ514NhSG9d3gvDQBVS84RHESB3ddWBR13gZjNDivVWyc_hQjoegFEw')) {
-                    setGoogleScriptUrl('https://script.google.com/macros/s/AKfycbyujXVimwiq1y93a_th91vp1H6rXeFfi_mdfQ1o-RZHwm7sRJtMxxqQH0i-JNsl6IYa/exec');
+                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbwVXGZ_JYVHrQ7s_wuz6fyk4FdNU2nz8knujH2id7WYstRlDuLeZ18-cLqDlqH6A31W')) {
+                    setGoogleScriptUrl(NEW_SCRIPT_URL);
                 }
-            }, []);
+            }, [setGoogleScriptUrl]);
 
             const [quickShipping, setQuickShipping] = useLocalStorage('quickShipping', 4000); 
             const [jejuShipping, setJejuShipping] = useLocalStorage('jejuShipping', 8000);
