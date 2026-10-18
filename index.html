@@ -4339,7 +4339,7 @@ const dashboardStats = useMemo(() => {
             const [orders, setOrders] = useLocalStorage('youtubeOrders', []);
             const [activeTab, setActiveTab] = useState('live');
             
-            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwZ_FgUxdg-1nzV9kTabOMGgZKNSYUBxIjfNge4-N4psMgF-6Rv2XqjvpWUex4T5tKF/exec';
+            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxV73sRur4NVs3XIG9-kwRMed6wcql6kvCauLYvp-RmZOwj-frT3LiDcmvFoDPFLtTX/exec';
             const [googleScriptUrl, setGoogleScriptUrl] = useLocalStorage('googleScriptUrl', NEW_SCRIPT_URL);
         
         const [youtubeApiKey, setYoutubeApiKey] = useLocalStorage('youtubeApiKey', '');
@@ -4358,7 +4358,7 @@ const dashboardStats = useMemo(() => {
 
             useEffect(() => {
                 const currentUrl = window.localStorage.getItem(getLsKey('googleScriptUrl'));
-                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbwZ_FgUxdg-1nzV9kTabOMGgZKNSYUBxIjfNge4-N4psMgF-6Rv2XqjvpWUex4T5tKF')) {
+                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbxV73sRur4NVs3XIG9-kwRMed6wcql6kvCauLYvp-RmZOwj-frT3LiDcmvFoDPFLtTX')) {
                     setGoogleScriptUrl(NEW_SCRIPT_URL);
                 }
             }, [setGoogleScriptUrl]);
