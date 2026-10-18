@@ -1128,10 +1128,11 @@ useEffect(() => {
 
                             {waitlistAggregated.length > 0 && (
                                 <div className="pt-1 border-t border-slate-100 dark:border-slate-700/60">
-                                    <span className="font-bold text-orange-500 text-[9px] block mb-0.5">대기 명단 ({waitlistCount}개)</span>
+                                    <span className="font-bold text-orange-500 text-[9px] block mb-0.5">거파 대기 순번 명단 ({waitlistCount}개)</span>
                                     <div className="flex flex-wrap gap-1">
-                                        {waitlistAggregated.map(agg => (
+                                        {waitlistAggregated.map((agg, wIdx) => (
                                             <div key={agg.customer} className="inline-flex items-center bg-orange-50 dark:bg-orange-900/20 px-1.5 py-0.5 rounded border border-orange-200 dark:border-orange-800">
+                                                <span className="bg-orange-500 text-white text-[8px] font-black px-1 rounded mr-1">{agg.rank || (wIdx + 1)}번</span>
                                                 <span className="truncate max-w-[90px] text-orange-700 dark:text-orange-400 font-bold">{agg.customer}{agg.quantity > 1 ? `(${agg.quantity})` : ''}</span>
                                                 <button onClick={() => openModal(`'${agg.customer}'님의 '${item.name}' 대기를 삭제하시겠습니까?`, 'confirm', () => setOrders(prev => prev.filter(o => !agg.orderIds.includes(o.id))))} className="text-orange-400 hover:text-red-600 ml-1 font-bold leading-none" title="이 대기 삭제">×</button>
                                             </div>
@@ -1150,11 +1151,12 @@ useEffect(() => {
             const prevExp = prev.expandedInventoryItem === prev.item.name;
             const nextExp = next.expandedInventoryItem === next.item.name;
             if (prevExp !== nextExp) return false;
-            if (prev.itemStats !== next.itemStats || prev.customerPaidStatus !== next.customerPaidStatus || prev.cardPayments !== next.cardPayments) return false;
+            if (prev.itemStats !== next.itemStats) return false;
+            if (prevExp && (prev.customerPaidStatus !== next.customerPaidStatus || prev.cardPayments !== next.cardPayments)) return false;
             return true;
         });
 
-        const OrderItem = memo(({ item, nick, nextItemId, isLast, handleProductChange, handleQuantityUpdate, handleOrderCancel, handleOrderDelete, addOrderLogic, setSelectedNick, inventory, productHistory }) => {
+        const OrderItem = memo(({ item, nick, nextItemId, isLast, handleProductChange, handleQuantityUpdate, handleOrderCancel, handleOrderDelete, addOrderLogic, setSelectedNick, inventory, productHistory, waitlistRank }) => {
             const [localProduct, setLocalProduct] = useState(item.product); 
             const [localQty, setLocalQty] = useState(item.quantity === '' ? '' : item.quantity); 
             const [localPrice, setLocalPrice] = useState(item.price === '' || item.price === 0 ? '' : Number(item.price).toLocaleString());
@@ -1170,8 +1172,12 @@ useEffect(() => {
                 <div className={`flex justify-between items-center text-xs px-1 py-0.5 rounded group transition-colors ${item.isCancelled ? 'bg-red-50/80 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30' : (item.isWaitlist ? 'bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800' : (item.isUnmodified ? 'bg-blue-100 dark:bg-blue-900/50 border-2 border-blue-400 dark:border-blue-600 shadow-sm my-0.5' : 'hover:bg-slate-100 dark:hover:bg-slate-700 border-2 border-transparent'))}`}>
                     <div className="flex-1 flex gap-1 items-center">
                         {item.isCancelled && <span className="text-[9px] text-red-500 font-bold shrink-0">[취소]</span>}
-                        {/* ✨ 대기 상태 뱃지 추가 */}
-                        {!item.isCancelled && item.isWaitlist && <span className="text-[9px] text-orange-500 font-bold shrink-0">[대기]</span>}
+                        {/* ✨ 거파 대기 순번(몇 번째) 실시간 표시 뱃지 */}
+                        {!item.isCancelled && item.isWaitlist && (
+                            <span className="text-[9px] bg-orange-500 text-white px-1 py-0.2 rounded font-extrabold shrink-0 shadow-sm">
+                                {waitlistRank ? `대기${waitlistRank}번` : '대기'}
+                            </span>
+                        )}
                         
                         <input id={`prod-input-${item.id}`} type="text" list="product-list" autoComplete="off" value={localProduct} 
                             onChange={(e) => {
@@ -1214,7 +1220,7 @@ useEffect(() => {
             );
         });
 
-        const CustomerBlock = memo(({ nick, items, isSelected, currentShipping, isCard, isPaidState, grandTotal, depositTotal, balance, baseGrandTotal, baseBalance, addr, addrType, addressMapping, autoDepositorName, displayDepositorName, isAutoDepositor, depositorNames, copyStatus, isOrderConfirmed, isEditingShipping, setSelectedNick, addOrderLogic, handleNicknameEdit, toggleCardPayment, handleShippingChange, setEditingShippingNick, openModal, setDepositorNames, handleFullDepositToggle, copyOrderSheet, handleOrderCheckToggle, handleAddressUnmapping, handleAddressMapping, handleProductChange, handleQuantityUpdate, handleOrderCancel, handleOrderDelete, toggleVIP, specialCustomers, handleOpenQuickAddress, findAddressSuggestions, cashReceiptStatus, toggleCashReceipt, inventory, productHistory, customerDeposits, handleDepositUnmatch, handleMultiAddOpen, toggleNoShow, toggleWaitlist, noShowStatus, waitlistStatus, customerPassword, handleSetCustomerPassword }) => {
+        const CustomerBlock = memo(({ nick, items, isSelected, currentShipping, isCard, isPaidState, grandTotal, depositTotal, balance, baseGrandTotal, baseBalance, addr, addrType, addressMapping, autoDepositorName, displayDepositorName, isAutoDepositor, depositorNames, copyStatus, isOrderConfirmed, isEditingShipping, setSelectedNick, addOrderLogic, handleNicknameEdit, toggleCardPayment, handleShippingChange, setEditingShippingNick, openModal, setDepositorNames, handleFullDepositToggle, copyOrderSheet, handleOrderCheckToggle, handleAddressUnmapping, handleAddressMapping, handleProductChange, handleQuantityUpdate, handleOrderCancel, handleOrderDelete, toggleVIP, specialCustomers, handleOpenQuickAddress, findAddressSuggestions, cashReceiptStatus, toggleCashReceipt, inventory, productHistory, customerDeposits, handleDepositUnmatch, handleMultiAddOpen, toggleNoShow, toggleWaitlist, noShowStatus, waitlistStatus, customerPassword, handleSetCustomerPassword, waitlistRankMap }) => {
             let borderClass = 'border-transparent', headerBgClass = 'bg-white dark:bg-slate-800';
             
             if (isSelected) { 
@@ -1311,7 +1317,7 @@ useEffect(() => {
                     </div>
                     <div className="p-0.5 space-y-0.5 bg-white dark:bg-slate-800">
                         {items.map((item, idx) => (
-                            <OrderItem key={item.id} item={item} nick={nick} nextItemId={items[idx + 1]?.id} isLast={idx === items.length - 1} handleProductChange={handleProductChange} handleQuantityUpdate={handleQuantityUpdate} handleOrderCancel={handleOrderCancel} handleOrderDelete={handleOrderDelete} addOrderLogic={addOrderLogic} setSelectedNick={setSelectedNick} inventory={inventory} productHistory={productHistory} />
+                            <OrderItem key={item.id} item={item} nick={nick} nextItemId={items[idx + 1]?.id} isLast={idx === items.length - 1} handleProductChange={handleProductChange} handleQuantityUpdate={handleQuantityUpdate} handleOrderCancel={handleOrderCancel} handleOrderDelete={handleOrderDelete} addOrderLogic={addOrderLogic} setSelectedNick={setSelectedNick} inventory={inventory} productHistory={productHistory} waitlistRank={item.isWaitlist && waitlistRankMap ? waitlistRankMap[`${String(item.product || '').trim()}___${nick}`] : null} />
                         ))}
                     </div>
                     {customerDeposits && customerDeposits.length > 0 && (
@@ -1354,6 +1360,7 @@ useEffect(() => {
             if (prev.noShowStatus !== next.noShowStatus) return false;
             if (prev.waitlistStatus !== next.waitlistStatus) return false;
             if (prev.customerPassword !== next.customerPassword) return false;
+            if (prev.waitlistRankMap !== next.waitlistRankMap) return false;
             
             const pType = prev.specialCustomers && prev.specialCustomers[normalizeString(prev.nick)]?.type;
             const nType = next.specialCustomers && next.specialCustomers[normalizeString(next.nick)]?.type;
@@ -1707,35 +1714,45 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
 
           const inventoryStats = useMemo(() => {
                 const stats = {};
+                const waitlistRankMap = {};
                 orders.forEach(o => {
                     if (!o.isCancelled && o.product) {
-                        // ✨ 핵심: 확정 명단(count)과 대기 명단(waitlistCount) 바구니를 각각 만듭니다.
-                        if (!stats[o.product]) stats[o.product] = { count: 0, waitlistCount: 0, customers: {}, waitlistCustomers: {} };
+                        const prodKey = String(o.product).trim();
+                        if (!stats[prodKey]) stats[prodKey] = { count: 0, waitlistCount: 0, customers: {}, waitlistCustomers: {} };
                         
                         if (o.isWaitlist) {
-                            stats[o.product].waitlistCount += Number(o.quantity || 0);
-                            if (!stats[o.product].waitlistCustomers[o.customer]) {
-                                stats[o.product].waitlistCustomers[o.customer] = { customer: o.customer, quantity: 0, orderIds: [] };
+                            stats[prodKey].waitlistCount += Number(o.quantity || 0);
+                            if (!stats[prodKey].waitlistCustomers[o.customer]) {
+                                stats[prodKey].waitlistCustomers[o.customer] = { customer: o.customer, quantity: 0, orderIds: [] };
                             }
-                            stats[o.product].waitlistCustomers[o.customer].quantity += Number(o.quantity || 0);
-                            stats[o.product].waitlistCustomers[o.customer].orderIds.push(o.id);
+                            stats[prodKey].waitlistCustomers[o.customer].quantity += Number(o.quantity || 0);
+                            stats[prodKey].waitlistCustomers[o.customer].orderIds.push(o.id);
                         } else {
-                            stats[o.product].count += Number(o.quantity || 0);
-                            if (!stats[o.product].customers[o.customer]) {
-                                stats[o.product].customers[o.customer] = { customer: o.customer, quantity: 0, orderIds: [] };
+                            stats[prodKey].count += Number(o.quantity || 0);
+                            if (!stats[prodKey].customers[o.customer]) {
+                                stats[prodKey].customers[o.customer] = { customer: o.customer, quantity: 0, orderIds: [] };
                             }
-                            stats[o.product].customers[o.customer].quantity += Number(o.quantity || 0);
-                            stats[o.product].customers[o.customer].orderIds.push(o.id);
+                            stats[prodKey].customers[o.customer].quantity += Number(o.quantity || 0);
+                            stats[prodKey].customers[o.customer].orderIds.push(o.id);
                         }
                     }
                 });
                 for (let prod in stats) {
-                    // ✨ 등록 시간(클릭 순서) 기반 선착순 정렬
+                    // ✨ 등록 시간(클릭 순서) 기반 선착순 정렬 및 대기 순번(1번, 2번...) 부여
                     stats[prod].aggregated = Object.values(stats[prod].customers).sort((a, b) => Math.min(...a.orderIds) - Math.min(...b.orderIds));
-                    stats[prod].waitlistAggregated = Object.values(stats[prod].waitlistCustomers).sort((a, b) => Math.min(...a.orderIds) - Math.min(...b.orderIds));
+                    stats[prod].waitlistAggregated = Object.values(stats[prod].waitlistCustomers)
+                        .sort((a, b) => Math.min(...a.orderIds) - Math.min(...b.orderIds))
+                        .map((agg, idx) => {
+                            const rank = idx + 1;
+                            waitlistRankMap[`${prod}___${agg.customer}`] = rank;
+                            return { ...agg, rank };
+                        });
                 }
+                stats.__waitlistRankMap = waitlistRankMap;
                 return stats;
             }, [orders]);
+
+            const waitlistRankMap = inventoryStats.__waitlistRankMap || {};
 
             // ✨ 자동 품절 및 품절 해제 처리 로직 (재고 도달 시)
             useEffect(() => {
@@ -2916,7 +2933,9 @@ const dashboardStats = useMemo(() => {
                     const custType = specialCustomers && specialCustomers[normalizeString(customerVal)]?.type;
                     const isVip = custType === 'vip' || custType === 'manager';
                     const isNoShow = noShowCustomers && noShowCustomers[customerVal];
+                    const itemWaitRank = o.isWaitlist ? (waitlistRankMap[`${String(o.product || '').trim()}___${customerVal}`] || 1) : 0;
                     const isWaitlist = (waitlistCustomers && waitlistCustomers[customerVal]) || o.isWaitlist;
+                    const waitlistCellVal = o.isWaitlist ? `대기${itemWaitRank}번` : (isWaitlist ? 'O' : '');
                     const cleanPhone = addr.phone ? fixPhoneNumber(addr.phone) : '';
                     const pinToSave = (customerPasswords && customerPasswords[customerVal]) || (cleanPhone.length >= 4 ? cleanPhone.slice(-4) : '');
                     const isConfirmedOrder = checkedOrders && checkedOrders.has(customerVal);
@@ -2936,7 +2955,7 @@ const dashboardStats = useMemo(() => {
                         '요청사항': addr.memo || '',
                         'VIP여부': isVip ? 'O' : '',
                         '노쇼여부': isNoShow ? 'O' : '',
-                        '대기여부': isWaitlist ? 'O' : '',
+                        '대기여부': waitlistCellVal,
                         '비밀번호': pinToSave ? "'" + pinToSave : '',
                         '주문확인': isConfirmedOrder ? 'O' : '',
                         '입금내역JSON': customerDepsJson
@@ -2981,7 +3000,7 @@ const dashboardStats = useMemo(() => {
                         lastSavedDataStr.current = currentDataStr;
                     } 
                 } catch(e) {} finally { if (isManual) setIsSaving(false); } 
-            }, [orders, cardPayments, getCalculatedShipping, googleScriptUrl, addressLookup, masterSheetId, broadcastName, specialCustomers, noShowCustomers, waitlistCustomers, customerPasswords, checkedOrders, depositLinks, matchedDeposits, freeShippingThreshold, quickShipping]);
+            }, [orders, cardPayments, getCalculatedShipping, googleScriptUrl, addressLookup, masterSheetId, broadcastName, specialCustomers, noShowCustomers, waitlistCustomers, customerPasswords, checkedOrders, depositLinks, matchedDeposits, freeShippingThreshold, quickShipping, waitlistRankMap]);
 
             const autoSaveRef = useRef(); useEffect(() => { autoSaveRef.current = autoSaveToGoogleSheet; }, [autoSaveToGoogleSheet]);
             useEffect(() => { const saveInterval = setInterval(() => { if (autoSaveRef.current) autoSaveRef.current(); }, 10000); return () => clearInterval(saveInterval); }, []); 
@@ -3169,55 +3188,53 @@ const dashboardStats = useMemo(() => {
                 // ✨ 확정 상품과 대기 상품 분리 및 내림차순 정렬 강제 적용
                 const activeItems = items.filter(i => !i.isCancelled && !i.isWaitlist).sort((a, b) => String(b.product || '').localeCompare(String(a.product || ''), 'ko', { numeric: true })); 
                 const waitlistItems = items.filter(i => !i.isCancelled && i.isWaitlist).sort((a, b) => String(b.product || '').localeCompare(String(a.product || ''), 'ko', { numeric: true }));
-                const addr = addrData || addressLookup.get(nick)?.data || {};
-                const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0); 
-                const productTotalForShipping = activeItems.reduce((sum, i) => sum + (Number(i.price) > 0 ? Number(i.price) : 0), 0);
-                const currentShipping = getCalculatedShipping(nick, productTotalForShipping);
-                const itemListText = activeItems.map(i => `${i.product}${i.quantity > 1 ? ` ★${i.quantity}개` : ''} ${Number(i.price).toLocaleString()}원`).join('\n');
-                const { emoji, paidMsg, unpaidPrefix, overpaidMsg = '과납 금액이 있습니다.\n환불 또는 적립 여부를 알려주세요!', addrNotice, surveyNotice, alwaysRequestAddress } = templateConfig;
+                const { emoji, paidMsg, unpaidPrefix, overpaidMsg = '과납 금액이 있습니다.\n환불 또는 적립 여부를 알려주세요!' } = templateConfig;
+                const cleanBroadcastTitle = String(broadcastName || '').replace(/\s*주문\s*목록\s*/g, '').trim();
                 
-                let msg = `${emoji} ${nick} 님 ${emoji}\n\n[${broadcastName} 주문목록]\n${itemListText}\n배송비 ${currentShipping.toLocaleString()}원\n\n총 주문금액 ${grandTotal.toLocaleString()}원\n------------------\n`;
+                let msg = `${emoji} ${nick} 님 ${emoji}\n[${cleanBroadcastTitle}]\n------------------\n`;
                 if (isCard) { 
                     const cardBase = Math.max(0, grandTotal - depositTotal);
                     const cardFee = Math.round(cardBase * 0.1);
                     const finalCardAmount = cardBase + cardFee;
-                    if (depositTotal > 0) { msg += `[카드결제]\n총 주문금액 ${grandTotal.toLocaleString()}원\n선입금 ${depositTotal.toLocaleString()}원\n남은 결제금액 ${cardBase.toLocaleString()}원\n수수료(10%) ${cardFee.toLocaleString()}원\n👉최종 결제요청액 ${finalCardAmount.toLocaleString()}원 예정\n\n방송종료 시간이 늦을경우 오전에 카드결제 링크 발송합니다.\n주문내역 확인 후 주무시면 됩니다!\n------------------\n\n`; } 
-                    else { msg += `[카드결제]\n금액 ${cardBase.toLocaleString()}원\n수수료(10%) ${cardFee.toLocaleString()}원\n👉결제요청액 ${finalCardAmount.toLocaleString()}원 예정\n\n방송종료 시간이 늦을경우 오전에 카드결제 링크 발송합니다.\n주문내역 확인 후 주무시면 됩니다!\n------------------\n\n`; }
+                    if (depositTotal > 0) { msg += `[카드결제]\n총 주문금액 ${grandTotal.toLocaleString()}원\n선입금 ${depositTotal.toLocaleString()}원\n남은 결제금액 ${cardBase.toLocaleString()}원\n수수료(10%) ${cardFee.toLocaleString()}원\n👉최종 결제요청액 ${finalCardAmount.toLocaleString()}원 예정\n\n방송종료 시간이 늦을경우 오전에 카드결제 링크 발송합니다.\n------------------\n`; } 
+                    else { msg += `[카드결제]\n주문금액 ${cardBase.toLocaleString()}원\n수수료(10%) ${cardFee.toLocaleString()}원\n👉결제요청액 ${finalCardAmount.toLocaleString()}원 예정\n\n방송종료 시간이 늦을경우 오전에 카드결제 링크 발송합니다.\n------------------\n`; }
                 } 
                 else { 
                     const isPaid = (balance <= 0) && (grandTotal >= 0) && (activeItems.length > 0); 
-                    if (depositTotal > 0 && balance <= 0) { msg += `[입금확인]\n${depositTotal.toLocaleString()}원\n------------------\n\n`; } 
-                    else if (depositTotal > 0 && balance > 0) { msg += `[입금확인]\n${depositTotal.toLocaleString()}원 (일부 입금)\n------------------\n\n`; }
+                    if (depositTotal > 0 && balance <= 0) { msg += `[입금확인]\n총 주문금액 ${grandTotal.toLocaleString()}원\n입금확인 ${depositTotal.toLocaleString()}원\n`; } 
+                    else if (depositTotal > 0 && balance > 0) { msg += `[입금확인]\n총 주문금액 ${grandTotal.toLocaleString()}원\n입금확인 ${depositTotal.toLocaleString()}원 (일부 입금)\n------------------\n`; }
                     
-                    const cashReceiptText = (hasCashReceipt && depositTotal > 0) ? `현금영수증 : ${depositTotal.toLocaleString()}원 예정\n` : '';
+                    const cashReceiptText = (hasCashReceipt && depositTotal > 0) ? `\n현금영수증 : ${depositTotal.toLocaleString()}원 예정` : '';
 
-                    if (balance > 0) { if (depositTotal > 0) { msg += `[부분 미수 안내]\n남은 미수금 👉 ${balance.toLocaleString()}원\n\n${bankAccount}\n추가 입금 부탁드립니다 🙏\n------------------\n\n`; } else { msg += `${unpaidPrefix}\n${balance.toLocaleString()}원 \n\n${bankAccount}\n입금 부탁드립니다 🙏\n------------------\n\n`; } } 
-                    else if (balance < 0) { msg += `${paidMsg}\n${cashReceiptText}\n[과납 안내]\n과납액: ${Math.abs(balance).toLocaleString()}원\n${overpaidMsg}\n------------------\n`; } 
-                    else { if (isPaid) msg += `${paidMsg}\n${cashReceiptText}------------------\n`; }
+                    if (balance > 0) { 
+                        if (depositTotal > 0) { 
+                            msg += `\n[부분 미수 안내]\n남은 입금하실 금액 👉 ${balance.toLocaleString()}원\n\n${bankAccount}\n추가 입금 부탁드립니다 🙏\n------------------\n`; 
+                        } else { 
+                            msg += `${unpaidPrefix}\n${balance.toLocaleString()}원\n\n${bankAccount}\n입금 부탁드립니다 🙏\n------------------\n`; 
+                        } 
+                    } 
+                    else if (balance < 0) { 
+                        msg += `${paidMsg}${cashReceiptText}\n\n[과납 안내]\n과납액: ${Math.abs(balance).toLocaleString()}원\n${overpaidMsg}\n------------------\n`; 
+                    } 
+                    else { 
+                        if (isPaid) { msg += `${paidMsg}${cashReceiptText}\n------------------\n`; } 
+                    } 
                 }
                 
-                if (addr && addr.address && !alwaysRequestAddress) {
-                    const dispPhone = fixPhoneNumber(addr.phone);
-                    msg += `\n[배송지 확인]\n\n${addr.realname || nick}\n${dispPhone}\n${addr.address} ${addr.zipcode ? `(${addr.zipcode})` : ''}\n${addr.memo ? addr.memo + '\n' : ''}\n------------------\n${addrNotice ? addrNotice + '\n' : ''}`;
-                } else if (!sentAddressRequests.has(nick) || alwaysRequestAddress) { 
-                    if (surveyNotice) msg += `\n${surveyNotice}\n`; setSentAddressRequests(prev => new Set(prev).add(nick)); 
-                }
-
-                // ✨ 대기 상품이 있다면 메시지 맨 끝에 별도 안내문 추가
+                // ✨ 대기 상품이 있다면 상품별 대기 순번(대기 1번, 대기 2번...)과 함께 안내 추가
                 if (waitlistItems.length > 0) {
-                    const waitlistText = waitlistItems.map(i => `${i.product}${i.quantity > 1 ? ` ★${i.quantity}개` : ''}`).join('\n');
-                    msg += `\n\n[⏱️ 품절 대기 상품]\n${waitlistText}\n* 대기 상품은 재고 발생 시 별도 연락드립니다.`;
+                    const waitlistText = waitlistItems.map(i => {
+                        const wRank = waitlistRankMap[`${String(i.product || '').trim()}___${nick}`];
+                        const rankBadge = wRank ? ` (대기 ${wRank}번)` : ' (대기)';
+                        return `• ${i.product}${i.quantity > 1 ? ` ★${i.quantity}개` : ''}${rankBadge}`;
+                    }).join('\n');
+                    msg += `\n[⏱️ 품절/거파 대기 상품]\n${waitlistText}\n* 미입금 취소분 발생 시 순번대로 별도 연락드립니다.\n------------------\n`;
                 }
                 
-                // ✨ 카톡 마지막 주문 확인 강력 강조 멘트 추가 (배송지 유무에 따라 분기)
-                if (addr && addr.address && !alwaysRequestAddress) {
-                    msg += `\n\n🚨🚨🚨🚨 확인사항 🚨🚨🚨🚨\n\n배송지 및 주문제품 확인 필수\n위 주문서 그대로 주문확정됩니다.\n수정,변경사항은 채팅 남겨주세요.`;
-                } else {
-                    msg += `\n\n🚨🚨🚨🚨 확인사항 🚨🚨🚨🚨\n\n배송지 입력 및 주문제품 확인 필수\n위 주문서 그대로 주문확정됩니다.\n수정,변경사항은 채팅 남겨주세요.\n\n🔻 배송지 및 개인정보 이용 동의 🔻\nhttps://ember-order.shop\n🔺 상단 링크에서 직접 입력 필요 🔺`;
-                }
+                // ✨ 하단 핑크색 배너 ☆주문서확인 안내 문구
+                msg += `\n채팅창 하단 핑크색 배너 【 ☆주문서확인 】에 들어가셔서\n상세 주문내역 및 배송지 확인을 꼭 완료해 주세요! 💖`;
                 
                 const textArea = document.createElement("textarea"); textArea.value = msg; document.body.appendChild(textArea); textArea.select();
-                setCheckedOrders(prev => new Set(prev).add(nick));
                 try { 
                     document.execCommand('copy'); 
                     const el = e.currentTarget;
@@ -3225,7 +3242,7 @@ const dashboardStats = useMemo(() => {
                     el.className = 'ml-1 flex items-center gap-1 px-2 py-0.5 rounded border shrink-0 bg-green-500 border-green-600 text-white font-bold transition-colors';
                     setTimeout(() => { el.className = originalClass; }, 1000);
                 } catch (err) { } document.body.removeChild(textArea);
-            }, [addressLookup, getCalculatedShipping, templateConfig, bankAccount, sentAddressRequests, setSentAddressRequests, setCheckedOrders, broadcastName]);
+            }, [getCalculatedShipping, templateConfig, bankAccount, broadcastName, waitlistRankMap]);
 
             const handleFullDepositToggle = useCallback((nick, grandTotal, currentDeposit) => { 
                 if (currentDeposit >= grandTotal) { 
@@ -3737,7 +3754,7 @@ const dashboardStats = useMemo(() => {
                                 const { data: addrData, type: addrType } = addressLookup.get(nick);
                                 const customerDeps = allDeposits.filter(d => ((depositLinks[d.id] === nick) || (d.legacyId && depositLinks[d.legacyId] === nick)) && (matchedDeposits.has(d.id) || (d.legacyId && matchedDeposits.has(d.legacyId))));
                                 
-                                return (<CustomerBlock key={nick} nick={nick} items={items} isSelected={selectedNick === nick} currentShipping={ship} isCard={isCard} isPaidState={bal <= 0 && activeItems.length > 0} grandTotal={grand} depositTotal={depSum} balance={bal} baseGrandTotal={baseGrand} baseBalance={baseBal} addr={addrData} addrType={addrType} addressMapping={addressMapping} autoDepositorName={addrData?.realname || ''} displayDepositorName={depositorNames[nick] || addrData?.realname || '입금자'} isAutoDepositor={!depositorNames[nick] && addrData?.realname} depositorNames={depositorNames} copyStatus={copyStatus} isOrderConfirmed={checkedOrders.has(nick)} isEditingShipping={editingShippingNick === nick} setSelectedNick={setSelectedNick} addOrderLogic={addOrderLogic} handleNicknameEdit={handleNicknameEdit} toggleCardPayment={toggleCardPayment} handleShippingChange={handleShippingChange} setEditingShippingNick={setEditingShippingNick} openModal={openModal} setDepositorNames={setDepositorNames} handleFullDepositToggle={handleFullDepositToggle} copyOrderSheet={copyOrderSheet} handleOrderCheckToggle={handleOrderCheckToggle} handleAddressUnmapping={handleAddressUnmapping} handleAddressMapping={handleAddressMapping} handleProductChange={handleProductChange} handleQuantityUpdate={handleQuantityUpdate} handleOrderCancel={handleOrderCancel} handleOrderDelete={handleOrderDelete} toggleVIP={specialCustomers} specialCustomers={specialCustomers} handleOpenQuickAddress={handleOpenQuickAddress} findAddressSuggestions={findAddressSuggestions} cashReceiptStatus={cashReceipts[nick]} toggleCashReceipt={toggleCashReceipt} inventory={inventory} productHistory={productHistory} customerDeposits={customerDeps} handleDepositUnmatch={handleDepositUnmatch} handleMultiAddOpen={setMultiAddNick} toggleNoShow={toggleNoShow} toggleWaitlist={toggleWaitlist} noShowStatus={noShowCustomers[nick]} waitlistStatus={waitlistCustomers[nick]} customerPassword={customerPasswords && customerPasswords[nick]} handleSetCustomerPassword={handleSetCustomerPassword} />);
+                                return (<CustomerBlock key={nick} nick={nick} items={items} isSelected={selectedNick === nick} currentShipping={ship} isCard={isCard} isPaidState={bal <= 0 && activeItems.length > 0} grandTotal={grand} depositTotal={depSum} balance={bal} baseGrandTotal={baseGrand} baseBalance={baseBal} addr={addrData} addrType={addrType} addressMapping={addressMapping} autoDepositorName={addrData?.realname || ''} displayDepositorName={depositorNames[nick] || addrData?.realname || '입금자'} isAutoDepositor={!depositorNames[nick] && addrData?.realname} depositorNames={depositorNames} copyStatus={copyStatus} isOrderConfirmed={checkedOrders.has(nick)} isEditingShipping={editingShippingNick === nick} setSelectedNick={setSelectedNick} addOrderLogic={addOrderLogic} handleNicknameEdit={handleNicknameEdit} toggleCardPayment={toggleCardPayment} handleShippingChange={handleShippingChange} setEditingShippingNick={setEditingShippingNick} openModal={openModal} setDepositorNames={setDepositorNames} handleFullDepositToggle={handleFullDepositToggle} copyOrderSheet={copyOrderSheet} handleOrderCheckToggle={handleOrderCheckToggle} handleAddressUnmapping={handleAddressUnmapping} handleAddressMapping={handleAddressMapping} handleProductChange={handleProductChange} handleQuantityUpdate={handleQuantityUpdate} handleOrderCancel={handleOrderCancel} handleOrderDelete={handleOrderDelete} toggleVIP={specialCustomers} specialCustomers={specialCustomers} handleOpenQuickAddress={handleOpenQuickAddress} findAddressSuggestions={findAddressSuggestions} cashReceiptStatus={cashReceipts[nick]} toggleCashReceipt={toggleCashReceipt} inventory={inventory} productHistory={productHistory} customerDeposits={customerDeps} handleDepositUnmatch={handleDepositUnmatch} handleMultiAddOpen={setMultiAddNick} toggleNoShow={toggleNoShow} toggleWaitlist={toggleWaitlist} noShowStatus={noShowCustomers[nick]} waitlistStatus={waitlistCustomers[nick]} customerPassword={customerPasswords && customerPasswords[nick]} handleSetCustomerPassword={handleSetCustomerPassword} waitlistRankMap={waitlistRankMap} />);
                             })}
                         </div>
                     </div>
@@ -4123,11 +4140,29 @@ const dashboardStats = useMemo(() => {
 
             const handleExportAllMessages = () => {
                 const groups = {}; orders.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); });
+                // 상품별 대기 순번 계산
+                const prodWaitQueues = {};
+                orders.forEach(o => {
+                    if (!o.isCancelled && o.isWaitlist && o.product) {
+                        const pk = String(o.product).trim();
+                        if (!prodWaitQueues[pk]) prodWaitQueues[pk] = {};
+                        if (!prodWaitQueues[pk][o.customer] || o.id < prodWaitQueues[pk][o.customer]) {
+                            prodWaitQueues[pk][o.customer] = o.id;
+                        }
+                    }
+                });
+                const localWaitRankMap = {};
+                Object.keys(prodWaitQueues).forEach(pk => {
+                    Object.entries(prodWaitQueues[pk])
+                        .sort((a, b) => a[1] - b[1])
+                        .forEach(([cust, _], idx) => {
+                            localWaitRankMap[`${pk}___${cust}`] = idx + 1;
+                        });
+                });
                 const templateConfigStr = localStorage.getItem(getLsKey('templateConfig'));
                 const templateConfigLocal = templateConfigStr ? JSON.parse(templateConfigStr) : { emoji: '💙', paidMsg: '😍 완납 확인! 감사합니다 😍', unpaidPrefix: '[미입금]\n총 입금하실 금액\n👉', overpaidMsg: '과납 금액이 있습니다.\n환불 또는 적립 여부를 알려주세요!', addrNotice: '', surveyNotice: '', alwaysRequestAddress: false };
                 const overpaidMsg = templateConfigLocal.overpaidMsg || '과납 금액이 있습니다.\n환불 또는 적립 여부를 알려주세요!';
                 const bankStr = localStorage.getItem(getLsKey('bankAccount')) || "카카오뱅크 김선정\n7942 32 84990";
-                const sentAddressRequestsStr = localStorage.getItem(getLsKey('sentAddressRequests')); const sentAddressRequestsLocal = sentAddressRequestsStr ? new Set(JSON.parse(sentAddressRequestsStr)) : new Set();
                 const data = []; 
                 Object.entries(groups).forEach(([nick, items]) => {
                     // ✨ 상품명 내림차순 정렬 강제 적용
@@ -4143,49 +4178,43 @@ const dashboardStats = useMemo(() => {
                     const baseGrandTotal = productTotal + currentShipping;
                     const depositTotal = items.reduce((sum, i) => sum + (i.deposit || 0), 0); const baseBalance = baseGrandTotal - depositTotal;
                     const cardFee = (isCard && baseBalance > 0) ? Math.round(baseBalance * 0.1) : 0; const grandTotal = baseGrandTotal + cardFee; const balance = baseBalance + cardFee;
-                    const itemListTextForMsg = activeItems.map(i => `${i.product}${i.quantity > 1 ? ` ★${i.quantity}개` : ''} ${Number(i.price).toLocaleString()}원`).join('\n');
                     const itemListTextForExcel = activeItems.map(i => `${i.product}(${i.quantity}개)`).join(', '); 
-                    const addrInfo = findAddress(nick) || {};
-                    let msg = `${templateConfigLocal.emoji} ${nick} 님 ${templateConfigLocal.emoji}\n\n[${broadcastName} 주문목록]\n${itemListTextForMsg}\n배송비 ${currentShipping.toLocaleString()}원\n\n총 주문금액 ${baseGrandTotal.toLocaleString()}원\n------------------\n`;
+                    const cleanBroadcastTitle = String(broadcastName || '').replace(/\s*주문\s*목록\s*/g, '').trim();
+
+                    let msg = `${templateConfigLocal.emoji} ${nick} 님 ${templateConfigLocal.emoji}\n[${cleanBroadcastTitle}]\n------------------\n`;
                     let statusStr = '';
                     if (isCard) { 
                         statusStr = '카드결제'; const cardBase = Math.max(0, baseGrandTotal - depositTotal);
                         const cFee = Math.round(cardBase * 0.1);
                         const finalCardAmount = cardBase + cFee;
-                        if (depositTotal > 0) { msg += `[카드결제]\n총 주문금액 ${baseGrandTotal.toLocaleString()}원\n선입금 ${depositTotal.toLocaleString()}원\n남은 결제금액 ${cardBase.toLocaleString()}원\n수수료(10%) ${cFee.toLocaleString()}원\n👉최종 결제요청액 ${finalCardAmount.toLocaleString()}원 예정\n\n방송종료 시간이 늦을경우 오전에 카드결제 링크 발송합니다.\n주문내역 확인 후 주무시면 됩니다!\n------------------\n\n`; } 
-                        else { msg += `[카드결제]\n금액 ${cardBase.toLocaleString()}원\n수수료(10%) ${cFee.toLocaleString()}원\n👉결제요청액 ${finalCardAmount.toLocaleString()}원 예정\n\n방송종료 시간이 늦을경우 오전에 카드결제 링크 발송합니다.\n주문내역 확인 후 주무시면 됩니다!\n------------------\n\n`; }
+                        if (depositTotal > 0) { msg += `[카드결제]\n총 주문금액 ${baseGrandTotal.toLocaleString()}원\n선입금 ${depositTotal.toLocaleString()}원\n남은 결제금액 ${cardBase.toLocaleString()}원\n수수료(10%) ${cFee.toLocaleString()}원\n👉최종 결제요청액 ${finalCardAmount.toLocaleString()}원 예정\n\n방송종료 시간이 늦을경우 오전에 카드결제 링크 발송합니다.\n------------------\n`; } 
+                        else { msg += `[카드결제]\n주문금액 ${cardBase.toLocaleString()}원\n수수료(10%) ${cFee.toLocaleString()}원\n👉결제요청액 ${finalCardAmount.toLocaleString()}원 예정\n\n방송종료 시간이 늦을경우 오전에 카드결제 링크 발송합니다.\n------------------\n`; }
                     } else { 
                         const isPaid = (balance <= 0) && (grandTotal >= 0); 
-                        if (depositTotal > 0 && balance <= 0) { msg += `[입금확인]\n${depositTotal.toLocaleString()}원\n------------------\n\n`; } 
-                        else if (depositTotal > 0 && balance > 0) { msg += `[입금확인]\n${depositTotal.toLocaleString()}원 (일부 입금)\n------------------\n\n`; }
+                        if (depositTotal > 0 && balance <= 0) { msg += `[입금확인]\n총 주문금액 ${baseGrandTotal.toLocaleString()}원\n입금확인 ${depositTotal.toLocaleString()}원\n`; } 
+                        else if (depositTotal > 0 && balance > 0) { msg += `[입금확인]\n총 주문금액 ${baseGrandTotal.toLocaleString()}원\n입금확인 ${depositTotal.toLocaleString()}원 (일부 입금)\n------------------\n`; }
                         
-                        const cashReceiptText = (hasCashReceipt && depositTotal > 0) ? `현금영수증 : ${depositTotal.toLocaleString()}원 예정\n` : '';
+                        const cashReceiptText = (hasCashReceipt && depositTotal > 0) ? `\n현금영수증 : ${depositTotal.toLocaleString()}원 예정` : '';
 
                         if (balance > 0) {
                             statusStr = depositTotal > 0 ? `부분입금(미수 ${balance.toLocaleString()})` : `미입금(미수 ${balance.toLocaleString()})`;
-                            if (depositTotal > 0) { msg += `[부분 미수 안내]\n남은 미수금 👉 ${balance.toLocaleString()}원\n\n${bankStr}\n추가 입금 부탁드립니다 🙏\n------------------\n\n`; } 
-                            else { msg += `${templateConfigLocal.unpaidPrefix}\n${balance.toLocaleString()}원 \n\n${bankStr}\n입금 부탁드립니다 🙏\n------------------\n\n`; }
-                        } else if (balance < 0) { statusStr = '과납'; msg += `${templateConfigLocal.paidMsg}\n${cashReceiptText}\n[과납 안내]\n과납액: ${Math.abs(balance).toLocaleString()}원\n${overpaidMsg}\n------------------\n`; } 
-                        else { statusStr = '입금'; if (isPaid) msg += `${templateConfigLocal.paidMsg}\n${cashReceiptText}------------------\n`; }
-                    }
-                    if (addrInfo && addrInfo.address && !templateConfigLocal.alwaysRequestAddress) {
-                        let cleanPhone = fixPhoneNumber(addrInfo.phone);
-                        msg += `\n[배송지 확인]\n\n${addrInfo.realname || nick}\n${cleanPhone}\n${addrInfo.address} ${addrInfo.zipcode ? `(${addrInfo.zipcode})` : ''}\n${addrInfo.memo ? addrInfo.memo + '\n' : ''}\n------------------\n${templateConfigLocal.addrNotice ? templateConfigLocal.addrNotice + '\n' : ''}`; 
-                    } else if (!sentAddressRequestsLocal.has(nick) || templateConfigLocal.alwaysRequestAddress) { 
-                        if (templateConfigLocal.surveyNotice) msg += `\n${templateConfigLocal.surveyNotice}\n`; 
+                            if (depositTotal > 0) { msg += `\n[부분 미수 안내]\n남은 입금하실 금액 👉 ${balance.toLocaleString()}원\n\n${bankStr}\n추가 입금 부탁드립니다 🙏\n------------------\n`; } 
+                            else { msg += `${templateConfigLocal.unpaidPrefix}\n${balance.toLocaleString()}원\n\n${bankStr}\n입금 부탁드립니다 🙏\n------------------\n`; }
+                        } else if (balance < 0) { statusStr = '과납'; msg += `${templateConfigLocal.paidMsg}${cashReceiptText}\n\n[과납 안내]\n과납액: ${Math.abs(balance).toLocaleString()}원\n${overpaidMsg}\n------------------\n`; } 
+                        else { statusStr = '입금'; if (isPaid) msg += `${templateConfigLocal.paidMsg}${cashReceiptText}\n------------------\n`; }
                     }
                     
                     if (waitlistItems.length > 0) {
-                        const waitlistText = waitlistItems.map(i => `${i.product}${i.quantity > 1 ? ` ★${i.quantity}개` : ''}`).join('\n');
-                        msg += `\n\n[⏱️ 품절 대기 상품]\n${waitlistText}\n* 대기 상품은 재고 발생 시 별도 연락드립니다.`;
+                        const waitlistText = waitlistItems.map(i => {
+                            const wRank = localWaitRankMap[`${String(i.product || '').trim()}___${nick}`];
+                            const rankBadge = wRank ? ` (대기 ${wRank}번)` : ' (대기)';
+                            return `• ${i.product}${i.quantity > 1 ? ` ★${i.quantity}개` : ''}${rankBadge}`;
+                        }).join('\n');
+                        msg += `\n[⏱️ 품절/거파 대기 상품]\n${waitlistText}\n* 미입금 취소분 발생 시 순번대로 별도 연락드립니다.\n------------------\n`;
                     }
 
-                    // ✨ 카톡 마지막 주문 확인 강력 강조 멘트 추가 (배송지 유무에 따라 분기)
-                    if (addrInfo && addrInfo.address && !templateConfigLocal.alwaysRequestAddress) {
-                        msg += `\n\n🚨🚨🚨🚨 확인사항 🚨🚨🚨🚨\n\n배송지 및 주문제품 확인 필수\n위 주문서 그대로 주문확정됩니다.\n수정,변경사항은 채팅 남겨주세요.`;
-                    } else {
-                        msg += `\n\n🚨🚨🚨🚨 확인사항 🚨🚨🚨🚨\n\n배송지 입력 및 주문제품 확인 필수\n위 주문서 그대로 주문확정됩니다.\n수정,변경사항은 채팅 남겨주세요.\n\n🔻 배송지 및 개인정보 이용 동의 🔻\nhttps://ember-order.shop\n🔺 상단 링크에서 직접 입력 필요 🔺`;
-                    }
+                    // ✨ 하단 핑크색 배너 ☆주문서확인 안내 문구
+                    msg += `\n채팅창 하단 핑크색 배너 【 ☆주문서확인 】에 들어가셔서\n상세 주문내역 및 배송지 확인을 꼭 완료해 주세요! 💖`;
 
                     data.push({ '닉네임': nick, '상품명': itemListTextForExcel, '가격': grandTotal.toLocaleString() + '원', '입금액': depositTotal.toLocaleString() + '원', '상태': statusStr, '카톡전송메세지': msg });
                 });
@@ -4321,7 +4350,7 @@ const dashboardStats = useMemo(() => {
             const [orders, setOrders] = useLocalStorage('youtubeOrders', []);
             const [activeTab, setActiveTab] = useState('live');
             
-            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw18_LWGYGClzcQbfGYb8D9ftdaroUXEN9j-QXMga69aChKwj0DuPZ64135tPlikOo4/exec';
+            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyocgWbANVAnUaHKzviVCZdFf4ZimduPZHhTX7SvSDg1_RWK0n1rVwT-Gkr2xn67DU/exec';
             const [googleScriptUrl, setGoogleScriptUrl] = useLocalStorage('googleScriptUrl', NEW_SCRIPT_URL);
         
         const [youtubeApiKey, setYoutubeApiKey] = useLocalStorage('youtubeApiKey', '');
@@ -4340,7 +4369,7 @@ const dashboardStats = useMemo(() => {
 
             useEffect(() => {
                 const currentUrl = window.localStorage.getItem(getLsKey('googleScriptUrl'));
-                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbw18_LWGYGClzcQbfGYb8D9ftdaroUXEN9j-QXMga69aChKwj0DuPZ64135tPlikOo4')) {
+                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbyocgWbANVAnUaHKzviVCZdFf4ZimduPZHhTX7SvSDg1_RWK0n1rVwT-Gkr2xn67DU')) {
                     setGoogleScriptUrl(NEW_SCRIPT_URL);
                 }
             }, [setGoogleScriptUrl]);
