@@ -2104,21 +2104,15 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             }
         }, [activeApiKey, liveChatId, handleKeySwitch, setChats, googleScriptUrl, masterSheetId, broadcastName]);
 
-        const fetchGasData = useCallback(async () => {
+        const fetchGasData = useCallback(async (force = false) => {
             if (!googleScriptUrl) {
                 setGasStatus(prev => prev === "설정 ⚙️: 스크립트 URL 입력!" ? prev : "설정 ⚙️: 스크립트 URL 입력!");
                 return;
             }
-            const isTypingNow = () => {
-                const el = document.activeElement;
-                return el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') && el.type !== 'checkbox';
-            };
-            if (isTypingNow()) {
-                return;
-            }
-            if (isGasFetchingRef.current) return;
+            if (!force && isGasFetchingRef.current) return;
 
             isGasFetchingRef.current = true;
+            if (force) setGasStatus("🔄 입금/주소 즉시 스캔중...");
             
             const slowWarningTimer = setTimeout(() => {
                 setGasStatus("⏳ 시트 로딩 지연 (빈 행/열을 삭제해주세요!)");
@@ -2130,11 +2124,6 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                 const res = await fetchGas(fetchUrl);
                 
                 clearTimeout(slowWarningTimer);
-                
-                // ✨ 네트워크 응답 대기 중에 사장님이 타이핑을 시작했다면 상태 업데이트를 건너뛰어 끊김/커서 튕김 원천 차단
-                if (isTypingNow()) {
-                    return;
-                }
                 
                 if (res && res.status === 'success') {
                     if (res.deposits && Array.isArray(res.deposits)) {
@@ -2395,7 +2384,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
         }, []); 
 
         useEffect(() => {
-            const handleForceSync = () => { fetchYoutubeDataRef.current(); fetchGasDataRef.current(); };
+            const handleForceSync = () => { fetchYoutubeDataRef.current(); fetchGasDataRef.current(true); };
             window.addEventListener('force-sync', handleForceSync);
             return () => window.removeEventListener('force-sync', handleForceSync);
         }, []);
@@ -4350,7 +4339,7 @@ const dashboardStats = useMemo(() => {
             const [orders, setOrders] = useLocalStorage('youtubeOrders', []);
             const [activeTab, setActiveTab] = useState('live');
             
-            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyocgWbANVAnUaHKzviVCZdFf4ZimduPZHhTX7SvSDg1_RWK0n1rVwT-Gkr2xn67DU/exec';
+            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwZ_FgUxdg-1nzV9kTabOMGgZKNSYUBxIjfNge4-N4psMgF-6Rv2XqjvpWUex4T5tKF/exec';
             const [googleScriptUrl, setGoogleScriptUrl] = useLocalStorage('googleScriptUrl', NEW_SCRIPT_URL);
         
         const [youtubeApiKey, setYoutubeApiKey] = useLocalStorage('youtubeApiKey', '');
@@ -4369,7 +4358,7 @@ const dashboardStats = useMemo(() => {
 
             useEffect(() => {
                 const currentUrl = window.localStorage.getItem(getLsKey('googleScriptUrl'));
-                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbyocgWbANVAnUaHKzviVCZdFf4ZimduPZHhTX7SvSDg1_RWK0n1rVwT-Gkr2xn67DU')) {
+                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbwZ_FgUxdg-1nzV9kTabOMGgZKNSYUBxIjfNge4-N4psMgF-6Rv2XqjvpWUex4T5tKF')) {
                     setGoogleScriptUrl(NEW_SCRIPT_URL);
                 }
             }, [setGoogleScriptUrl]);
