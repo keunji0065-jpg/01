@@ -2141,13 +2141,23 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         }
                         const newDeps = depRows.map((row, idx) => {
                             if (!Array.isArray(row)) return null;
+                            // 행 전체에서 날짜/시간으로 보이는 셀을 보조로 탐색하는 헬퍼
+                            const findAnyTimeInRow = (r, skipIdx) => {
+                                for (let k = r.length - 1; k >= 0; k--) {
+                                    if (k === skipIdx) continue;
+                                    const s = String(r[k] ?? '').trim();
+                                    if (!s || s.startsWith('{')) continue;
+                                    if (/(\d{1,2}:\d{2})|(\d{4}[-./]\s*\d{1,2})|(GMT|오전|오후|AM|PM|T\d{2}:)/i.test(s)) return s;
+                                }
+                                return '';
+                            };
                             // ✨ 1순위: '입금 수집기' 시트 전용 고정 열 매핑 (E열: 입금자명, F열: 금액, G열: 시간)
                             if (row.length >= 6) {
                                 const colE = String(row[4] ?? '').trim();
                                 const rawColF = String(row[5] ?? '').trim();
                                 const amtF = Number(rawColF.replace(/[^0-9.-]/g, ''));
                                 if (colE && !colE.startsWith('{') && !isNaN(amtF) && amtF > 0) {
-                                    const rawTimeG = String(row[6] || row[row.length - 1] || row[0] || '').trim();
+                                    const rawTimeG = String(row[6] || findAnyTimeInRow(row, 5) || row[row.length - 1] || row[0] || '').trim();
                                     const time = formatTimeOnly(rawTimeG);
                                     const cleanName = colE.replace(/^[:"'\-\s]+/, '').replace(/^입\s+/, '').trim();
                                     return { 
@@ -2904,6 +2914,7 @@ const dashboardStats = useMemo(() => {
             }, [allDeposits, orders, matchedDeposits, depositorNames, deletedDepositIds, getCalculatedShipping, ignoredAutoMatch, addressLookup, depositLinks, setDepositLinks]);
 
             const lastSavedDataStr = useRef('');
+            const savedDepositsHistoryMapRef = useRef({});
 
             const loadOrdersFromGoogleSheet = useCallback(async (isSilent = false) => {
                 if (!googleScriptUrl || !masterSheetId) return;
@@ -2916,6 +2927,7 @@ const dashboardStats = useMemo(() => {
                         const loadedShips = {};
                         const loadedTrks = {};
                         const loadedConfirmed = [];
+                        const loadedDepJsonMap = {};
 
                         res.data.forEach((row, idx) => {
                             const nick = String(row['닉네임'] || '').trim();
@@ -2942,6 +2954,14 @@ const dashboardStats = useMemo(() => {
                             if (String(row['주문확인'] || '').trim() === 'O') {
                                 loadedConfirmed.push(nick);
                             }
+                            if (row['입금내역JSON']) {
+                                try {
+                                    const parsed = JSON.parse(String(row['입금내역JSON']));
+                                    if (Array.isArray(parsed) && parsed.length > 0) {
+                                        loadedDepJsonMap[nick] = parsed;
+                                    }
+                                } catch (e) {}
+                            }
 
                             loadedOrders.push({
                                 id: Date.now() + idx + Math.random(),
@@ -2956,6 +2976,10 @@ const dashboardStats = useMemo(() => {
                                 loadedFromCloud: true
                             });
                         });
+
+                        if (Object.keys(loadedDepJsonMap).length > 0) {
+                            savedDepositsHistoryMapRef.current = Object.assign({}, savedDepositsHistoryMapRef.current, loadedDepJsonMap);
+                        }
 
                         if (loadedOrders.length > 0) {
                             setOrders(loadedOrders);
@@ -3018,17 +3042,43 @@ const dashboardStats = useMemo(() => {
                     let customerDepsJson = '';
                     if (!printedDeposits[customerVal]) {
                         depositToSave = customerTotalDeposits[customerVal] || 0;
-                        const matchedDepsForCust = (allDepositsRef.current || []).filter(d => {
+                        let matchedDepsForCust = (allDepositsRef.current || []).filter(d => {
                             const isLinked = (depositLinks[d.id] === customerVal) || (d.legacyId && depositLinks[d.legacyId] === customerVal);
                             const isMatched = matchedDeposits.has(d.id) || (d.legacyId && matchedDeposits.has(d.legacyId));
                             return isLinked && isMatched;
                         }).map(d => ({
                             id: d.id,
-                            time: formatDepositFullDateTime(d.rawTime || d.time || d.date || ''),
+                            time: formatDepositFullDateTime(d.rawTime || d.time || d.date || '') || d.time || '',
                             name: d.name,
                             amount: Number(d.amount)
                         }));
+
+                        // ✨ 만약 새로고침 등으로 depositLinks가 비어있더라도 입금 시트에서 이름/실명이 일치하는 입금내역(시간 포함)을 자동으로 찾아 연결!
+                        if (matchedDepsForCust.length === 0 && depositToSave > 0) {
+                            const savedHist = savedDepositsHistoryMapRef.current[customerVal];
+                            if (Array.isArray(savedHist) && savedHist.length > 0) {
+                                matchedDepsForCust = savedHist;
+                            } else {
+                                const cNickClean = cleanForMatch(customerVal);
+                                const cRealClean = cleanForMatch(depositorNames[customerVal] || addr.realname || '');
+                                const fallbackMatches = (allDepositsRef.current || []).filter(d => {
+                                    const dClean = cleanForMatch(d.name);
+                                    if (!dClean) return false;
+                                    return dClean === cNickClean || (cRealClean && dClean === cRealClean);
+                                });
+                                if (fallbackMatches.length > 0) {
+                                    matchedDepsForCust = fallbackMatches.map(d => ({
+                                        id: d.id,
+                                        time: formatDepositFullDateTime(d.rawTime || d.time || d.date || '') || d.time || '',
+                                        name: d.name,
+                                        amount: Number(d.amount)
+                                    }));
+                                }
+                            }
+                        }
+
                         if (matchedDepsForCust.length > 0) {
+                            savedDepositsHistoryMapRef.current[customerVal] = matchedDepsForCust;
                             customerDepsJson = JSON.stringify(matchedDepsForCust);
                         }
                         printedDeposits[customerVal] = true;
@@ -3110,7 +3160,7 @@ const dashboardStats = useMemo(() => {
                         lastSavedDataStr.current = currentDataStr;
                     } 
                 } catch(e) {} finally { if (isManual) setIsSaving(false); } 
-            }, [orders, cardPayments, getCalculatedShipping, googleScriptUrl, addressLookup, masterSheetId, broadcastName, specialCustomers, noShowCustomers, waitlistCustomers, customerPasswords, trackingNumbers, checkedOrders, depositLinks, matchedDeposits, freeShippingThreshold, quickShipping, feeRateNum, waitlistRankMap]);
+            }, [orders, cardPayments, getCalculatedShipping, googleScriptUrl, addressLookup, masterSheetId, broadcastName, specialCustomers, noShowCustomers, waitlistCustomers, customerPasswords, trackingNumbers, checkedOrders, depositLinks, matchedDeposits, depositorNames, freeShippingThreshold, quickShipping, feeRateNum, waitlistRankMap]);
 
             const autoSaveRef = useRef(); useEffect(() => { autoSaveRef.current = autoSaveToGoogleSheet; }, [autoSaveToGoogleSheet]);
             useEffect(() => { const saveInterval = setInterval(() => { if (autoSaveRef.current) autoSaveRef.current(); }, 10000); return () => clearInterval(saveInterval); }, []); 
@@ -4555,7 +4605,7 @@ const dashboardStats = useMemo(() => {
             const [orders, setOrders] = useLocalStorage('youtubeOrders', []);
             const [activeTab, setActiveTab] = useState('live');
             
-            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzBPxA5xAgKHfseWQKcv-bijaqKp4w0a9m7Ed-h9OwmKMcRLFh5ra21KLj27uQ0FLuf/exec';
+            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxKaPP2kInDVWmkrw1l8QO5ZE6aH-aLYfBcxpv46phxsY-Ak-zuCz7f-Z1bVwojQC6d/exec';
             const [googleScriptUrl, setGoogleScriptUrl] = useLocalStorage('googleScriptUrl', NEW_SCRIPT_URL);
         
         const [youtubeApiKey, setYoutubeApiKey] = useLocalStorage('youtubeApiKey', '');
@@ -4574,7 +4624,7 @@ const dashboardStats = useMemo(() => {
 
             useEffect(() => {
                 const currentUrl = window.localStorage.getItem(getLsKey('googleScriptUrl'));
-                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbzBPxA5xAgKHfseWQKcv-bijaqKp4w0a9m7Ed-h9OwmKMcRLFh5ra21KLj27uQ0FLuf')) {
+                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbxKaPP2kInDVWmkrw1l8QO5ZE6aH-aLYfBcxpv46phxsY-Ak-zuCz7f-Z1bVwojQC6d')) {
                     setGoogleScriptUrl(NEW_SCRIPT_URL);
                 }
             }, [setGoogleScriptUrl]);
