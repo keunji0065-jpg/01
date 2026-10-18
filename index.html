@@ -831,10 +831,6 @@ useEffect(() => {
                             <SettingsField label="[쓰기] 스마트오더 마스터 시트 ID (주문서/찐고객사전 통합)" value={masterSheetId} onChange={setMasterSheetId} placeholder="새로 만든 백업 시트 ID" />
                         </div>
                         
-                        <div className="p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg space-y-2 border border-amber-200 dark:border-amber-800">
-                            <SettingsField label="[쓰기] 스마트오더 마스터 시트 ID" value={masterSheetId} onChange={setMasterSheetId} placeholder="새로 만든 백업 시트 ID" />
-                        </div>
-                        
                         <div className="border-t dark:border-slate-700 pt-4">
                             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">배송비 및 카드 수수료 설정</label>
                             <div className="grid grid-cols-4 gap-2 mb-2">
@@ -1230,7 +1226,7 @@ useEffect(() => {
             );
         });
 
-        const CustomerBlock = memo(({ nick, items, isSelected, currentShipping, isCard, isPaidState, grandTotal, depositTotal, balance, baseGrandTotal, baseBalance, addr, addrType, addressMapping, autoDepositorName, displayDepositorName, isAutoDepositor, depositorNames, copyStatus, isOrderConfirmed, isEditingShipping, setSelectedNick, addOrderLogic, handleNicknameEdit, toggleCardPayment, handleShippingChange, setEditingShippingNick, openModal, setDepositorNames, handleFullDepositToggle, copyOrderSheet, handleOrderCheckToggle, handleAddressUnmapping, handleAddressMapping, handleProductChange, handleQuantityUpdate, handleOrderCancel, handleOrderDelete, toggleVIP, specialCustomers, handleOpenQuickAddress, findAddressSuggestions, cashReceiptStatus, toggleCashReceipt, inventory, productHistory, customerDeposits, handleDepositUnmatch, handleMultiAddOpen, toggleNoShow, toggleWaitlist, noShowStatus, waitlistStatus, customerPassword, handleSetCustomerPassword, waitlistRankMap }) => {
+        const CustomerBlock = memo(({ nick, items, isSelected, currentShipping, isCard, isPaidState, grandTotal, depositTotal, balance, baseGrandTotal, baseBalance, addr, addrType, addressMapping, autoDepositorName, displayDepositorName, isAutoDepositor, depositorNames, copyStatus, isOrderConfirmed, isEditingShipping, setSelectedNick, addOrderLogic, handleNicknameEdit, toggleCardPayment, handleShippingChange, setEditingShippingNick, openModal, setDepositorNames, handleFullDepositToggle, copyOrderSheet, handleOrderCheckToggle, handleAddressUnmapping, handleAddressMapping, handleProductChange, handleQuantityUpdate, handleOrderCancel, handleOrderDelete, toggleVIP, specialCustomers, handleOpenQuickAddress, findAddressSuggestions, cashReceiptStatus, toggleCashReceipt, inventory, productHistory, customerDeposits, handleDepositUnmatch, handleMultiAddOpen, toggleNoShow, toggleWaitlist, noShowStatus, waitlistStatus, customerPassword, handleSetCustomerPassword, waitlistRankMap, trackingNumber, handleSetTrackingNumber }) => {
             let borderClass = 'border-transparent', headerBgClass = 'bg-white dark:bg-slate-800';
             
             if (isSelected) { 
@@ -1289,6 +1285,7 @@ useEffect(() => {
                                 
                                 <div onClick={(e) => { e.stopPropagation(); openModal(`'${nick}'님의 입금자명(실명)을 입력하세요.`, 'prompt', (newName) => { if(newName !== null) setDepositorNames(prev => ({...prev, [nick]: newName})); }, null, depositorNames[nick] || ''); }} className={`cursor-pointer flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border hover:bg-slate-100 transition-colors ml-1 shrink-0 ${depositorNames[nick] ? 'bg-slate-200 text-slate-700 border-slate-400' : (isAutoDepositor ? 'bg-green-50 text-green-700 border-green-200' : 'bg-white text-slate-500 border-slate-300')}`} title={isAutoDepositor ? "주소록 실명 연동됨" : "실명 입금자 등록"}><Icon name="user" weight={depositorNames[nick] || isAutoDepositor ? "fill" : "regular"}/> <span>{displayDepositorName}</span></div>
                                 <button type="button" onClick={(e) => { e.stopPropagation(); handleSetCustomerPassword(nick, effectivePin); }} className={`ml-1 flex items-center gap-0.5 px-1.5 py-0.5 rounded border text-[10px] font-bold transition-colors shrink-0 ${effectivePin ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100' : 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100 animate-pulse'}`} title="고객 주문서 조회용 비밀번호(핸드폰 뒤 4자리) 설정"><Icon name="key" weight="fill" size={11}/><span>{effectivePin ? effectivePin : '비번설정'}</span></button>
+                                <button type="button" onClick={(e) => { e.stopPropagation(); handleSetTrackingNumber(nick, trackingNumber); }} className={`ml-1 flex items-center gap-0.5 px-1.5 py-0.5 rounded border text-[10px] font-bold transition-colors shrink-0 ${trackingNumber ? 'bg-red-50 border-red-200 text-red-600 hover:bg-red-100' : 'bg-white border-slate-300 text-slate-500 hover:bg-slate-100'}`} title="롯데택배 송장번호 입력/수정"><Icon name="package" weight="fill" size={11}/><span>{trackingNumber ? `송장:${trackingNumber}` : '송장입력'}</span></button>
                                 <div onClick={(e) => { e.stopPropagation(); handleFullDepositToggle(nick, baseGrandTotal, depositTotal); }} className={`cursor-pointer ml-1 flex items-center gap-1 px-1.5 py-0.5 rounded border transition-colors shrink-0 ${isPaidState ? 'bg-green-600 border-green-700 text-white shadow-inner' : 'bg-white border-slate-300 text-slate-500 hover:bg-slate-100'}`} title={isPaidState ? "입금 완료됨 (클릭시 취소)" : "클릭시 전액 입금 처리"}><Icon name={isPaidState ? "toggle-right" : "toggle-left"} weight="fill" size={16} /><span className="text-[10px] font-bold">{isPaidState ? "완납" : "미납"}</span></div>
                                 <button onClick={(e) => { e.stopPropagation(); copyOrderSheet(nick, items, baseGrandTotal, depositTotal, balance, isCard, cashReceiptStatus, addr, e); }} className="ml-1 flex items-center gap-1 px-2 py-0.5 rounded border transition-colors shrink-0 bg-[#FEE500] border-[#E5CE00] text-gray-900 hover:bg-[#FADA0A] active:scale-95" title="주문서 카톡 복사"><Icon name="chat-circle-dots" weight="fill" size={16}/><span className="text-[10px] font-bold">카톡</span></button>
                                 <div onClick={(e) => { e.stopPropagation(); handleOrderCheckToggle(nick); }} className="ml-1 cursor-pointer flex items-center gap-0.5 shrink-0" title="고객 주문서 확인 여부"><input type="checkbox" checked={isOrderConfirmed} readOnly className="custom-checkbox" /><span className={`text-[9px] font-bold ${isOrderConfirmed ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'}`}>{isOrderConfirmed ? '확인됨' : '미확인'}</span></div>
@@ -1370,6 +1367,7 @@ useEffect(() => {
             if (prev.noShowStatus !== next.noShowStatus) return false;
             if (prev.waitlistStatus !== next.waitlistStatus) return false;
             if (prev.customerPassword !== next.customerPassword) return false;
+            if (prev.trackingNumber !== next.trackingNumber) return false;
             if (prev.waitlistRankMap !== next.waitlistRankMap) return false;
             
             const pType = prev.specialCustomers && prev.specialCustomers[normalizeString(prev.nick)]?.type;
@@ -1391,112 +1389,107 @@ useEffect(() => {
             return true;
         });
 
-      const SmartMenuModal = ({ isOpen, onClose, inventory }) => {
-    const [groupedMenu, setGroupedMenu] = useState([]);
-    const [searchTerm, setSearchTerm] = useState('');
+        const SmartMenuModal = ({ isOpen, onClose, inventory }) => {
+            const [groupedMenu, setGroupedMenu] = useState([]);
+            const [searchTerm, setSearchTerm] = useState('');
 
-    useEffect(() => {
-        if (isOpen) {
-            setSearchTerm(''); // 모달 열릴 때 검색어 초기화
-            // ✨ 분리되어 있던 자체 로직을 삭제하고, 개선된 스마트 그룹핑(generateSmartGroups) 알고리즘을 바로 호출합니다.
-            const finalMenu = generateSmartGroups(inventory);
-            setGroupedMenu(finalMenu);
-        }
-    }, [isOpen, inventory]);
+            useEffect(() => {
+                if (isOpen) {
+                    setSearchTerm('');
+                    const finalMenu = generateSmartGroups(inventory);
+                    setGroupedMenu(finalMenu);
+                }
+            }, [isOpen, inventory]);
 
-    if (!isOpen) return null;
+            if (!isOpen) return null;
 
-    // ✨ 검색 기능 적용
-    const filteredMenu = groupedMenu.filter(item => {
-        if (!searchTerm) return true;
-        const term = searchTerm.toLowerCase();
-        return String(item.baseName).toLowerCase().includes(term) || item.options.some(opt => String(opt).toLowerCase().includes(term));
-    });
+            const filteredMenu = groupedMenu.filter(item => {
+                if (!searchTerm) return true;
+                const term = searchTerm.toLowerCase();
+                return String(item.baseName).toLowerCase().includes(term) || item.options.some(opt => String(opt).toLowerCase().includes(term));
+            });
 
-    const copyToClipboard = (text, e) => {
-        const textArea = document.createElement("textarea"); textArea.value = text.trim(); document.body.appendChild(textArea); textArea.select();
-        try { 
-            document.execCommand('copy'); 
-            const el = e.currentTarget; const origText = el.innerHTML; const origClass = el.className;
-            el.innerHTML = '<i class="ph ph-check-circle" data-phosphor-icon-weight="bold"></i> 완료';
-            el.className = 'px-2 py-1 rounded text-xs font-bold transition-colors bg-green-600 text-white shadow-sm flex items-center gap-1 shrink-0';
-            setTimeout(() => { el.innerHTML = origText; el.className = origClass; }, 1000);
-        } catch (err) {} document.body.removeChild(textArea);
-    };
+            const copyToClipboard = (text, e) => {
+                const textArea = document.createElement("textarea"); textArea.value = text.trim(); document.body.appendChild(textArea); textArea.select();
+                try { 
+                    document.execCommand('copy'); 
+                    const el = e.currentTarget; const origText = el.innerHTML; const origClass = el.className;
+                    el.innerHTML = '<i class="ph ph-check-circle" data-phosphor-icon-weight="bold"></i> 완료';
+                    el.className = 'px-2 py-1 rounded text-xs font-bold transition-colors bg-green-600 text-white shadow-sm flex items-center gap-1 shrink-0';
+                    setTimeout(() => { el.innerHTML = origText; el.className = origClass; }, 1000);
+                } catch (err) {} document.body.removeChild(textArea);
+            };
 
-    const handleCopyItem = (item, e) => {
-        // ✨ 옵션 구분을 쉼표(,)로 처리하고 앞에 이모지 🔹 추가
-        const optText = item.options.length > 0 ? ` ${item.options.join(', ')}` : '';
-        const text = `🔹 ${item.baseName}${optText} / ${Number(item.price).toLocaleString()}원`;
-        copyToClipboard(text, e);
-    };
+            const handleCopyItem = (item, e) => {
+                const optText = item.options.length > 0 ? ` ${item.options.join(', ')}` : '';
+                const text = `🔹 ${item.baseName}${optText} / ${Number(item.price).toLocaleString()}원`;
+                copyToClipboard(text, e);
+            };
 
-    const handleCopyAll = (e) => {
-        let text = "📌 현재 판매목록\n";
-        filteredMenu.forEach(item => {
-            // ✨ 옵션 구분을 쉼표(,)로 처리하고 앞에 이모지 🔹 추가
-            const optText = item.options.length > 0 ? ` ${item.options.join(', ')}` : '';
-            text += `🔹 ${item.baseName}${optText} / ${Number(item.price).toLocaleString()}원\n`;
-        });
-        copyToClipboard(text.trim(), e);
-    };
+            const handleCopyAll = (e) => {
+                let text = "📌 현재 판매목록\n";
+                filteredMenu.forEach(item => {
+                    const optText = item.options.length > 0 ? ` ${item.options.join(', ')}` : '';
+                    text += `🔹 ${item.baseName}${optText} / ${Number(item.price).toLocaleString()}원\n`;
+                });
+                copyToClipboard(text.trim(), e);
+            };
 
-    return (
-        <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[9999] animate-pop">
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl p-5 w-full max-w-md mx-4 flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
-                <div className="mb-4 border-b dark:border-slate-700 pb-3 flex justify-between items-center shrink-0">
-                    <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2"><Icon name="clipboard-text" weight="fill" className="text-blue-500"/> 스마트 메뉴판</h3>
-                    <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><Icon name="x" weight="bold" size={20}/></button>
-                </div>
-                
-                {/* 검색창 UI */}
-                <div className="relative mb-3 shrink-0">
-                    <Icon name="magnifying-glass" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 size={14}"/>
-                    <input 
-                        type="text" 
-                        placeholder="상품명 또는 옵션 검색..." 
-                        value={searchTerm}
-                        onChange={e => setSearchTerm(e.target.value)}
-                        autoFocus
-                        className="w-full border dark:border-slate-600 rounded-lg pl-8 pr-3 py-2 text-sm bg-slate-50 dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                </div>
+            return (
+                <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[9999] animate-pop">
+                    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl p-5 w-full max-w-md mx-4 flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
+                        <div className="mb-4 border-b dark:border-slate-700 pb-3 flex justify-between items-center shrink-0">
+                            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2"><Icon name="clipboard-text" weight="fill" className="text-blue-500"/> 스마트 메뉴판</h3>
+                            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><Icon name="x" weight="bold" size={20}/></button>
+                        </div>
+                        
+                        <div className="relative mb-3 shrink-0">
+                            <Icon name="magnifying-glass" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 size={14}"/>
+                            <input 
+                                type="text" 
+                                placeholder="상품명 또는 옵션 검색..." 
+                                value={searchTerm}
+                                onChange={e => setSearchTerm(e.target.value)}
+                                autoFocus
+                                className="w-full border dark:border-slate-600 rounded-lg pl-8 pr-3 py-2 text-sm bg-slate-50 dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                        </div>
 
-                <div className="flex-1 overflow-y-auto space-y-2 pr-1 pb-2">
-                    {filteredMenu.length === 0 ? (
-                        <div className="text-center py-6 text-slate-400 text-sm">검색 결과가 없습니다.</div>
-                    ) : (
-                        filteredMenu.map((item, idx) => (
-                            <div key={idx} className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-2.5 rounded-lg flex justify-between items-center gap-3">
-                                <div className="flex flex-col min-w-0">
-                                    <div className="font-bold text-sm text-slate-800 dark:text-slate-200 truncate">{item.baseName}</div>
-                                    <div className="text-xs font-bold text-blue-600 dark:text-blue-400 mt-0.5">{Number(item.price).toLocaleString()}원</div>
-                                    {item.options.length > 0 && (
-                                        <div className="flex flex-wrap gap-1 mt-1.5">
-                                            {item.options.map((opt, oIdx) => (
-                                                <span key={oIdx} className="text-[10px] bg-white dark:bg-slate-800 border dark:border-slate-600 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded shadow-sm">{opt}</span>
-                                            ))}
+                        <div className="flex-1 overflow-y-auto space-y-2 pr-1 pb-2">
+                            {filteredMenu.length === 0 ? (
+                                <div className="text-center py-6 text-slate-400 text-sm">검색 결과가 없습니다.</div>
+                            ) : (
+                                filteredMenu.map((item, idx) => (
+                                    <div key={idx} className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-2.5 rounded-lg flex justify-between items-center gap-3">
+                                        <div className="flex flex-col min-w-0">
+                                            <div className="font-bold text-sm text-slate-800 dark:text-slate-200 truncate">{item.baseName}</div>
+                                            <div className="text-xs font-bold text-blue-600 dark:text-blue-400 mt-0.5">{Number(item.price).toLocaleString()}원</div>
+                                            {item.options.length > 0 && (
+                                                <div className="flex flex-wrap gap-1 mt-1.5">
+                                                    {item.options.map((opt, oIdx) => (
+                                                        <span key={oIdx} className="text-[10px] bg-white dark:bg-slate-800 border dark:border-slate-600 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded shadow-sm">{opt}</span>
+                                                    ))}
+                                                </div>
+                                            )}
                                         </div>
-                                    )}
-                                </div>
-                                <button onClick={(e) => handleCopyItem(item, e)} className="px-2 py-1 rounded text-xs font-bold transition-colors bg-white dark:bg-slate-800 border dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 shadow-sm shrink-0">
-                                    복사
-                                </button>
-                            </div>
-                        ))
-                    )}
+                                        <button onClick={(e) => handleCopyItem(item, e)} className="px-2 py-1 rounded text-xs font-bold transition-colors bg-white dark:bg-slate-800 border dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 shadow-sm shrink-0">
+                                            복사
+                                        </button>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                        
+                        <div className="mt-3 pt-3 border-t dark:border-slate-700 shrink-0 flex gap-2">
+                            <button onClick={onClose} className="flex-1 py-2.5 rounded-lg font-bold text-sm bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors">닫기</button>
+                            <button onClick={handleCopyAll} className="flex-1 py-2.5 rounded-lg font-bold text-sm bg-blue-600 hover:bg-blue-700 text-white transition-colors shadow-sm flex items-center justify-center gap-1.5"><Icon name="copy" weight="bold"/> {searchTerm ? '검색된 메뉴 복사' : '전체 메뉴 복사'}</button>
+                        </div>
+                    </div>
                 </div>
-                
-                <div className="mt-3 pt-3 border-t dark:border-slate-700 shrink-0 flex gap-2">
-                    <button onClick={onClose} className="flex-1 py-2.5 rounded-lg font-bold text-sm bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors">닫기</button>
-                    <button onClick={handleCopyAll} className="flex-1 py-2.5 rounded-lg font-bold text-sm bg-blue-600 hover:bg-blue-700 text-white transition-colors shadow-sm flex items-center justify-center gap-1.5"><Icon name="copy" weight="bold"/> {searchTerm ? '검색된 메뉴 복사' : '전체 메뉴 복사'}</button>
-                </div>
-            </div>
-        </div>
-    );
-};
+            );
+        };
 
-const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHistory, setProductHistory, quickShipping, jejuShipping, freeShippingThreshold, cardFeeRate, shippingOverrides, setShippingOverrides, bankAccount, googleScriptUrl, depSheetId, masterSheetId, addresses, setAddresses, cardPayments, setCardPayments, manualDeposits, setManualDeposits, matchedDeposits, setMatchedDeposits, depositorNames, setDepositorNames, clickedChats, setClickedChats, openModal, keywords, setKeywords, sentAddressRequests, setSentAddressRequests, deletedDepositIds, setDeletedDepositIds, checkedOrders, setCheckedOrders, addressMapping, setAddressMapping, templateConfig, specialCustomers, setSpecialCustomers, inventory, setInventory, quickMessages, handleResetAllData, broadcastName, setGlobalError, cashReceipts, setCashReceipts, soundEnabled, soundVolume, depositLinks, setDepositLinks, noShowCustomers, setNoShowCustomers, waitlistCustomers, setWaitlistCustomers, customerPasswords, setCustomerPasswords }) => {
+const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHistory, setProductHistory, quickShipping, jejuShipping, freeShippingThreshold, cardFeeRate, shippingOverrides, setShippingOverrides, bankAccount, googleScriptUrl, depSheetId, masterSheetId, addresses, setAddresses, cardPayments, setCardPayments, manualDeposits, setManualDeposits, matchedDeposits, setMatchedDeposits, depositorNames, setDepositorNames, clickedChats, setClickedChats, openModal, keywords, setKeywords, sentAddressRequests, setSentAddressRequests, deletedDepositIds, setDeletedDepositIds, checkedOrders, setCheckedOrders, addressMapping, setAddressMapping, templateConfig, specialCustomers, setSpecialCustomers, inventory, setInventory, quickMessages, handleResetAllData, broadcastName, setGlobalError, cashReceipts, setCashReceipts, soundEnabled, soundVolume, depositLinks, setDepositLinks, noShowCustomers, setNoShowCustomers, waitlistCustomers, setWaitlistCustomers, customerPasswords, setCustomerPasswords, trackingNumbers, setTrackingNumbers }) => {
             const [serverDeposits, setServerDeposits] = useState([]);
             const [selectedNick, setSelectedNick] = useState(null);
             const feeRateNum = (cardFeeRate !== undefined && cardFeeRate !== '' && Number(cardFeeRate) > 0) ? Number(cardFeeRate) : 10;
@@ -2778,7 +2771,7 @@ const dashboardStats = useMemo(() => {
                 openModal(`'${nick}' 님의 주문서 열람 비밀번호(핸드폰 뒤 4자리)를 설정하세요.`, 'prompt', (newPin) => {
                     if (newPin !== null) {
                         const cleanPin = String(newPin).replace(/[^0-9]/g, '').slice(-4);
-                        setCustomerPasswords(prev => ({ ...prev, [nick]: cleanPin }));
+                        setCustomerPasswords(prev => Object.assign({}, prev, { [nick]: cleanPin }));
                         if (googleScriptUrl && masterSheetId) {
                             fetchGas(googleScriptUrl, {
                                 action: 'save_customer_password',
@@ -2789,6 +2782,23 @@ const dashboardStats = useMemo(() => {
                     }
                 }, null, currentPin || '');
             }, [openModal, setCustomerPasswords, googleScriptUrl, masterSheetId]);
+
+            const handleSetTrackingNumber = useCallback((nick, currentTrk = '') => {
+                openModal(`'${nick}' 님의 롯데택배 송장번호를 입력하세요.\n(여러 개일 경우 쉼표로 구분)`, 'prompt', (newTrk) => {
+                    if (newTrk !== null) {
+                        const cleanTrk = String(newTrk).replace(/[^0-9,-]/g, '').trim();
+                        setTrackingNumbers(prev => Object.assign({}, prev, { [nick]: cleanTrk }));
+                        if (googleScriptUrl && masterSheetId) {
+                            fetchGas(googleScriptUrl, {
+                                action: 'save_tracking_numbers',
+                                masterId: getCleanSheetId(masterSheetId),
+                                broadcastName: broadcastName,
+                                data: [{ nickname: nick, trackingNumber: cleanTrk }]
+                            }).catch(() => {});
+                        }
+                    }
+                }, null, currentTrk || '');
+            }, [openModal, setTrackingNumbers, googleScriptUrl, masterSheetId, broadcastName]);
 
             useEffect(() => {
                 const timer = setTimeout(() => {
@@ -2949,6 +2959,7 @@ const dashboardStats = useMemo(() => {
                     const cleanPhone = addr.phone ? fixPhoneNumber(addr.phone) : '';
                     const pinToSave = (customerPasswords && customerPasswords[customerVal]) || (cleanPhone.length >= 4 ? cleanPhone.slice(-4) : '');
                     const isConfirmedOrder = checkedOrders && checkedOrders.has(customerVal);
+                    const trkToSave = (trackingNumbers && trackingNumbers[customerVal]) || '';
                     
                     return { 
                         '닉네임': customerVal,
@@ -2957,7 +2968,7 @@ const dashboardStats = useMemo(() => {
                         '단가(제품금액)': o.price,
                         '배송비': currentShipping,
                         '입금액': depositToSave,
-                        '카드결제': isCard ? 'O' : '',
+                        '카드결제': isCard ? `O(${feeRateNum}%)` : '',
                         '수령인명': addr.realname || '',
                         '연락처': addr.phone ? "'" + addr.phone : '',
                         '우편번호': addr.zipcode ? "'" + addr.zipcode : '',
@@ -2968,7 +2979,8 @@ const dashboardStats = useMemo(() => {
                         '대기여부': waitlistCellVal,
                         '비밀번호': pinToSave ? "'" + pinToSave : '',
                         '주문확인': isConfirmedOrder ? 'O' : '',
-                        '입금내역JSON': customerDepsJson
+                        '입금내역JSON': customerDepsJson,
+                        '송장번호': trkToSave ? "'" + trkToSave : ''
                     }; 
                 }); 
 
@@ -2999,21 +3011,22 @@ const dashboardStats = useMemo(() => {
                         '대기여부': '',
                         '비밀번호': '',
                         '주문확인': '',
-                        '입금내역JSON': ''
+                        '입금내역JSON': '',
+                        '송장번호': ''
                     }); 
                 }
                 try { 
                     const actualSheetId = getCleanSheetId(masterSheetId); 
                     if(actualSheetId) { 
                         const confirmedNicknames = uniqueNicknames.filter(n => checkedOrders && checkedOrders.has(n));
-                        await fetchGas(googleScriptUrl, { action: 'save_orders', masterId: actualSheetId, data: saveList, nicknames: uniqueNicknames, confirmedNicknames: confirmedNicknames }); 
+                        await fetchGas(googleScriptUrl, { action: 'save_orders', masterId: actualSheetId, broadcastName: broadcastName, data: saveList, nicknames: uniqueNicknames, confirmedNicknames: confirmedNicknames }); 
                         if (isManual && Array.isArray(inventoryRef.current)) {
                             await fetchGas(googleScriptUrl, { action: 'save_inventory', masterId: actualSheetId, data: inventoryRef.current.map(i => ({ name: i.name, price: i.price, status: i.isSoldOut ? '품절' : '' })) });
                         }
                         lastSavedDataStr.current = currentDataStr;
                     } 
                 } catch(e) {} finally { if (isManual) setIsSaving(false); } 
-            }, [orders, cardPayments, getCalculatedShipping, googleScriptUrl, addressLookup, masterSheetId, broadcastName, specialCustomers, noShowCustomers, waitlistCustomers, customerPasswords, checkedOrders, depositLinks, matchedDeposits, freeShippingThreshold, quickShipping, feeRateNum, waitlistRankMap]);
+            }, [orders, cardPayments, getCalculatedShipping, googleScriptUrl, addressLookup, masterSheetId, broadcastName, specialCustomers, noShowCustomers, waitlistCustomers, customerPasswords, trackingNumbers, checkedOrders, depositLinks, matchedDeposits, freeShippingThreshold, quickShipping, feeRateNum, waitlistRankMap]);
 
             const autoSaveRef = useRef(); useEffect(() => { autoSaveRef.current = autoSaveToGoogleSheet; }, [autoSaveToGoogleSheet]);
             useEffect(() => { const saveInterval = setInterval(() => { if (autoSaveRef.current) autoSaveRef.current(); }, 10000); return () => clearInterval(saveInterval); }, []); 
@@ -3762,12 +3775,12 @@ const dashboardStats = useMemo(() => {
                                 const ship = getCalculatedShipping(nick, prodSumForShipping); 
                                 const depSum = items.reduce((s, i) => s + (i.deposit || 0), 0);
                                 const baseGrand = prodSum + (activeItems.length > 0 ? ship : 0); const baseBal = baseGrand - depSum;
-                                const isCard = cardPayments[nick]; const cardFee = (isCard && baseBal > 0) ? Math.round(baseBal * feeMultiplier) : 0;
+                                const isCard = Boolean(cardPayments[nick]); const cardFee = (isCard && baseBal > 0) ? Math.round(baseBal * feeMultiplier) : 0;
                                 const grand = baseGrand + cardFee; const bal = baseBal + cardFee;
                                 const { data: addrData, type: addrType } = addressLookup.get(nick);
                                 const customerDeps = allDeposits.filter(d => ((depositLinks[d.id] === nick) || (d.legacyId && depositLinks[d.legacyId] === nick)) && (matchedDeposits.has(d.id) || (d.legacyId && matchedDeposits.has(d.legacyId))));
                                 
-                                return (<CustomerBlock key={nick} nick={nick} items={items} isSelected={selectedNick === nick} currentShipping={ship} isCard={isCard} isPaidState={bal <= 0 && activeItems.length > 0} grandTotal={grand} depositTotal={depSum} balance={bal} baseGrandTotal={baseGrand} baseBalance={baseBal} addr={addrData} addrType={addrType} addressMapping={addressMapping} autoDepositorName={addrData?.realname || ''} displayDepositorName={depositorNames[nick] || addrData?.realname || '입금자'} isAutoDepositor={!depositorNames[nick] && addrData?.realname} depositorNames={depositorNames} copyStatus={copyStatus} isOrderConfirmed={checkedOrders.has(nick)} isEditingShipping={editingShippingNick === nick} setSelectedNick={setSelectedNick} addOrderLogic={addOrderLogic} handleNicknameEdit={handleNicknameEdit} toggleCardPayment={toggleCardPayment} handleShippingChange={handleShippingChange} setEditingShippingNick={setEditingShippingNick} openModal={openModal} setDepositorNames={setDepositorNames} handleFullDepositToggle={handleFullDepositToggle} copyOrderSheet={copyOrderSheet} handleOrderCheckToggle={handleOrderCheckToggle} handleAddressUnmapping={handleAddressUnmapping} handleAddressMapping={handleAddressMapping} handleProductChange={handleProductChange} handleQuantityUpdate={handleQuantityUpdate} handleOrderCancel={handleOrderCancel} handleOrderDelete={handleOrderDelete} toggleVIP={specialCustomers} specialCustomers={specialCustomers} handleOpenQuickAddress={handleOpenQuickAddress} findAddressSuggestions={findAddressSuggestions} cashReceiptStatus={cashReceipts[nick]} toggleCashReceipt={toggleCashReceipt} inventory={inventory} productHistory={productHistory} customerDeposits={customerDeps} handleDepositUnmatch={handleDepositUnmatch} handleMultiAddOpen={setMultiAddNick} toggleNoShow={toggleNoShow} toggleWaitlist={toggleWaitlist} noShowStatus={noShowCustomers[nick]} waitlistStatus={waitlistCustomers[nick]} customerPassword={customerPasswords && customerPasswords[nick]} handleSetCustomerPassword={handleSetCustomerPassword} waitlistRankMap={waitlistRankMap} />);
+                                return (<CustomerBlock key={nick} nick={nick} items={items} isSelected={selectedNick === nick} currentShipping={ship} isCard={isCard} isPaidState={bal <= 0 && activeItems.length > 0} grandTotal={grand} depositTotal={depSum} balance={bal} baseGrandTotal={baseGrand} baseBalance={baseBal} addr={addrData} addrType={addrType} addressMapping={addressMapping} autoDepositorName={addrData?.realname || ''} displayDepositorName={depositorNames[nick] || addrData?.realname || '입금자'} isAutoDepositor={!depositorNames[nick] && addrData?.realname} depositorNames={depositorNames} copyStatus={copyStatus} isOrderConfirmed={checkedOrders.has(nick)} isEditingShipping={editingShippingNick === nick} setSelectedNick={setSelectedNick} addOrderLogic={addOrderLogic} handleNicknameEdit={handleNicknameEdit} toggleCardPayment={toggleCardPayment} handleShippingChange={handleShippingChange} setEditingShippingNick={setEditingShippingNick} openModal={openModal} setDepositorNames={setDepositorNames} handleFullDepositToggle={handleFullDepositToggle} copyOrderSheet={copyOrderSheet} handleOrderCheckToggle={handleOrderCheckToggle} handleAddressUnmapping={handleAddressUnmapping} handleAddressMapping={handleAddressMapping} handleProductChange={handleProductChange} handleQuantityUpdate={handleQuantityUpdate} handleOrderCancel={handleOrderCancel} handleOrderDelete={handleOrderDelete} toggleVIP={specialCustomers} specialCustomers={specialCustomers} handleOpenQuickAddress={handleOpenQuickAddress} findAddressSuggestions={findAddressSuggestions} cashReceiptStatus={cashReceipts[nick]} toggleCashReceipt={toggleCashReceipt} inventory={inventory} productHistory={productHistory} customerDeposits={customerDeps} handleDepositUnmatch={handleDepositUnmatch} handleMultiAddOpen={setMultiAddNick} toggleNoShow={toggleNoShow} toggleWaitlist={toggleWaitlist} noShowStatus={noShowCustomers[nick]} waitlistStatus={waitlistCustomers[nick]} customerPassword={customerPasswords && customerPasswords[nick]} handleSetCustomerPassword={handleSetCustomerPassword} trackingNumber={trackingNumbers && trackingNumbers[nick]} handleSetTrackingNumber={handleSetTrackingNumber} waitlistRankMap={waitlistRankMap} />);
                             })}
                         </div>
                     </div>
@@ -3987,9 +4000,15 @@ const dashboardStats = useMemo(() => {
             );
         };
 
-    const OrderManagementTab = ({ orders, shippingOverrides, quickShipping, jejuShipping, freeShippingThreshold, cardFeeRate, broadcastName, addresses, handleExportBackup, handleImportBackup, addressMapping, cardPayments, specialCustomers, openModal, cashReceipts, inventory, productHistory, noShowCustomers, waitlistCustomers }) => {
+    const OrderManagementTab = ({ orders, shippingOverrides, quickShipping, jejuShipping, freeShippingThreshold, cardFeeRate, broadcastName, addresses, handleExportBackup, handleImportBackup, addressMapping, cardPayments, specialCustomers, openModal, cashReceipts, inventory, productHistory, noShowCustomers, waitlistCustomers, trackingNumbers, setTrackingNumbers, googleScriptUrl, masterSheetId }) => {
             const feeRateNum = (cardFeeRate !== undefined && cardFeeRate !== '' && Number(cardFeeRate) > 0) ? Number(cardFeeRate) : 10;
             const feeMultiplier = feeRateNum / 100;
+            const [targetTrackingBroadcast, setTargetTrackingBroadcast] = useState(broadcastName || '오늘의방송');
+            const trackingFileInputRef = useRef(null);
+
+            useEffect(() => {
+                if (broadcastName) setTargetTrackingBroadcast(broadcastName);
+            }, [broadcastName]);
             const findAddress = (nick) => {
                 if (!nick) return undefined;
                 const cleanNick = normalizeString(nick);
@@ -4143,7 +4162,8 @@ const dashboardStats = useMemo(() => {
                         '이름': addrInfo.realname || '', 
                         '핸드폰번호': cleanPhone, 
                         '주소': fullAddress, 
-                        '배송메모': addrInfo.memo || ''
+                        '배송메모': addrInfo.memo || '',
+                        '송장번호': (trackingNumbers && trackingNumbers[nick]) ? trackingNumbers[nick] : ''
                     }); 
                     
                     excelRows.push(createRow(`[ ${nick} ]`)); 
@@ -4309,6 +4329,70 @@ const dashboardStats = useMemo(() => {
                 e.target.value = ''; // 같은 파일을 다시 올려도 동작하도록 리셋
             };
 
+            const handleTrackingExcelUpload = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = async (event) => {
+                    try {
+                        const data = new Uint8Array(event.target.result);
+                        const workbook = window.XLSX.read(data, { type: 'array' });
+                        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                        const rows = window.XLSX.utils.sheet_to_json(firstSheet, { defval: '' });
+
+                        const parsedList = [];
+                        const localTrkMap = {};
+
+                        rows.forEach(r => {
+                            const keys = Object.keys(r);
+                            let nick = '', realname = '', phone = '', trk = '';
+                            keys.forEach(k => {
+                                const cleanK = k.replace(/\s+/g, '');
+                                const val = String(r[k] || '').trim();
+                                if (!val) return;
+                                if (cleanK.includes('닉네임') || cleanK.includes('주문자')) nick = val.replace(/^\[.*?\]\s*/, '').trim();
+                                else if (cleanK.includes('수령인') || cleanK.includes('받는분') || cleanK === '이름' || cleanK === '성명') realname = val;
+                                else if (cleanK.includes('전화') || cleanK.includes('연락처') || cleanK.includes('핸드폰') || cleanK.includes('휴대폰')) phone = val.replace(/[^0-9]/g, '');
+                                else if (cleanK.includes('송장') || cleanK.includes('운송장') || cleanK.includes('등기')) trk = val.replace(/[^0-9,-]/g, '');
+                            });
+                            if (trk && (nick || realname || phone)) {
+                                parsedList.push({ nickname: nick, realname, phone, trackingNumber: trk });
+                                if (nick) localTrkMap[nick] = trk;
+                            }
+                        });
+
+                        if (parsedList.length === 0) {
+                            openModal('엑셀에서 송장번호 데이터를 찾지 못했습니다.\n열 제목에 [닉네임(또는 이름/연락처)]와 [송장번호(또는 운송장번호)]가 포함되어 있는지 확인해 주세요.', 'alert');
+                            return;
+                        }
+
+                        if (Object.keys(localTrkMap).length > 0) {
+                            setTrackingNumbers(prev => ({ ...prev, ...localTrkMap }));
+                        }
+
+                        if (googleScriptUrl && masterSheetId) {
+                            const res = await fetchGas(googleScriptUrl, {
+                                action: 'save_tracking_numbers',
+                                masterId: getCleanSheetId(masterSheetId),
+                                broadcastName: targetTrackingBroadcast || broadcastName,
+                                data: parsedList
+                            });
+                            if (res && res.success) {
+                                openModal(`[${targetTrackingBroadcast || broadcastName}] 시트에 총 ${parsedList.length}건의 롯데택배 송장번호가 일괄 등록되었습니다!`, 'alert');
+                            } else {
+                                openModal(`로컬에는 반영되었으나 시트 저장 중 오류가 발생했습니다: ${res?.error || res?.message || ''}`, 'alert');
+                            }
+                        } else {
+                            openModal(`총 ${parsedList.length}건의 송장번호가 등록되었습니다.`, 'alert');
+                        }
+                    } catch (err) {
+                        openModal('송장 엑셀 파일을 읽는 중 오류가 발생했습니다.', 'alert');
+                    }
+                };
+                reader.readAsArrayBuffer(file);
+                e.target.value = '';
+            };
+
             return (
                 <div className="flex flex-col items-center justify-center h-full p-10 gap-6 overflow-y-auto dark:bg-slate-900">
                     <div className="grid grid-cols-2 gap-6 w-full max-w-5xl"> 
@@ -4356,6 +4440,25 @@ const dashboardStats = useMemo(() => {
                                 <button onClick={() => chatFileInputRef.current.click()} className="w-full bg-indigo-600 text-white font-bold py-3 rounded-lg transition-transform hover:scale-105 shadow-md flex items-center justify-center gap-2 hover:bg-indigo-700"><Icon name="microsoft-excel-logo" weight="fill"/> 엑셀 채팅 업로드</button>
                             </div>
                         </div>
+
+                        {/* ✨ 방송별 롯데택배 송장번호 엑셀 일괄 등록 영역 */}
+                        <div className="col-span-2 bg-red-50 dark:bg-red-900/20 p-6 rounded-xl border border-red-200 dark:border-red-800 flex flex-row items-center justify-between gap-4">
+                            <div className="text-left flex-1">
+                                <h2 className="text-lg font-bold mb-1.5 text-red-700 dark:text-red-300 flex items-center gap-2"><Icon name="truck" weight="fill"/> 방송별 롯데택배 송장번호 일괄 등록</h2>
+                                <p className="text-red-600 dark:text-red-400 text-xs">택배사 출고 엑셀 파일(닉네임 또는 수령인/연락처 + 송장번호 열 포함)을 올리면 해당 방송 주문서 시트에 송장번호가 자동 매칭되어 고객 포털에서 즉시 배송흐름 조회가 가능해집니다.</p>
+                            </div>
+                            <div className="flex items-center gap-2 w-1/2">
+                                <input 
+                                    type="text" 
+                                    value={targetTrackingBroadcast} 
+                                    onChange={e => setTargetTrackingBroadcast(e.target.value)} 
+                                    placeholder="적용할 방송명 (예: 10/18 여성복)" 
+                                    className="flex-1 border border-red-300 dark:border-red-700 rounded-lg px-3 py-3 text-xs font-bold bg-white dark:bg-slate-800 dark:text-white outline-none"
+                                />
+                                <input type="file" accept=".xlsx, .xls, .csv" ref={trackingFileInputRef} onChange={handleTrackingExcelUpload} className="hidden" />
+                                <button onClick={() => trackingFileInputRef.current.click()} className="bg-red-600 text-white font-bold px-4 py-3 rounded-lg transition-transform hover:scale-105 shadow-md flex items-center justify-center gap-1.5 hover:bg-red-700 whitespace-nowrap text-xs"><Icon name="upload-simple" weight="bold"/> 송장 엑셀 업로드</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             );
@@ -4365,7 +4468,7 @@ const dashboardStats = useMemo(() => {
             const [orders, setOrders] = useLocalStorage('youtubeOrders', []);
             const [activeTab, setActiveTab] = useState('live');
             
-            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbygYRyEJboWJE_LB_EOApSuJYqIwmTEiIomzqmyPtMwe5He6LMElLqU5Sylf85a5K3Q/exec';
+            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxgxJiRBjnkVS1Eg6gez4PUzCibhNpnKqPlsXqab6bGHTjh5fX_mgsaYSfrOxNeIk02/exec';
             const [googleScriptUrl, setGoogleScriptUrl] = useLocalStorage('googleScriptUrl', NEW_SCRIPT_URL);
         
         const [youtubeApiKey, setYoutubeApiKey] = useLocalStorage('youtubeApiKey', '');
@@ -4384,7 +4487,7 @@ const dashboardStats = useMemo(() => {
 
             useEffect(() => {
                 const currentUrl = window.localStorage.getItem(getLsKey('googleScriptUrl'));
-                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbygYRyEJboWJE_LB_EOApSuJYqIwmTEiIomzqmyPtMwe5He6LMElLqU5Sylf85a5K3Q')) {
+                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbxgxJiRBjnkVS1Eg6gez4PUzCibhNpnKqPlsXqab6bGHTjh5fX_mgsaYSfrOxNeIk02')) {
                     setGoogleScriptUrl(NEW_SCRIPT_URL);
                 }
             }, [setGoogleScriptUrl]);
@@ -4406,6 +4509,7 @@ const dashboardStats = useMemo(() => {
             const [noShowCustomers, setNoShowCustomers] = useLocalStorage('noShowCustomers', {});
             const [waitlistCustomers, setWaitlistCustomers] = useLocalStorage('waitlistCustomers', {});
             const [customerPasswords, setCustomerPasswords] = useLocalStorage('customerPasswords', {});
+            const [trackingNumbers, setTrackingNumbers] = useLocalStorage('trackingNumbers', {});
 
             const [matchedDeposits, setMatchedDeposits] = useState(() => { try { const s = localStorage.getItem(getLsKey('matchedDeposits')); const p = JSON.parse(s); return Array.isArray(p) ? new Set(p) : new Set(); } catch(e){ return new Set(); } });
             const [depositLinks, setDepositLinks] = useLocalStorage('depositLinks', {});
@@ -4486,6 +4590,7 @@ const dashboardStats = useMemo(() => {
                     
                     setManualDeposits([]); localStorage.removeItem(getLsKey('ignoredAutoMatch'));
                     setNoShowCustomers({}); setWaitlistCustomers({});
+                    setTrackingNumbers({});
                     window.localStorage.removeItem(getLsKey('savedChats'));
                     
                     if (googleScriptUrl && masterSheetId) {
@@ -4500,7 +4605,7 @@ const dashboardStats = useMemo(() => {
                 const backupData = {
                     orders, productHistory, shippingOverrides, addresses, cardPayments, cashReceipts, manualDeposits, matchedDeposits: [...matchedDeposits], depositLinks, depositorNames, clickedChats: [...clickedChats],
                     keywords, sentAddressRequests: [...sentAddressRequests], deletedDepositIds: [...deletedDepositIds], checkedOrders: [...checkedOrders], addressMapping, specialCustomers, inventory,
-                    noShowCustomers, waitlistCustomers, quickMessages, settings: {
+                    noShowCustomers, waitlistCustomers, trackingNumbers, quickMessages, settings: {
                         googleScriptUrl, youtubeApiKey, youtubeVideoId, depSheetId, addrSheetId, masterSheetId, broadcastName, quickShipping, jejuShipping, freeShippingThreshold, cardFeeRate, templateConfig, bankAccount, addressStartDate, soundVolume
                     }, timestamp: new Date().toISOString()
                 };
@@ -4538,6 +4643,7 @@ const dashboardStats = useMemo(() => {
                             if (data.inventory) setInventory(data.inventory);
                             if (data.noShowCustomers) setNoShowCustomers(data.noShowCustomers);
                             if (data.waitlistCustomers) setWaitlistCustomers(data.waitlistCustomers);
+                            if (data.trackingNumbers) setTrackingNumbers(data.trackingNumbers);
                             if (data.quickMessages) setQuickMessages(data.quickMessages);
                             
                             if (data.settings) {
@@ -4600,10 +4706,10 @@ const dashboardStats = useMemo(() => {
 
                     <div className="flex-1 overflow-hidden flex flex-col">
                         <div className={`flex-1 overflow-hidden ${activeTab === 'live' ? 'flex' : 'hidden'}`}>
-                            <LiveTab youtubeApiKey={youtubeApiKey} youtubeVideoId={youtubeVideoId} orders={orders} setOrders={setOrders} productHistory={productHistory} setProductHistory={setProductHistory} quickShipping={quickShipping} jejuShipping={jejuShipping} freeShippingThreshold={freeShippingThreshold} cardFeeRate={cardFeeRate} shippingOverrides={shippingOverrides} setShippingOverrides={setShippingOverrides} bankAccount={bankAccount} googleScriptUrl={googleScriptUrl} depSheetId={depSheetId} masterSheetId={masterSheetId} addresses={addresses} setAddresses={setAddresses} cardPayments={cardPayments} setCardPayments={setCardPayments} manualDeposits={manualDeposits} setManualDeposits={setManualDeposits} matchedDeposits={matchedDeposits} setMatchedDeposits={setMatchedDeposits} depositLinks={depositLinks} setDepositLinks={setDepositLinks} depositorNames={depositorNames} setDepositorNames={setDepositorNames} clickedChats={clickedChats} setClickedChats={setClickedChats} openModal={openModal} keywords={keywords} setKeywords={setKeywords} sentAddressRequests={sentAddressRequests} setSentAddressRequests={setSentAddressRequests} deletedDepositIds={deletedDepositIds} setDeletedDepositIds={setDeletedDepositIds} checkedOrders={checkedOrders} setCheckedOrders={setCheckedOrders} addressMapping={addressMapping} setAddressMapping={setAddressMapping} templateConfig={templateConfig} specialCustomers={specialCustomers} setSpecialCustomers={setSpecialCustomers} inventory={inventory} setInventory={setInventory} quickMessages={quickMessages} handleResetAllData={handleResetAllData} broadcastName={broadcastName} setGlobalError={setGlobalError} cashReceipts={cashReceipts} setCashReceipts={setCashReceipts} soundEnabled={soundEnabled} soundVolume={soundVolume} noShowCustomers={noShowCustomers} setNoShowCustomers={setNoShowCustomers} waitlistCustomers={waitlistCustomers} setWaitlistCustomers={setWaitlistCustomers} customerPasswords={customerPasswords} setCustomerPasswords={setCustomerPasswords} />
+                            <LiveTab youtubeApiKey={youtubeApiKey} youtubeVideoId={youtubeVideoId} orders={orders} setOrders={setOrders} productHistory={productHistory} setProductHistory={setProductHistory} quickShipping={quickShipping} jejuShipping={jejuShipping} freeShippingThreshold={freeShippingThreshold} cardFeeRate={cardFeeRate} shippingOverrides={shippingOverrides} setShippingOverrides={setShippingOverrides} bankAccount={bankAccount} googleScriptUrl={googleScriptUrl} depSheetId={depSheetId} masterSheetId={masterSheetId} addresses={addresses} setAddresses={setAddresses} cardPayments={cardPayments} setCardPayments={setCardPayments} manualDeposits={manualDeposits} setManualDeposits={setManualDeposits} matchedDeposits={matchedDeposits} setMatchedDeposits={setMatchedDeposits} depositLinks={depositLinks} setDepositLinks={setDepositLinks} depositorNames={depositorNames} setDepositorNames={setDepositorNames} clickedChats={clickedChats} setClickedChats={setClickedChats} openModal={openModal} keywords={keywords} setKeywords={setKeywords} sentAddressRequests={sentAddressRequests} setSentAddressRequests={setSentAddressRequests} deletedDepositIds={deletedDepositIds} setDeletedDepositIds={setDeletedDepositIds} checkedOrders={checkedOrders} setCheckedOrders={setCheckedOrders} addressMapping={addressMapping} setAddressMapping={setAddressMapping} templateConfig={templateConfig} specialCustomers={specialCustomers} setSpecialCustomers={setSpecialCustomers} inventory={inventory} setInventory={setInventory} quickMessages={quickMessages} handleResetAllData={handleResetAllData} broadcastName={broadcastName} setGlobalError={setGlobalError} cashReceipts={cashReceipts} setCashReceipts={setCashReceipts} soundEnabled={soundEnabled} soundVolume={soundVolume} noShowCustomers={noShowCustomers} setNoShowCustomers={setNoShowCustomers} waitlistCustomers={waitlistCustomers} setWaitlistCustomers={setWaitlistCustomers} customerPasswords={customerPasswords} setCustomerPasswords={setCustomerPasswords} trackingNumbers={trackingNumbers} setTrackingNumbers={setTrackingNumbers} />
                         </div>
                         <div className={`flex-1 overflow-y-auto ${activeTab === 'management' ? 'block' : 'hidden'}`}>
-                            <OrderManagementTab orders={orders} shippingOverrides={shippingOverrides} quickShipping={quickShipping} jejuShipping={jejuShipping} freeShippingThreshold={freeShippingThreshold} cardFeeRate={cardFeeRate} broadcastName={broadcastName} addresses={addresses} handleExportBackup={handleExportBackup} handleImportBackup={handleImportBackup} addressMapping={addressMapping} cardPayments={cardPayments} specialCustomers={specialCustomers} openModal={openModal} cashReceipts={cashReceipts} inventory={inventory} productHistory={productHistory} noShowCustomers={noShowCustomers} waitlistCustomers={waitlistCustomers} />
+                            <OrderManagementTab orders={orders} shippingOverrides={shippingOverrides} quickShipping={quickShipping} jejuShipping={jejuShipping} freeShippingThreshold={freeShippingThreshold} cardFeeRate={cardFeeRate} broadcastName={broadcastName} addresses={addresses} handleExportBackup={handleExportBackup} handleImportBackup={handleImportBackup} addressMapping={addressMapping} cardPayments={cardPayments} specialCustomers={specialCustomers} openModal={openModal} cashReceipts={cashReceipts} inventory={inventory} productHistory={productHistory} noShowCustomers={noShowCustomers} waitlistCustomers={waitlistCustomers} trackingNumbers={trackingNumbers} setTrackingNumbers={setTrackingNumbers} googleScriptUrl={googleScriptUrl} masterSheetId={masterSheetId} />
                         </div>
                     </div>
 
