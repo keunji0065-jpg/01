@@ -254,15 +254,53 @@
             return new Date(0);
         };
 
+        const formatDepositFullDateTime = (val) => {
+            if (!val) return '';
+            const strVal = String(val).trim();
+            // 1. "2026. 10. 18 오후 4:26:46" 같은 한국어 날짜+시간 형태 -> "26-10-18 16:26"
+            const korFullMatch = strVal.match(/(?:20)?(\d{2})[./-]\s*(\d{1,2})[./-]\s*(\d{1,2})[.\s]*(오전|오후|AM|PM)?\s*(\d{1,2}):(\d{2})/i);
+            if (korFullMatch) {
+                const yy = korFullMatch[1];
+                const mm = String(korFullMatch[2]).padStart(2, '0');
+                const dd = String(korFullMatch[3]).padStart(2, '0');
+                const ampm = (korFullMatch[4] || '').toUpperCase();
+                let hour = parseInt(korFullMatch[5], 10);
+                const min = korFullMatch[6];
+                if ((ampm === '오후' || ampm === 'PM') && hour < 12) hour += 12;
+                else if ((ampm === '오전' || ampm === 'AM') && hour === 12) hour = 0;
+                return `${yy}-${mm}-${dd} ${String(hour).padStart(2, '0')}:${min}`;
+            }
+            // 2. ISO 문자열 -> KST "YY-MM-DD HH:MM"
+            const dt = new Date(strVal);
+            if (!isNaN(dt.getTime()) && strVal.length > 8) {
+                const kst = new Date(dt.getTime() + (9 * 60 * 60 * 1000));
+                const yy = String(kst.getUTCFullYear()).slice(-2);
+                const mm = String(kst.getUTCMonth() + 1).padStart(2, '0');
+                const dd = String(kst.getUTCDate()).padStart(2, '0');
+                const hh = String(kst.getUTCHours()).padStart(2, '0');
+                const min = String(kst.getUTCMinutes()).padStart(2, '0');
+                return `${yy}-${mm}-${dd} ${hh}:${min}`;
+            }
+            return strVal;
+        };
+
         const formatTimeOnly = (val) => { 
-            if (!val) return ''; const strVal = String(val); const dt = new Date(strVal.replace(/-/g, '/'));
-            if (!isNaN(dt) && strVal.length > 8) return dt.toLocaleTimeString('ko-KR', {hour12: false, hour:'2-digit', minute:'2-digit'});
-            const timeMatch = strVal.match(/(\d{1,2}):(\d{2})/);
-            if (timeMatch) {
-                let hour = parseInt(timeMatch[1], 10);
-                if ((strVal.includes('오후') || strVal.toUpperCase().includes('PM')) && hour < 12) hour += 12;
-                else if ((strVal.includes('오전') || strVal.toUpperCase().includes('AM')) && hour === 12) hour = 0;
-                return `${String(hour).padStart(2, '0')}:${timeMatch[2]}`;
+            if (!val) return ''; 
+            const strVal = String(val).trim(); 
+            // 1. "2026. 10. 18 오후 3:27:27" 또는 "오후 3:27"처럼 한국어 오전/오후가 포함된 경우 최우선 처리
+            const korTimeMatch = strVal.match(/(오전|오후|AM|PM)?\s*(\d{1,2}):(\d{2})(?::(\d{2}))?/i);
+            if (korTimeMatch && (strVal.includes('오전') || strVal.includes('오후') || /\b(AM|PM)\b/i.test(strVal) || !strVal.includes('T'))) {
+                let ampm = (korTimeMatch[1] || '').toUpperCase();
+                let hour = parseInt(korTimeMatch[2], 10);
+                const min = korTimeMatch[3];
+                if ((ampm === '오후' || ampm === 'PM') && hour < 12) hour += 12;
+                else if ((ampm === '오전' || ampm === 'AM') && hour === 12) hour = 0;
+                return `${String(hour).padStart(2, '0')}:${min}`;
+            }
+            // 2. ISO 문자열 (예: "2026-10-18T06:27:27.000Z") 처리 -> 한국 시간(KST) 변환
+            const dt = new Date(strVal);
+            if (!isNaN(dt.getTime()) && strVal.length > 8) {
+                return dt.toLocaleTimeString('ko-KR', { hour12: false, hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Seoul' });
             }
             return strVal; 
         };
@@ -2054,8 +2092,11 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                 setGasStatus(prev => prev === "설정 ⚙️: 스크립트 URL 입력!" ? prev : "설정 ⚙️: 스크립트 URL 입력!");
                 return;
             }
-            const activeEl = document.activeElement;
-            if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA') && activeEl.type !== 'checkbox') {
+            const isTypingNow = () => {
+                const el = document.activeElement;
+                return el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') && el.type !== 'checkbox';
+            };
+            if (isTypingNow()) {
                 return;
             }
             if (isGasFetchingRef.current) return;
@@ -2073,31 +2114,83 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                 
                 clearTimeout(slowWarningTimer);
                 
+                // ✨ 네트워크 응답 대기 중에 사장님이 타이핑을 시작했다면 상태 업데이트를 건너뛰어 끊김/커서 튕김 원천 차단
+                if (isTypingNow()) {
+                    return;
+                }
+                
                 if (res && res.status === 'success') {
                     if (res.deposits && Array.isArray(res.deposits)) {
                         let depRows = res.deposits;
                         if (depRows.length > 0 && depRows[0].some(c => typeof c === 'string' && (c.includes('이름') || c.includes('금액') || c.includes('닉네임')))) depRows = depRows.slice(1);
                         const newDeps = depRows.map((row, idx) => {
+                            if (!Array.isArray(row)) return null;
+                            // ✨ '입금 수집기' 시트 전용 고정 열 매핑 (E열: 입금자명, F열: 금액, 맨 마지막 G열: 시간 최우선)
+                            if (row.length >= 6) {
+                                const colE = String(row[4] ?? '').trim();
+                                const colF = String(row[5] ?? '').trim();
+                                const amtF = Number(colF.replace(/,/g, ''));
+                                if (colE && !isNaN(amtF) && amtF > 0) {
+                                    const rawTimeG = String(row[6] || row[row.length - 1] || row[0] || '').trim();
+                                    const time = formatTimeOnly(rawTimeG);
+                                    const cleanName = colE.replace(/^[:"'\-\s]+/, '').replace(/^입\s+/, '').trim();
+                                    // 기존 매칭(`d_23__예쁜전_59000`)이 풀리지 않도록 legacyId도 함께 보관
+                                    return { 
+                                        id: `d_${idx}_${rawTimeG}_${cleanName}_${amtF}`, 
+                                        legacyId: `d_${idx}__${cleanName}_${amtF}`,
+                                        time, 
+                                        rawTime: rawTimeG, 
+                                        name: cleanName, 
+                                        amount: amtF 
+                                    };
+                                }
+                            }
+
                             const validCells = row.filter(cell => cell !== null && cell !== undefined && String(cell).trim() !== '');
                             if (validCells.length < 2) return null;
                             let amountIdx = -1;
-                            for (let i = 0; i < validCells.length; i++) {
+                            // 뒤쪽 열(F열 방향)부터 숫자 금액 탐색
+                            for (let i = validCells.length - 1; i >= 0; i--) {
                                 const val = String(validCells[i]).trim(); const num = Number(val.replace(/,/g, ''));
                                 if (!isNaN(num) && num > 0 && val.match(/^[0-9,]+$/)) { amountIdx = i; break; }
                             }
                             if (amountIdx === -1) return null;
-                            let nameIdx = amountIdx > 0 ? amountIdx - 1 : amountIdx + 1;
+
+                            // 시간(날짜) 셀 탐색: 맨 마지막 열(G열)부터 역순으로 최우선 탐색!
                             let timeIdx = -1;
-                            if (amountIdx === 2 && String(validCells[0]).match(/[0-9]/)) { timeIdx = 0; nameIdx = 1; } 
-                            else if (amountIdx === 1 && validCells.length > 2) { nameIdx = 0; timeIdx = 2; }
+                            for (let i = validCells.length - 1; i >= 0; i--) {
+                                if (i === amountIdx) continue;
+                                const cellStr = String(validCells[i]).trim();
+                                if (!cellStr.startsWith('{') && (/(\d{1,2}:\d{2})|(\d{4}[-./]\s*\d{1,2})|(GMT|오전|오후|AM|PM|T\d{2}:)/i.test(cellStr))) {
+                                    timeIdx = i;
+                                    break;
+                                }
+                            }
+
+                            // 금액 바로 앞 칸(E열)을 최우선으로 입금자명으로 선택 (JSON 문자열 '{' 제외)
+                            let nameIdx = -1;
+                            if (amountIdx > 0 && !String(validCells[amountIdx - 1]).trim().startsWith('{') && (amountIdx - 1) !== timeIdx) {
+                                nameIdx = amountIdx - 1;
+                            } else {
+                                for (let i = 0; i < validCells.length; i++) {
+                                    const cStr = String(validCells[i]).trim();
+                                    if (i !== amountIdx && i !== timeIdx && !cStr.startsWith('{') && !cStr.includes('모임통장 입금')) {
+                                        nameIdx = i;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (nameIdx === -1) nameIdx = amountIdx > 0 ? amountIdx - 1 : amountIdx + 1;
+
                             let rawName = String(validCells[nameIdx] || '').trim();
                             let name = rawName.replace(/^[:"'\-\s]+/, '').replace(/^입\s+/, '').trim();
                             let amount = Number(String(validCells[amountIdx]).replace(/,/g, ''));
-                            let time = timeIdx !== -1 ? String(validCells[timeIdx]).trim() : '';
-                            return { id: `d_${idx}_${time}_${name}_${amount}`, time, name, amount };
+                            let rawTime = timeIdx !== -1 ? String(validCells[timeIdx]).trim() : String(validCells[validCells.length - 1] || '').trim();
+                            let time = formatTimeOnly(rawTime);
+                            return { id: `d_${idx}_${rawTime}_${name}_${amount}`, legacyId: `d_${idx}__${name}_${amount}`, time, rawTime, name, amount };
                         }).filter(d => d !== null && d.name && d.amount > 0).reverse();
                         
-                        const depIds = newDeps.map(d => d.id).join(',');
+                        const depIds = newDeps.map(d => d.id + '_' + d.time).join(',');
                         if(depIds !== prevDepsStr.current) {
                             if (newDeps.length > prevDepCount.current && prevDepCount.current !== 0) playCoinSound();
                             setServerDeposits(newDeps);
@@ -2588,16 +2681,15 @@ const dashboardStats = useMemo(() => {
                 if (!isFixedProductMode) setFocusedChatId(null); 
             }, [isFixedProductMode]);
 
-            // ✨ 고정 모드를 켜는 순간 입력창 포커스를 해제하고 첫 번째 채팅을 즉시 선택하여 방향키가 바로 작동하도록 보장
+            // ✨ 고정 모드를 켜는 순간에만 첫 번째 채팅을 선택하고, 이후 새 채팅이 들어올 때는 절대 입력창 커서(focus)를 건드리지 않도록 수정!
+            const prevFixedModeRef = useRef(false);
             useEffect(() => {
-                if (isFixedProductMode) {
-                    if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
-                        document.activeElement.blur();
-                    }
+                if (isFixedProductMode && !prevFixedModeRef.current) {
                     if (!focusedChatId && reversedChats.length > 0) {
                         setFocusedChatId(reversedChats[0].id);
                     }
                 }
+                prevFixedModeRef.current = isFixedProductMode;
             }, [isFixedProductMode, reversedChats, focusedChatId]);
             // ✨ 키보드 네비게이션 로직 종료
 
@@ -2764,9 +2856,13 @@ const dashboardStats = useMemo(() => {
                     let customerDepsJson = '';
                     if (!printedDeposits[customerVal]) {
                         depositToSave = customerTotalDeposits[customerVal] || 0;
-                        const matchedDepsForCust = (allDepositsRef.current || []).filter(d => depositLinks[d.id] === customerVal && matchedDeposits.has(d.id)).map(d => ({
+                        const matchedDepsForCust = (allDepositsRef.current || []).filter(d => {
+                            const isLinked = (depositLinks[d.id] === customerVal) || (d.legacyId && depositLinks[d.legacyId] === customerVal);
+                            const isMatched = matchedDeposits.has(d.id) || (d.legacyId && matchedDeposits.has(d.legacyId));
+                            return isLinked && isMatched;
+                        }).map(d => ({
                             id: d.id,
-                            time: formatTimeOnly(d.time || d.date),
+                            time: formatDepositFullDateTime(d.rawTime || d.time || d.date || ''),
                             name: d.name,
                             amount: Number(d.amount)
                         }));
@@ -2809,7 +2905,8 @@ const dashboardStats = useMemo(() => {
                 const currentDataStr = JSON.stringify(saveList);
                 if (currentDataStr === lastSavedDataStr.current) return;
 
-                setIsSaving(true); 
+                // ✨ 수동 저장 버튼을 직접 눌렀을 때만 스피너(isSaving)를 표시하여 백그라운드 자동저장 시 리렌더링 끊김 방지
+                if (isManual) setIsSaving(true); 
 
                 if (broadcastName) { 
                     const bn = broadcastName;
@@ -2842,7 +2939,7 @@ const dashboardStats = useMemo(() => {
                         await fetchGas(googleScriptUrl, { action: 'save_orders', masterId: actualSheetId, data: saveList, nicknames: uniqueNicknames, confirmedNicknames: confirmedNicknames }); 
                         lastSavedDataStr.current = currentDataStr;
                     } 
-                } catch(e) {} finally { setIsSaving(false); } 
+                } catch(e) {} finally { if (isManual) setIsSaving(false); } 
             }, [orders, cardPayments, getCalculatedShipping, googleScriptUrl, addressLookup, masterSheetId, broadcastName, specialCustomers, noShowCustomers, waitlistCustomers, customerPasswords, checkedOrders, depositLinks, matchedDeposits, freeShippingThreshold, quickShipping]);
 
             const autoSaveRef = useRef(); useEffect(() => { autoSaveRef.current = autoSaveToGoogleSheet; }, [autoSaveToGoogleSheet]);
@@ -3242,7 +3339,7 @@ const dashboardStats = useMemo(() => {
                 } catch (err) {} document.body.removeChild(textArea); 
             };
             const handleDeleteDepositItem = (id) => { openModal("숨기시겠습니까?", 'confirm', () => { setManualDeposits(prev => prev.filter(d => d.id !== id)); setDeletedDepositIds(prev => new Set(prev).add(id)); setMatchedDeposits(prev => { const next = new Set(prev); next.delete(id); return next; }); }); };
-            const handleAddManualDeposit = (e) => { e.preventDefault(); if (!newDepositName.trim() || !newDepositAmount) return openModal("입금자명/금액 필수", 'alert'); const newDep = { id: `manual_${Date.now()}`, name: newDepositName, amount: newDepositAmount, source: 'manual' }; setManualDeposits(prev => [newDep, ...prev]); setNewDepositName(''); setNewDepositAmount(''); };
+            const handleAddManualDeposit = (e) => { e.preventDefault(); if (!newDepositName.trim() || !newDepositAmount) return openModal("입금자명/금액 필수", 'alert'); const nowTime = new Date().toLocaleTimeString('ko-KR', {hour12: false, hour:'2-digit', minute:'2-digit'}); const newDep = { id: `manual_${Date.now()}`, name: newDepositName, amount: newDepositAmount, time: nowTime, source: 'manual' }; setManualDeposits(prev => [newDep, ...prev]); setNewDepositName(''); setNewDepositAmount(''); };
 
             const visibleDeposits = useMemo(() => {
                 if (deferredDepositSearch) return filteredDeposits; 
@@ -3554,7 +3651,7 @@ const dashboardStats = useMemo(() => {
                                     </div>
                                 </div>
                             )}
-                            {displayedOrders.map(([nick, items]) => {
+                            { displayedOrders.map(([nick, items]) => {
                                 const activeItems = items.filter(i => !i.isCancelled && !i.isWaitlist); 
                                 const prodSum = activeItems.reduce((s, i) => s + Number(i.price), 0);
                                 const prodSumForShipping = activeItems.reduce((s, i) => s + (Number(i.price) > 0 ? Number(i.price) : 0), 0);
@@ -3564,7 +3661,7 @@ const dashboardStats = useMemo(() => {
                                 const isCard = cardPayments[nick]; const cardFee = (isCard && baseBal > 0) ? Math.round(baseBal * 0.1) : 0;
                                 const grand = baseGrand + cardFee; const bal = baseBal + cardFee;
                                 const { data: addrData, type: addrType } = addressLookup.get(nick);
-                                const customerDeps = allDeposits.filter(d => depositLinks[d.id] === nick && matchedDeposits.has(d.id));
+                                const customerDeps = allDeposits.filter(d => ((depositLinks[d.id] === nick) || (d.legacyId && depositLinks[d.legacyId] === nick)) && (matchedDeposits.has(d.id) || (d.legacyId && matchedDeposits.has(d.legacyId))));
                                 
                                 return (<CustomerBlock key={nick} nick={nick} items={items} isSelected={selectedNick === nick} currentShipping={ship} isCard={isCard} isPaidState={bal <= 0 && activeItems.length > 0} grandTotal={grand} depositTotal={depSum} balance={bal} baseGrandTotal={baseGrand} baseBalance={baseBal} addr={addrData} addrType={addrType} addressMapping={addressMapping} autoDepositorName={addrData?.realname || ''} displayDepositorName={depositorNames[nick] || addrData?.realname || '입금자'} isAutoDepositor={!depositorNames[nick] && addrData?.realname} depositorNames={depositorNames} copyStatus={copyStatus} isOrderConfirmed={checkedOrders.has(nick)} isEditingShipping={editingShippingNick === nick} setSelectedNick={setSelectedNick} addOrderLogic={addOrderLogic} handleNicknameEdit={handleNicknameEdit} toggleCardPayment={toggleCardPayment} handleShippingChange={handleShippingChange} setEditingShippingNick={setEditingShippingNick} openModal={openModal} setDepositorNames={setDepositorNames} handleFullDepositToggle={handleFullDepositToggle} copyOrderSheet={copyOrderSheet} handleOrderCheckToggle={handleOrderCheckToggle} handleAddressUnmapping={handleAddressUnmapping} handleAddressMapping={handleAddressMapping} handleProductChange={handleProductChange} handleQuantityUpdate={handleQuantityUpdate} handleOrderCancel={handleOrderCancel} handleOrderDelete={handleOrderDelete} toggleVIP={specialCustomers} specialCustomers={specialCustomers} handleOpenQuickAddress={handleOpenQuickAddress} findAddressSuggestions={findAddressSuggestions} cashReceiptStatus={cashReceipts[nick]} toggleCashReceipt={toggleCashReceipt} inventory={inventory} productHistory={productHistory} customerDeposits={customerDeps} handleDepositUnmatch={handleDepositUnmatch} handleMultiAddOpen={setMultiAddNick} toggleNoShow={toggleNoShow} toggleWaitlist={toggleWaitlist} noShowStatus={noShowCustomers[nick]} waitlistStatus={waitlistCustomers[nick]} customerPassword={customerPasswords && customerPasswords[nick]} handleSetCustomerPassword={handleSetCustomerPassword} />);
                             })}
@@ -3579,8 +3676,8 @@ const dashboardStats = useMemo(() => {
                             </div>
                             <div className="flex flex-col gap-1.5">
                                 <div className="flex gap-1 bg-white dark:bg-slate-900 p-1 rounded border dark:border-slate-600 shrink-0">
-                                    <button type="button" onClick={() => { openModal("현금 시재 금액을 입력하세요.", "prompt", (amount) => { if(!amount) return; const val = amount.replace(/,/g, ''); if (!isNaN(val) && Number(val) > 0) { const newDep = { id: `manual_${Date.now()}`, name: "시재", amount: val, source: 'manual' }; setManualDeposits(prev => [newDep, ...prev]); } else { setTimeout(() => openModal("유효한 금액을 입력해주세요.", "alert"), 100); } }); }} className="flex-1 bg-emerald-600 text-white text-[10px] font-bold py-1 rounded hover:bg-emerald-700 transition-colors shadow-sm">시재</button>
-                                    <button type="button" onClick={() => { openModal("추가할 입금자명을 입력하세요.", "prompt", (name) => { if(!name) return; setTimeout(() => { openModal(`'${name}'님의 입금 금액을 입력하세요.`, "prompt", (amount) => { if(!amount) return; const val = amount.replace(/,/g, ''); if (!isNaN(val) && Number(val) > 0) { const newDep = { id: `manual_${Date.now()}`, name: name.trim(), amount: val, source: 'manual' }; setManualDeposits(prev => [newDep, ...prev]); } else { setTimeout(() => openModal("유효한 금액을 입력해주세요.", "alert"), 100); } }); }, 300); }); }} className="flex-1 bg-slate-700 text-white text-[10px] font-bold py-1 rounded hover:bg-slate-800 transition-colors shadow-sm">추가</button>
+                                    <button type="button" onClick={() => { openModal("현금 시재 금액을 입력하세요.", "prompt", (amount) => { if(!amount) return; const val = amount.replace(/,/g, ''); if (!isNaN(val) && Number(val) > 0) { const nowTime = new Date().toLocaleTimeString('ko-KR', {hour12: false, hour:'2-digit', minute:'2-digit'}); const newDep = { id: `manual_${Date.now()}`, name: "시재", amount: val, time: nowTime, source: 'manual' }; setManualDeposits(prev => [newDep, ...prev]); } else { setTimeout(() => openModal("유효한 금액을 입력해주세요.", "alert"), 100); } }); }} className="flex-1 bg-emerald-600 text-white text-[10px] font-bold py-1 rounded hover:bg-emerald-700 transition-colors shadow-sm">시재</button>
+                                    <button type="button" onClick={() => { openModal("추가할 입금자명을 입력하세요.", "prompt", (name) => { if(!name) return; setTimeout(() => { openModal(`'${name}'님의 입금 금액을 입력하세요.`, "prompt", (amount) => { if(!amount) return; const val = amount.replace(/,/g, ''); if (!isNaN(val) && Number(val) > 0) { const nowTime = new Date().toLocaleTimeString('ko-KR', {hour12: false, hour:'2-digit', minute:'2-digit'}); const newDep = { id: `manual_${Date.now()}`, name: name.trim(), amount: val, time: nowTime, source: 'manual' }; setManualDeposits(prev => [newDep, ...prev]); } else { setTimeout(() => openModal("유효한 금액을 입력해주세요.", "alert"), 100); } }); }, 300); }); }} className="flex-1 bg-slate-700 text-white text-[10px] font-bold py-1 rounded hover:bg-slate-800 transition-colors shadow-sm">추가</button>
                                 </div>
                                 <div className="relative shrink-0"><Icon name="magnifying-glass" className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-400 text-[10px]"/><input type="text" placeholder="검색" value={depositSearch} onChange={e => setDepositSearch(e.target.value)} onKeyDown={e => { if(e.key==='Escape'){ setDepositSearch(''); e.target.blur(); } }} className="w-full text-[10px] pl-6 pr-6 py-1.5 border dark:border-slate-600 rounded focus:ring-1 focus:ring-slate-500 outline-none bg-white dark:bg-slate-900" />{depositSearch && <button onClick={()=>setDepositSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><Icon name="x-circle" weight="fill" size={12}/></button>}</div>
                             </div>
@@ -3593,8 +3690,8 @@ const dashboardStats = useMemo(() => {
                         </div>
                         <div className="flex-1 overflow-y-auto p-1 space-y-1 bg-slate-50 dark:bg-slate-900">
                             {visibleDeposits.map(d => {
-                                const isUsed = matchedDeposits?.has(d.id);
-                                const linkedNick = depositLinks[d.id];
+                                const isUsed = matchedDeposits?.has(d.id) || (d.legacyId && matchedDeposits?.has(d.legacyId));
+                                const linkedNick = depositLinks[d.id] || (d.legacyId && depositLinks[d.legacyId]);
                                 return (
                                     <div key={d.id} className={`relative flex flex-col py-1.5 px-1.5 border rounded transition-all group ${isUsed ? 'bg-slate-100 dark:bg-slate-800/80 border-transparent' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm'}`}>
                                         <div className="flex items-center justify-between w-full">
@@ -4150,7 +4247,7 @@ const dashboardStats = useMemo(() => {
             const [orders, setOrders] = useLocalStorage('youtubeOrders', []);
             const [activeTab, setActiveTab] = useState('live');
             
-            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwHEmT--neCHkg1QbbJkzvmzVrF8BQWSniLJLNMRQh8CYNUuBJdA-hHhHz92B6VnGHs/exec';
+            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzI-x2P-hVWCpbi6oGjs6Anct4kePcR1Yfj1dMpwt9XoIP6eUYHpkNCa6EfGWVii2FH/exec';
             const [googleScriptUrl, setGoogleScriptUrl] = useLocalStorage('googleScriptUrl', NEW_SCRIPT_URL);
         
         const [youtubeApiKey, setYoutubeApiKey] = useLocalStorage('youtubeApiKey', '');
@@ -4169,7 +4266,7 @@ const dashboardStats = useMemo(() => {
 
             useEffect(() => {
                 const currentUrl = window.localStorage.getItem(getLsKey('googleScriptUrl'));
-                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbwHEmT--neCHkg1QbbJkzvmzVrF8BQWSniLJLNMRQh8CYNUuBJdA-hHhHz92B6VnGHs')) {
+                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbzI-x2P-hVWCpbi6oGjs6Anct4kePcR1Yfj1dMpwt9XoIP6eUYHpkNCa6EfGWVii2FH')) {
                     setGoogleScriptUrl(NEW_SCRIPT_URL);
                 }
             }, [setGoogleScriptUrl]);
