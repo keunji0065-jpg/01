@@ -305,21 +305,30 @@
             return strVal; 
         };
 
-        const fetchGas = async (url, payload = null) => {
-            const options = { method: payload ? 'POST' : 'GET', redirect: "follow" };
+        const fetchGas = async (url, payload = null, timeoutMs = 9000) => {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), timeoutMs);
+            const options = { method: payload ? 'POST' : 'GET', redirect: "follow", signal: controller.signal };
             if (payload) {
                 options.headers = { 'Content-Type': 'text/plain;charset=utf-8' };
                 options.body = JSON.stringify(payload);
             }
             try {
                 const response = await fetch(url, options);
+                clearTimeout(timer);
                 const text = await response.text();
                 
                 if (text.includes("<!DOCTYPE") || text.includes("<html")) {
                     return { status: "error", message: "앱스 스크립트 주소/권한 오류" };
                 }
                 try { return JSON.parse(text); } catch(e) { return { status: "error", message: "데이터 변환 실패" }; }
-            } catch (err) { return { status: "error", message: `통신 오류 (${err.message})` }; }
+            } catch (err) {
+                clearTimeout(timer);
+                if (err && err.name === 'AbortError') {
+                    return { status: "error", message: "응답 지연 (자동 재시도중)" };
+                }
+                return { status: "error", message: `통신 오류 (${err.message})` };
+            }
         };
 
         const generateSmartGroups = (inventory) => {
@@ -790,7 +799,7 @@ useEffect(() => {
             youtubeApiKey, setYoutubeApiKey, youtubeVideoId, setYoutubeVideoId,
             depSheetId, setDepSheetId, addrSheetId, setAddrSheetId, masterSheetId, setMasterSheetId, 
             broadcastName, setBroadcastName,
-            quickShipping, setQuickShipping, jejuShipping, setJejuShipping, freeShippingThreshold, setFreeShippingThreshold, 
+            quickShipping, setQuickShipping, jejuShipping, setJejuShipping, freeShippingThreshold, setFreeShippingThreshold, cardFeeRate, setCardFeeRate,
             templateConfig, setTemplateConfig, bankAccount, setBankAccount, quickMessages, setQuickMessages, 
             addressStartDate, setAddressStartDate, soundVolume, setSoundVolume,
             setIsSettingsOpen
@@ -827,11 +836,12 @@ useEffect(() => {
                         </div>
                         
                         <div className="border-t dark:border-slate-700 pt-4">
-                            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">배송비 자동 계산 설정</label>
-                            <div className="flex gap-2 mb-2">
+                            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">배송비 및 카드 수수료 설정</label>
+                            <div className="grid grid-cols-4 gap-2 mb-2">
                                 <SettingsField label="기본 배송비" type="number" value={quickShipping} onChange={(v) => setQuickShipping(Number(v))} />
                                 <SettingsField label="제주 추가" type="number" value={jejuShipping} onChange={(v) => setJejuShipping(Number(v))} />
                                 <SettingsField label="무료 기준" type="number" value={freeShippingThreshold} onChange={(v) => setFreeShippingThreshold(v)} placeholder="예: 70000" />
+                                <SettingsField label="카드수수료(%)" type="number" value={cardFeeRate} onChange={(v) => setCardFeeRate(v === '' ? '' : Number(v))} placeholder="10" />
                             </div>
                         </div>
                         
@@ -1486,9 +1496,11 @@ useEffect(() => {
     );
 };
 
-const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHistory, setProductHistory, quickShipping, jejuShipping, freeShippingThreshold, shippingOverrides, setShippingOverrides, bankAccount, googleScriptUrl, depSheetId, masterSheetId, addresses, setAddresses, cardPayments, setCardPayments, manualDeposits, setManualDeposits, matchedDeposits, setMatchedDeposits, depositorNames, setDepositorNames, clickedChats, setClickedChats, openModal, keywords, setKeywords, sentAddressRequests, setSentAddressRequests, deletedDepositIds, setDeletedDepositIds, checkedOrders, setCheckedOrders, addressMapping, setAddressMapping, templateConfig, specialCustomers, setSpecialCustomers, inventory, setInventory, quickMessages, handleResetAllData, broadcastName, setGlobalError, cashReceipts, setCashReceipts, soundEnabled, soundVolume, depositLinks, setDepositLinks, noShowCustomers, setNoShowCustomers, waitlistCustomers, setWaitlistCustomers, customerPasswords, setCustomerPasswords }) => {
+const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHistory, setProductHistory, quickShipping, jejuShipping, freeShippingThreshold, cardFeeRate, shippingOverrides, setShippingOverrides, bankAccount, googleScriptUrl, depSheetId, masterSheetId, addresses, setAddresses, cardPayments, setCardPayments, manualDeposits, setManualDeposits, matchedDeposits, setMatchedDeposits, depositorNames, setDepositorNames, clickedChats, setClickedChats, openModal, keywords, setKeywords, sentAddressRequests, setSentAddressRequests, deletedDepositIds, setDeletedDepositIds, checkedOrders, setCheckedOrders, addressMapping, setAddressMapping, templateConfig, specialCustomers, setSpecialCustomers, inventory, setInventory, quickMessages, handleResetAllData, broadcastName, setGlobalError, cashReceipts, setCashReceipts, soundEnabled, soundVolume, depositLinks, setDepositLinks, noShowCustomers, setNoShowCustomers, waitlistCustomers, setWaitlistCustomers, customerPasswords, setCustomerPasswords }) => {
             const [serverDeposits, setServerDeposits] = useState([]);
             const [selectedNick, setSelectedNick] = useState(null);
+            const feeRateNum = (cardFeeRate !== undefined && cardFeeRate !== '' && Number(cardFeeRate) > 0) ? Number(cardFeeRate) : 10;
+            const feeMultiplier = feeRateNum / 100;
             
             const [currentApiKeyIndex, setCurrentApiKeyIndex] = useState(0);
             const deadApiKeysRef = useRef(new Set()); // ✨ 403 에러난 키(죽은 키) 보관용 블랙리스트
@@ -2050,6 +2062,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
 
         const [youtubeStatus, setYoutubeStatus] = useState("채팅(대기)");
         const [gasStatus, setGasStatus] = useState("입금(대기)");
+        const lastGasFetchTimeRef = useRef(0);
 
         const fetchYoutubeData = useCallback(async () => {
             if (!activeApiKey || !liveChatId) {
@@ -2109,38 +2122,41 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                 setGasStatus(prev => prev === "설정 ⚙️: 스크립트 URL 입력!" ? prev : "설정 ⚙️: 스크립트 URL 입력!");
                 return;
             }
-            if (!force && isGasFetchingRef.current) return;
+            // 이전 요청이 7초 이상 걸리고 있다면 락을 강제로 해제하여 1분 이상 먹통되는 현상 원천 차단!
+            if (!force && isGasFetchingRef.current && (Date.now() - lastGasFetchTimeRef.current < 7000)) return;
 
             isGasFetchingRef.current = true;
+            lastGasFetchTimeRef.current = Date.now();
             if (force) setGasStatus("🔄 입금/주소 즉시 스캔중...");
             
             const slowWarningTimer = setTimeout(() => {
-                setGasStatus("⏳ 시트 로딩 지연 (빈 행/열을 삭제해주세요!)");
-            }, 8000);
+                setGasStatus("⏳ 시트 재요청중...");
+            }, 6500);
 
             try {
                 let gasMsg = "";
                 const fetchUrl = `${googleScriptUrl}?action=get_all&depId=${getCleanSheetId(depSheetId)}&masterId=${getCleanSheetId(masterSheetId)}&skipHeavy=false&t=${Date.now()}`;
-                const res = await fetchGas(fetchUrl);
+                const res = await fetchGas(fetchUrl, null, 7500);
                 
                 clearTimeout(slowWarningTimer);
                 
                 if (res && res.status === 'success') {
                     if (res.deposits && Array.isArray(res.deposits)) {
                         let depRows = res.deposits;
-                        if (depRows.length > 0 && depRows[0].some(c => typeof c === 'string' && (c.includes('이름') || c.includes('금액') || c.includes('닉네임')))) depRows = depRows.slice(1);
+                        if (depRows.length > 0 && Array.isArray(depRows[0]) && depRows[0].some(c => typeof c === 'string' && (c.includes('이름') || c.includes('금액') || c.includes('닉네임') || c.includes('입금자')))) {
+                            depRows = depRows.slice(1);
+                        }
                         const newDeps = depRows.map((row, idx) => {
                             if (!Array.isArray(row)) return null;
-                            // ✨ '입금 수집기' 시트 전용 고정 열 매핑 (E열: 입금자명, F열: 금액, 맨 마지막 G열: 시간 최우선)
+                            // ✨ 1순위: '입금 수집기' 시트 전용 고정 열 매핑 (E열: 입금자명, F열: 금액, G열: 시간)
                             if (row.length >= 6) {
                                 const colE = String(row[4] ?? '').trim();
-                                const colF = String(row[5] ?? '').trim();
-                                const amtF = Number(colF.replace(/,/g, ''));
-                                if (colE && !isNaN(amtF) && amtF > 0) {
+                                const rawColF = String(row[5] ?? '').trim();
+                                const amtF = Number(rawColF.replace(/[^0-9.-]/g, ''));
+                                if (colE && !colE.startsWith('{') && !isNaN(amtF) && amtF > 0) {
                                     const rawTimeG = String(row[6] || row[row.length - 1] || row[0] || '').trim();
                                     const time = formatTimeOnly(rawTimeG);
                                     const cleanName = colE.replace(/^[:"'\-\s]+/, '').replace(/^입\s+/, '').trim();
-                                    // 기존 매칭(`d_23__예쁜전_59000`)이 풀리지 않도록 legacyId도 함께 보관
                                     return { 
                                         id: `d_${idx}_${rawTimeG}_${cleanName}_${amtF}`, 
                                         legacyId: `d_${idx}__${cleanName}_${amtF}`,
@@ -2152,17 +2168,26 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                 }
                             }
 
+                            // ✨ 2순위: 열 위치가 다르거나 변형된 입금 시트도 100% 인식하도록 유연 파싱
                             const validCells = row.filter(cell => cell !== null && cell !== undefined && String(cell).trim() !== '');
                             if (validCells.length < 2) return null;
                             let amountIdx = -1;
-                            // 뒤쪽 열(F열 방향)부터 숫자 금액 탐색
+                            let parsedAmount = 0;
+                            // 뒤쪽 열부터 금액(100원 이상 숫자) 탐색
                             for (let i = validCells.length - 1; i >= 0; i--) {
-                                const val = String(validCells[i]).trim(); const num = Number(val.replace(/,/g, ''));
-                                if (!isNaN(num) && num > 0 && val.match(/^[0-9,]+$/)) { amountIdx = i; break; }
+                                const val = String(validCells[i]).trim();
+                                // 날짜/시간 형태(2026-10-18, 16:20 등)는 금액에서 제외
+                                if (/(\d{1,2}:\d{2})|(\d{4}[-./]\d{1,2}[-./]\d{1,2})/.test(val)) continue;
+                                const num = Number(val.replace(/[,원\s]/g, ''));
+                                if (!isNaN(num) && num >= 100 && /^[0-9,원\s]+$/.test(val)) {
+                                    amountIdx = i;
+                                    parsedAmount = num;
+                                    break;
+                                }
                             }
-                            if (amountIdx === -1) return null;
+                            if (amountIdx === -1 || parsedAmount <= 0) return null;
 
-                            // 시간(날짜) 셀 탐색: 맨 마지막 열(G열)부터 역순으로 최우선 탐색!
+                            // 시간(날짜) 셀 탐색
                             let timeIdx = -1;
                             for (let i = validCells.length - 1; i >= 0; i--) {
                                 if (i === amountIdx) continue;
@@ -2173,7 +2198,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                 }
                             }
 
-                            // 금액 바로 앞 칸(E열)을 최우선으로 입금자명으로 선택 (JSON 문자열 '{' 제외)
+                            // 금액 바로 앞 칸을 최우선으로 입금자명으로 선택
                             let nameIdx = -1;
                             if (amountIdx > 0 && !String(validCells[amountIdx - 1]).trim().startsWith('{') && (amountIdx - 1) !== timeIdx) {
                                 nameIdx = amountIdx - 1;
@@ -2190,10 +2215,9 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
 
                             let rawName = String(validCells[nameIdx] || '').trim();
                             let name = rawName.replace(/^[:"'\-\s]+/, '').replace(/^입\s+/, '').trim();
-                            let amount = Number(String(validCells[amountIdx]).replace(/,/g, ''));
                             let rawTime = timeIdx !== -1 ? String(validCells[timeIdx]).trim() : String(validCells[validCells.length - 1] || '').trim();
                             let time = formatTimeOnly(rawTime);
-                            return { id: `d_${idx}_${rawTime}_${name}_${amount}`, legacyId: `d_${idx}__${name}_${amount}`, time, rawTime, name, amount };
+                            return { id: `d_${idx}_${rawTime}_${name}_${parsedAmount}`, legacyId: `d_${idx}__${name}_${parsedAmount}`, time, rawTime, name, amount: parsedAmount };
                         }).filter(d => d !== null && d.name && d.amount > 0).reverse();
                         
                         const depIds = newDeps.map(d => d.id + '_' + d.time).join(',');
@@ -2506,13 +2530,13 @@ const dashboardStats = useMemo(() => {
                     const productTotalForShipping = activeItems.reduce((sum, i) => sum + (Number(i.price) > 0 ? Number(i.price) : 0), 0);
                     const shipping = getCalculatedShipping(nick, productTotalForShipping); 
                     const baseGrandTotal = productTotal + shipping; const baseBalance = baseGrandTotal - depositTotal;
-                    const cardFee = (isCard && baseBalance > 0) ? Math.round(baseBalance * 0.1) : 0; const finalGrandTotal = baseGrandTotal + cardFee; const finalBalance = baseBalance + cardFee;
+                    const cardFee = (isCard && baseBalance > 0) ? Math.round(baseBalance * feeMultiplier) : 0; const finalGrandTotal = baseGrandTotal + cardFee; const finalBalance = baseBalance + cardFee;
 
                     totalSales += finalGrandTotal; 
                     if (finalBalance > 0) { if (isCard) totalCardExpected += finalBalance; else totalUnpaid += finalBalance; } else if (finalBalance < 0 && !isCard) { totalOverpaid += Math.abs(finalBalance); }
                 });
                 return { totalSales, totalDeposit, totalUnpaid, totalOverpaid, totalCardExpected, missingAddressCount, waitlistCount };
-            }, [orders, cardPayments, getCalculatedShipping, addressLookup, waitlistCustomers]);
+            }, [orders, cardPayments, getCalculatedShipping, addressLookup, waitlistCustomers, feeMultiplier]);
 
             const noKakaoCount = useMemo(() => {
                 const activeCustomers = new Set();
@@ -2565,7 +2589,7 @@ const dashboardStats = useMemo(() => {
                     const currentDep = items.reduce((s,i) => s + (i.deposit || 0), 0); 
                     const currentShip = getCalculatedShipping(nick, activeProdForShipping);
                     const baseBal = activeProd + (activeItems.length > 0 ? currentShip : 0) - currentDep; const isCard = cardPayments[nick];
-                    const finalBal = baseBal + (isCard && baseBal > 0 ? Math.round(baseBal * 0.1) : 0);
+                    const finalBal = baseBal + (isCard && baseBal > 0 ? Math.round(baseBal * feeMultiplier) : 0);
                     
                     if (filterStatus === 'unpaid') return !isCard && finalBal > 0 && activeProd > 0;
                     if (filterStatus === 'overpaid') return !isCard && finalBal < 0;
@@ -2962,7 +2986,7 @@ const dashboardStats = useMemo(() => {
                         '상품명': bn,
                         '수량': Number(freeShippingThreshold) || 200000,
                         '단가(제품금액)': Number(quickShipping) || 4000,
-                        '배송비': 0,
+                        '배송비': feeRateNum,
                         '입금액': 0,
                         '카드결제': '',
                         '수령인명': '',
@@ -2989,7 +3013,7 @@ const dashboardStats = useMemo(() => {
                         lastSavedDataStr.current = currentDataStr;
                     } 
                 } catch(e) {} finally { if (isManual) setIsSaving(false); } 
-            }, [orders, cardPayments, getCalculatedShipping, googleScriptUrl, addressLookup, masterSheetId, broadcastName, specialCustomers, noShowCustomers, waitlistCustomers, customerPasswords, checkedOrders, depositLinks, matchedDeposits, freeShippingThreshold, quickShipping, waitlistRankMap]);
+            }, [orders, cardPayments, getCalculatedShipping, googleScriptUrl, addressLookup, masterSheetId, broadcastName, specialCustomers, noShowCustomers, waitlistCustomers, customerPasswords, checkedOrders, depositLinks, matchedDeposits, freeShippingThreshold, quickShipping, feeRateNum, waitlistRankMap]);
 
             const autoSaveRef = useRef(); useEffect(() => { autoSaveRef.current = autoSaveToGoogleSheet; }, [autoSaveToGoogleSheet]);
             useEffect(() => { const saveInterval = setInterval(() => { if (autoSaveRef.current) autoSaveRef.current(); }, 10000); return () => clearInterval(saveInterval); }, []); 
@@ -3183,10 +3207,10 @@ const dashboardStats = useMemo(() => {
                 let msg = `${emoji} ${nick} 님 ${emoji}\n[${cleanBroadcastTitle}]\n------------------\n`;
                 if (isCard) { 
                     const cardBase = Math.max(0, grandTotal - depositTotal);
-                    const cardFee = Math.round(cardBase * 0.1);
+                    const cardFee = Math.round(cardBase * feeMultiplier);
                     const finalCardAmount = cardBase + cardFee;
-                    if (depositTotal > 0) { msg += `[카드결제]\n총 주문금액 ${grandTotal.toLocaleString()}원\n선입금 ${depositTotal.toLocaleString()}원\n남은 결제금액 ${cardBase.toLocaleString()}원\n수수료(10%) ${cardFee.toLocaleString()}원\n👉최종 결제요청액 ${finalCardAmount.toLocaleString()}원 예정\n\n방송종료 시간이 늦을경우 오전에 카드결제 링크 발송합니다.\n------------------\n`; } 
-                    else { msg += `[카드결제]\n주문금액 ${cardBase.toLocaleString()}원\n수수료(10%) ${cardFee.toLocaleString()}원\n👉결제요청액 ${finalCardAmount.toLocaleString()}원 예정\n\n방송종료 시간이 늦을경우 오전에 카드결제 링크 발송합니다.\n------------------\n`; }
+                    if (depositTotal > 0) { msg += `[카드결제]\n총 주문금액 ${grandTotal.toLocaleString()}원\n선입금 ${depositTotal.toLocaleString()}원\n남은 결제금액 ${cardBase.toLocaleString()}원\n수수료(${feeRateNum}%) ${cardFee.toLocaleString()}원\n👉최종 결제요청액 ${finalCardAmount.toLocaleString()}원 예정\n\n방송종료 시간이 늦을경우 오전에 카드결제 링크 발송합니다.\n------------------\n`; } 
+                    else { msg += `[카드결제]\n주문금액 ${cardBase.toLocaleString()}원\n수수료(${feeRateNum}%) ${cardFee.toLocaleString()}원\n👉결제요청액 ${finalCardAmount.toLocaleString()}원 예정\n\n방송종료 시간이 늦을경우 오전에 카드결제 링크 발송합니다.\n------------------\n`; }
                 } 
                 else { 
                     const isPaid = (balance <= 0) && (grandTotal >= 0) && (activeItems.length > 0); 
@@ -3231,7 +3255,7 @@ const dashboardStats = useMemo(() => {
                     el.className = 'ml-1 flex items-center gap-1 px-2 py-0.5 rounded border shrink-0 bg-green-500 border-green-600 text-white font-bold transition-colors';
                     setTimeout(() => { el.className = originalClass; }, 1000);
                 } catch (err) { } document.body.removeChild(textArea);
-            }, [getCalculatedShipping, templateConfig, bankAccount, broadcastName, waitlistRankMap]);
+            }, [getCalculatedShipping, templateConfig, bankAccount, broadcastName, waitlistRankMap, feeRateNum, feeMultiplier]);
 
             const handleFullDepositToggle = useCallback((nick, grandTotal, currentDeposit) => { 
                 if (currentDeposit >= grandTotal) { 
@@ -3738,7 +3762,7 @@ const dashboardStats = useMemo(() => {
                                 const ship = getCalculatedShipping(nick, prodSumForShipping); 
                                 const depSum = items.reduce((s, i) => s + (i.deposit || 0), 0);
                                 const baseGrand = prodSum + (activeItems.length > 0 ? ship : 0); const baseBal = baseGrand - depSum;
-                                const isCard = cardPayments[nick]; const cardFee = (isCard && baseBal > 0) ? Math.round(baseBal * 0.1) : 0;
+                                const isCard = cardPayments[nick]; const cardFee = (isCard && baseBal > 0) ? Math.round(baseBal * feeMultiplier) : 0;
                                 const grand = baseGrand + cardFee; const bal = baseBal + cardFee;
                                 const { data: addrData, type: addrType } = addressLookup.get(nick);
                                 const customerDeps = allDeposits.filter(d => ((depositLinks[d.id] === nick) || (d.legacyId && depositLinks[d.legacyId] === nick)) && (matchedDeposits.has(d.id) || (d.legacyId && matchedDeposits.has(d.legacyId))));
@@ -3963,7 +3987,9 @@ const dashboardStats = useMemo(() => {
             );
         };
 
-    const OrderManagementTab = ({ orders, shippingOverrides, quickShipping, jejuShipping, freeShippingThreshold, broadcastName, addresses, handleExportBackup, handleImportBackup, addressMapping, cardPayments, specialCustomers, openModal, cashReceipts, inventory, productHistory, noShowCustomers, waitlistCustomers }) => {
+    const OrderManagementTab = ({ orders, shippingOverrides, quickShipping, jejuShipping, freeShippingThreshold, cardFeeRate, broadcastName, addresses, handleExportBackup, handleImportBackup, addressMapping, cardPayments, specialCustomers, openModal, cashReceipts, inventory, productHistory, noShowCustomers, waitlistCustomers }) => {
+            const feeRateNum = (cardFeeRate !== undefined && cardFeeRate !== '' && Number(cardFeeRate) > 0) ? Number(cardFeeRate) : 10;
+            const feeMultiplier = feeRateNum / 100;
             const findAddress = (nick) => {
                 if (!nick) return undefined;
                 const cleanNick = normalizeString(nick);
@@ -4082,7 +4108,7 @@ const dashboardStats = useMemo(() => {
                         statusColumn = "대기";
                     } else if (isCard) {
                         const cardBase = Math.max(0, balance);
-                        const finalCardAmount = cardBase + Math.round(cardBase * 0.1);
+                        const finalCardAmount = cardBase + Math.round(cardBase * feeMultiplier);
                         statusColumn = `카드결제(${finalCardAmount.toLocaleString()})`;
                     } else {
                         let base = "";
@@ -4166,7 +4192,7 @@ const dashboardStats = useMemo(() => {
                     const currentShipping = getCalculatedShipping(nick, productTotalForShipping); 
                     const baseGrandTotal = productTotal + currentShipping;
                     const depositTotal = items.reduce((sum, i) => sum + (i.deposit || 0), 0); const baseBalance = baseGrandTotal - depositTotal;
-                    const cardFee = (isCard && baseBalance > 0) ? Math.round(baseBalance * 0.1) : 0; const grandTotal = baseGrandTotal + cardFee; const balance = baseBalance + cardFee;
+                    const cardFee = (isCard && baseBalance > 0) ? Math.round(baseBalance * feeMultiplier) : 0; const grandTotal = baseGrandTotal + cardFee; const balance = baseBalance + cardFee;
                     const itemListTextForExcel = activeItems.map(i => `${i.product}(${i.quantity}개)`).join(', '); 
                     const cleanBroadcastTitle = String(broadcastName || '').replace(/\s*주문\s*목록\s*/g, '').trim();
 
@@ -4174,10 +4200,10 @@ const dashboardStats = useMemo(() => {
                     let statusStr = '';
                     if (isCard) { 
                         statusStr = '카드결제'; const cardBase = Math.max(0, baseGrandTotal - depositTotal);
-                        const cFee = Math.round(cardBase * 0.1);
+                        const cFee = Math.round(cardBase * feeMultiplier);
                         const finalCardAmount = cardBase + cFee;
-                        if (depositTotal > 0) { msg += `[카드결제]\n총 주문금액 ${baseGrandTotal.toLocaleString()}원\n선입금 ${depositTotal.toLocaleString()}원\n남은 결제금액 ${cardBase.toLocaleString()}원\n수수료(10%) ${cFee.toLocaleString()}원\n👉최종 결제요청액 ${finalCardAmount.toLocaleString()}원 예정\n\n방송종료 시간이 늦을경우 오전에 카드결제 링크 발송합니다.\n------------------\n`; } 
-                        else { msg += `[카드결제]\n주문금액 ${cardBase.toLocaleString()}원\n수수료(10%) ${cFee.toLocaleString()}원\n👉결제요청액 ${finalCardAmount.toLocaleString()}원 예정\n\n방송종료 시간이 늦을경우 오전에 카드결제 링크 발송합니다.\n------------------\n`; }
+                        if (depositTotal > 0) { msg += `[카드결제]\n총 주문금액 ${baseGrandTotal.toLocaleString()}원\n선입금 ${depositTotal.toLocaleString()}원\n남은 결제금액 ${cardBase.toLocaleString()}원\n수수료(${feeRateNum}%) ${cFee.toLocaleString()}원\n👉최종 결제요청액 ${finalCardAmount.toLocaleString()}원 예정\n\n방송종료 시간이 늦을경우 오전에 카드결제 링크 발송합니다.\n------------------\n`; } 
+                        else { msg += `[카드결제]\n주문금액 ${cardBase.toLocaleString()}원\n수수료(${feeRateNum}%) ${cFee.toLocaleString()}원\n👉결제요청액 ${finalCardAmount.toLocaleString()}원 예정\n\n방송종료 시간이 늦을경우 오전에 카드결제 링크 발송합니다.\n------------------\n`; }
                     } else { 
                         const isPaid = (balance <= 0) && (grandTotal >= 0); 
                         if (depositTotal > 0 && balance <= 0) { msg += `[입금확인]\n총 주문금액 ${baseGrandTotal.toLocaleString()}원\n입금확인 ${depositTotal.toLocaleString()}원\n`; } 
@@ -4366,6 +4392,7 @@ const dashboardStats = useMemo(() => {
             const [quickShipping, setQuickShipping] = useLocalStorage('quickShipping', 4000); 
             const [jejuShipping, setJejuShipping] = useLocalStorage('jejuShipping', 8000);
             const [freeShippingThreshold, setFreeShippingThreshold] = useLocalStorage('freeShippingThreshold', 70000);
+            const [cardFeeRate, setCardFeeRate] = useLocalStorage('cardFeeRate', 10);
             const [templateConfig, setTemplateConfig] = useLocalStorage('templateConfig', { emoji: '💙', paidMsg: '😍 완납 확인! 감사합니다 😍', unpaidPrefix: '[미입금]\n총 입금하실 금액\n👉', overpaidMsg: '과납 금액이 있습니다.\n환불 또는 적립 여부를 알려주세요!', addrNotice: '', surveyNotice: '', alwaysRequestAddress: false });
             const [isDarkMode, setIsDarkMode] = useLocalStorage('darkMode', false);
             
@@ -4474,7 +4501,7 @@ const dashboardStats = useMemo(() => {
                     orders, productHistory, shippingOverrides, addresses, cardPayments, cashReceipts, manualDeposits, matchedDeposits: [...matchedDeposits], depositLinks, depositorNames, clickedChats: [...clickedChats],
                     keywords, sentAddressRequests: [...sentAddressRequests], deletedDepositIds: [...deletedDepositIds], checkedOrders: [...checkedOrders], addressMapping, specialCustomers, inventory,
                     noShowCustomers, waitlistCustomers, quickMessages, settings: {
-                        googleScriptUrl, youtubeApiKey, youtubeVideoId, depSheetId, addrSheetId, masterSheetId, broadcastName, quickShipping, jejuShipping, freeShippingThreshold, templateConfig, bankAccount, addressStartDate, soundVolume
+                        googleScriptUrl, youtubeApiKey, youtubeVideoId, depSheetId, addrSheetId, masterSheetId, broadcastName, quickShipping, jejuShipping, freeShippingThreshold, cardFeeRate, templateConfig, bankAccount, addressStartDate, soundVolume
                     }, timestamp: new Date().toISOString()
                 };
                 const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
@@ -4524,6 +4551,7 @@ const dashboardStats = useMemo(() => {
                                 if(data.settings.quickShipping !== undefined) setQuickShipping(data.settings.quickShipping);
                                 if(data.settings.jejuShipping !== undefined) setJejuShipping(data.settings.jejuShipping);
                                 if(data.settings.freeShippingThreshold !== undefined) setFreeShippingThreshold(data.settings.freeShippingThreshold);
+                                if(data.settings.cardFeeRate !== undefined) setCardFeeRate(data.settings.cardFeeRate);
                                 if(data.settings.templateConfig) setTemplateConfig(data.settings.templateConfig);
                                 if(data.settings.bankAccount) setBankAccount(data.settings.bankAccount);
                                 if(data.settings.addressStartDate) setAddressStartDate(data.settings.addressStartDate);
@@ -4568,14 +4596,14 @@ const dashboardStats = useMemo(() => {
                         </div>
                     </div>
 
-                    {isSettingsOpen && <SettingsModalContent youtubeApiKey={youtubeApiKey} setYoutubeApiKey={setYoutubeApiKey} youtubeVideoId={youtubeVideoId} setYoutubeVideoId={setYoutubeVideoId} googleScriptUrl={googleScriptUrl} setGoogleScriptUrl={setGoogleScriptUrl} depSheetId={depSheetId} setDepSheetId={setDepSheetId} addrSheetId={addrSheetId} setAddrSheetId={setAddrSheetId} masterSheetId={masterSheetId} setMasterSheetId={setMasterSheetId} broadcastName={broadcastName} setBroadcastName={setBroadcastName} quickShipping={quickShipping} setQuickShipping={setQuickShipping} jejuShipping={jejuShipping} setJejuShipping={setJejuShipping} freeShippingThreshold={freeShippingThreshold} setFreeShippingThreshold={setFreeShippingThreshold} templateConfig={templateConfig} setTemplateConfig={setTemplateConfig} bankAccount={bankAccount} setBankAccount={setBankAccount} quickMessages={quickMessages} setQuickMessages={setQuickMessages} addressStartDate={addressStartDate} setAddressStartDate={setAddressStartDate} soundVolume={soundVolume} setSoundVolume={setSoundVolume} setIsSettingsOpen={setIsSettingsOpen} />}
+                    {isSettingsOpen && <SettingsModalContent youtubeApiKey={youtubeApiKey} setYoutubeApiKey={setYoutubeApiKey} youtubeVideoId={youtubeVideoId} setYoutubeVideoId={setYoutubeVideoId} googleScriptUrl={googleScriptUrl} setGoogleScriptUrl={setGoogleScriptUrl} depSheetId={depSheetId} setDepSheetId={setDepSheetId} addrSheetId={addrSheetId} setAddrSheetId={setAddrSheetId} masterSheetId={masterSheetId} setMasterSheetId={setMasterSheetId} broadcastName={broadcastName} setBroadcastName={setBroadcastName} quickShipping={quickShipping} setQuickShipping={setQuickShipping} jejuShipping={jejuShipping} setJejuShipping={setJejuShipping} freeShippingThreshold={freeShippingThreshold} setFreeShippingThreshold={setFreeShippingThreshold} cardFeeRate={cardFeeRate} setCardFeeRate={setCardFeeRate} templateConfig={templateConfig} setTemplateConfig={setTemplateConfig} bankAccount={bankAccount} setBankAccount={setBankAccount} quickMessages={quickMessages} setQuickMessages={setQuickMessages} addressStartDate={addressStartDate} setAddressStartDate={setAddressStartDate} soundVolume={soundVolume} setSoundVolume={setSoundVolume} setIsSettingsOpen={setIsSettingsOpen} />}
 
                     <div className="flex-1 overflow-hidden flex flex-col">
                         <div className={`flex-1 overflow-hidden ${activeTab === 'live' ? 'flex' : 'hidden'}`}>
-                            <LiveTab youtubeApiKey={youtubeApiKey} youtubeVideoId={youtubeVideoId} orders={orders} setOrders={setOrders} productHistory={productHistory} setProductHistory={setProductHistory} quickShipping={quickShipping} jejuShipping={jejuShipping} freeShippingThreshold={freeShippingThreshold} shippingOverrides={shippingOverrides} setShippingOverrides={setShippingOverrides} bankAccount={bankAccount} googleScriptUrl={googleScriptUrl} depSheetId={depSheetId} masterSheetId={masterSheetId} addresses={addresses} setAddresses={setAddresses} cardPayments={cardPayments} setCardPayments={setCardPayments} manualDeposits={manualDeposits} setManualDeposits={setManualDeposits} matchedDeposits={matchedDeposits} setMatchedDeposits={setMatchedDeposits} depositLinks={depositLinks} setDepositLinks={setDepositLinks} depositorNames={depositorNames} setDepositorNames={setDepositorNames} clickedChats={clickedChats} setClickedChats={setClickedChats} openModal={openModal} keywords={keywords} setKeywords={setKeywords} sentAddressRequests={sentAddressRequests} setSentAddressRequests={setSentAddressRequests} deletedDepositIds={deletedDepositIds} setDeletedDepositIds={setDeletedDepositIds} checkedOrders={checkedOrders} setCheckedOrders={setCheckedOrders} addressMapping={addressMapping} setAddressMapping={setAddressMapping} templateConfig={templateConfig} specialCustomers={specialCustomers} setSpecialCustomers={setSpecialCustomers} inventory={inventory} setInventory={setInventory} quickMessages={quickMessages} handleResetAllData={handleResetAllData} broadcastName={broadcastName} setGlobalError={setGlobalError} cashReceipts={cashReceipts} setCashReceipts={setCashReceipts} soundEnabled={soundEnabled} soundVolume={soundVolume} noShowCustomers={noShowCustomers} setNoShowCustomers={setNoShowCustomers} waitlistCustomers={waitlistCustomers} setWaitlistCustomers={setWaitlistCustomers} customerPasswords={customerPasswords} setCustomerPasswords={setCustomerPasswords} />
+                            <LiveTab youtubeApiKey={youtubeApiKey} youtubeVideoId={youtubeVideoId} orders={orders} setOrders={setOrders} productHistory={productHistory} setProductHistory={setProductHistory} quickShipping={quickShipping} jejuShipping={jejuShipping} freeShippingThreshold={freeShippingThreshold} cardFeeRate={cardFeeRate} shippingOverrides={shippingOverrides} setShippingOverrides={setShippingOverrides} bankAccount={bankAccount} googleScriptUrl={googleScriptUrl} depSheetId={depSheetId} masterSheetId={masterSheetId} addresses={addresses} setAddresses={setAddresses} cardPayments={cardPayments} setCardPayments={setCardPayments} manualDeposits={manualDeposits} setManualDeposits={setManualDeposits} matchedDeposits={matchedDeposits} setMatchedDeposits={setMatchedDeposits} depositLinks={depositLinks} setDepositLinks={setDepositLinks} depositorNames={depositorNames} setDepositorNames={setDepositorNames} clickedChats={clickedChats} setClickedChats={setClickedChats} openModal={openModal} keywords={keywords} setKeywords={setKeywords} sentAddressRequests={sentAddressRequests} setSentAddressRequests={setSentAddressRequests} deletedDepositIds={deletedDepositIds} setDeletedDepositIds={setDeletedDepositIds} checkedOrders={checkedOrders} setCheckedOrders={setCheckedOrders} addressMapping={addressMapping} setAddressMapping={setAddressMapping} templateConfig={templateConfig} specialCustomers={specialCustomers} setSpecialCustomers={setSpecialCustomers} inventory={inventory} setInventory={setInventory} quickMessages={quickMessages} handleResetAllData={handleResetAllData} broadcastName={broadcastName} setGlobalError={setGlobalError} cashReceipts={cashReceipts} setCashReceipts={setCashReceipts} soundEnabled={soundEnabled} soundVolume={soundVolume} noShowCustomers={noShowCustomers} setNoShowCustomers={setNoShowCustomers} waitlistCustomers={waitlistCustomers} setWaitlistCustomers={setWaitlistCustomers} customerPasswords={customerPasswords} setCustomerPasswords={setCustomerPasswords} />
                         </div>
                         <div className={`flex-1 overflow-y-auto ${activeTab === 'management' ? 'block' : 'hidden'}`}>
-                            <OrderManagementTab orders={orders} shippingOverrides={shippingOverrides} quickShipping={quickShipping} jejuShipping={jejuShipping} freeShippingThreshold={freeShippingThreshold} broadcastName={broadcastName} addresses={addresses} handleExportBackup={handleExportBackup} handleImportBackup={handleImportBackup} addressMapping={addressMapping} cardPayments={cardPayments} specialCustomers={specialCustomers} openModal={openModal} cashReceipts={cashReceipts} inventory={inventory} productHistory={productHistory} noShowCustomers={noShowCustomers} waitlistCustomers={waitlistCustomers} />
+                            <OrderManagementTab orders={orders} shippingOverrides={shippingOverrides} quickShipping={quickShipping} jejuShipping={jejuShipping} freeShippingThreshold={freeShippingThreshold} cardFeeRate={cardFeeRate} broadcastName={broadcastName} addresses={addresses} handleExportBackup={handleExportBackup} handleImportBackup={handleImportBackup} addressMapping={addressMapping} cardPayments={cardPayments} specialCustomers={specialCustomers} openModal={openModal} cashReceipts={cashReceipts} inventory={inventory} productHistory={productHistory} noShowCustomers={noShowCustomers} waitlistCustomers={waitlistCustomers} />
                         </div>
                     </div>
 
