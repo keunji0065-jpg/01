@@ -1334,7 +1334,7 @@ useEffect(() => {
                                 onClick={(e) => { e.stopPropagation(); setShowDeposits(!showDeposits); }}
                             >
                                 <span className="text-[10px] font-bold text-blue-700 dark:text-blue-300">
-                                    🔗 연결된 입금 내역 ({customerDeposits.length}건)
+                                    🔗 연결된 입금 기록 ({customerDeposits.length}건 · 시트에서 지워도 영구보존)
                                 </span>
                                 <div className="flex items-center gap-2">
                                     <span className="text-[11px] font-black text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/50 px-1.5 py-0.5 rounded">
@@ -1348,9 +1348,16 @@ useEffect(() => {
                                 <div className="p-1 space-y-0.5 bg-blue-100/50 dark:bg-blue-900/30">
                                     {customerDeposits.map(d => (
                                         <div key={d.id} className="flex justify-between items-center px-2 py-1 bg-white dark:bg-slate-800 rounded shadow-sm border border-blue-100 dark:border-blue-700">
-                                            <span className="text-[10px] text-slate-700 dark:text-slate-300 font-bold">{d.name}</span>
-                                            <div className="flex gap-2 items-center">
-                                                <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400">+{Number(d.amount).toLocaleString()}원</span>
+                                            <div className="flex items-center gap-1.5 min-w-0">
+                                                <span className="text-[10px] text-slate-800 dark:text-slate-200 font-extrabold truncate">{d.name}</span>
+                                                {(d.fullTime || d.time) && (
+                                                    <span className="text-[9.5px] font-bold text-blue-600 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/40 px-1.5 py-0.2 rounded border border-blue-200 dark:border-blue-800 shrink-0 tabular-nums">
+                                                        🕒 {d.fullTime || d.time}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div className="flex gap-2 items-center shrink-0">
+                                                <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 tabular-nums">+{Number(d.amount).toLocaleString()}원</span>
                                                 <button onClick={(e) => { e.stopPropagation(); handleDepositUnmatch(d, nick); }} className="text-[9px] bg-red-50 text-red-500 border border-red-200 hover:bg-red-100 px-1.5 py-0.5 rounded font-bold shadow-sm transition-colors">해제</button>
                                             </div>
                                         </div>
@@ -1383,7 +1390,7 @@ useEffect(() => {
             if (prev.customerDeposits?.length !== next.customerDeposits?.length) return false;
             if (prev.customerDeposits && next.customerDeposits) {
                 for(let i=0; i<prev.customerDeposits.length; i++) {
-                    if (prev.customerDeposits[i].id !== next.customerDeposits[i].id) return false;
+                    if (prev.customerDeposits[i].id !== next.customerDeposits[i].id || prev.customerDeposits[i].amount !== next.customerDeposits[i].amount || prev.customerDeposits[i].fullTime !== next.customerDeposits[i].fullTime) return false;
                 }
             }
             return true;
@@ -1489,7 +1496,7 @@ useEffect(() => {
             );
         };
 
-const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHistory, setProductHistory, quickShipping, jejuShipping, freeShippingThreshold, cardFeeRate, shippingOverrides, setShippingOverrides, bankAccount, googleScriptUrl, depSheetId, masterSheetId, addresses, setAddresses, cardPayments, setCardPayments, manualDeposits, setManualDeposits, matchedDeposits, setMatchedDeposits, depositorNames, setDepositorNames, clickedChats, setClickedChats, openModal, keywords, setKeywords, sentAddressRequests, setSentAddressRequests, deletedDepositIds, setDeletedDepositIds, checkedOrders, setCheckedOrders, addressMapping, setAddressMapping, templateConfig, specialCustomers, setSpecialCustomers, inventory, setInventory, quickMessages, handleResetAllData, broadcastName, setBroadcastName, setGlobalError, cashReceipts, setCashReceipts, soundEnabled, soundVolume, depositLinks, setDepositLinks, noShowCustomers, setNoShowCustomers, waitlistCustomers, setWaitlistCustomers, customerPasswords, setCustomerPasswords, trackingNumbers, setTrackingNumbers }) => {
+const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHistory, setProductHistory, quickShipping, jejuShipping, freeShippingThreshold, cardFeeRate, shippingOverrides, setShippingOverrides, bankAccount, googleScriptUrl, depSheetId, masterSheetId, addresses, setAddresses, cardPayments, setCardPayments, manualDeposits, setManualDeposits, matchedDeposits, setMatchedDeposits, depositorNames, setDepositorNames, clickedChats, setClickedChats, openModal, keywords, setKeywords, sentAddressRequests, setSentAddressRequests, deletedDepositIds, setDeletedDepositIds, checkedOrders, setCheckedOrders, addressMapping, setAddressMapping, templateConfig, specialCustomers, setSpecialCustomers, inventory, setInventory, quickMessages, handleResetAllData, broadcastName, setBroadcastName, setGlobalError, cashReceipts, setCashReceipts, soundEnabled, soundVolume, depositLinks, setDepositLinks, customerDepositLogs, setCustomerDepositLogs, noShowCustomers, setNoShowCustomers, waitlistCustomers, setWaitlistCustomers, customerPasswords, setCustomerPasswords, trackingNumbers, setTrackingNumbers }) => {
             const [serverDeposits, setServerDeposits] = useState([]);
             const [selectedNick, setSelectedNick] = useState(null);
             const feeRateNum = (cardFeeRate !== undefined && cardFeeRate !== '' && Number(cardFeeRate) > 0) ? Number(cardFeeRate) : 10;
@@ -1791,7 +1798,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             const [quickMsgCopyStatus, setQuickMsgCopyStatus] = useState({});
             const [isSaving, setIsSaving] = useState(false);
             const [editingShippingNick, setEditingShippingNick] = useState(null);
-            const [currentSearchTerm, setCurrentSearchTerm] = useState('');
+            const [ currentSearchTerm, setCurrentSearchTerm] = useState('');
             const deferredSearchTerm = React.useDeferredValue(currentSearchTerm);
             
             const [lastAddedOrderId, setLastAddedOrderId] = useState(null);
@@ -1813,6 +1820,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
 
             // ✨ 누락되었던 동기화 제어용 useRef 선언 복구 (에러 해결)
             const inventorySyncLock = useRef(0);
+            const addressSyncLock = useRef(0);
             const prevDepsStr = useRef('');
             const prevAddrsStr = useRef('');
             const prevInvStr = useRef('');
@@ -1894,20 +1902,28 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             const [ignoredAutoMatch, setIgnoredAutoMatch] = useState(() => { try { const s = localStorage.getItem(getLsKey('ignoredAutoMatch')); const p = JSON.parse(s); return Array.isArray(p) ? new Set(p) : new Set(); } catch(e){ return new Set(); } });
             useEffect(() => { localStorage.setItem(getLsKey('ignoredAutoMatch'), JSON.stringify([...ignoredAutoMatch])); }, [ignoredAutoMatch]);
 
+            // ✨ 이전 방송(예: 10/16)을 마감하고 초기화할 때, 이미 그 방송에서 매칭해 쓴 입금ID들을 보관하여 새 방송(10/18)에 중복 매칭되지 않도록 영구 보호!
+            const [archivedDepositIds, setArchivedDepositIds] = useState(() => { try { const s = localStorage.getItem(getLsKey('archivedDepositIds')); const p = JSON.parse(s); return Array.isArray(p) ? new Set(p) : new Set(); } catch(e){ return new Set(); } });
+            useEffect(() => { localStorage.setItem(getLsKey('archivedDepositIds'), JSON.stringify([...archivedDepositIds])); }, [archivedDepositIds]);
+
             const handleRematchAll = useCallback(() => {
-                openModal("모든 입금 매칭을 초기화하고 처음부터 다시 매칭하시겠습니까?\n(현재 주문서에 입력된 입금액이 0으로 초기화된 후 재계산됩니다.)", 'confirm', () => {
+                openModal("현재 방송의 입금 매칭을 초기화하고 다시 매칭하시겠습니까?\n(이전 마감된 방송에서 사용된 입금내역은 제외하고 현재 방송 입금만 재계산됩니다.)", 'confirm', () => {
                     setOrders(prev => prev.map(o => ({ ...o, deposit: 0, loadedFromCloud: false })));
-                    setMatchedDeposits(new Set()); 
-                    setIgnoredAutoMatch(new Set());
+                    setMatchedDeposits(new Set(archivedDepositIds)); 
+                    setIgnoredAutoMatch(new Set(archivedDepositIds));
                     setDepositLinks({});
+                    setCustomerDepositLogs({});
                 });
-            }, [openModal, setOrders, setMatchedDeposits, setDepositLinks]);
+            }, [openModal, setOrders, setMatchedDeposits, setDepositLinks, setCustomerDepositLogs, archivedDepositIds]);
 
             const handleQuickAddressSubmit = async (addrData) => {
                 if (!addrData.timestamp) addrData.timestamp = new Date().toISOString();
                 const fixedPhone = fixPhoneNumber(addrData.phone);
                 const masterData = { ...addrData, phone: fixedPhone, _source: 'master' };
                 
+                // ✨ 수동 주소 입력 직후 12초 동안은 3초 폴링이 구버전 시트 데이터로 덮어쓰지 못하도록 보호 락 설정!
+                addressSyncLock.current = Date.now();
+
                 setAddresses(prev => {
                     const newAddrs = [...prev];
                     const targetNickClean = normalizeString(masterData.nickname);
@@ -1919,14 +1935,28 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                 setQuickAddrModal({ isOpen: false, nick: '', editData: null });
                 setAddressMapping(prevMap => ({ ...prevMap, [masterData.nickname]: masterData.nickname }));
 
+                // 핸드폰 뒷 4자리도 고객 비밀번호로 자동 세팅
+                if (fixedPhone && fixedPhone.length >= 4) {
+                    const pin4 = fixedPhone.slice(-4);
+                    setCustomerPasswords(prev => Object.assign({}, prev, { [masterData.nickname]: pin4 }));
+                }
+
                 if (googleScriptUrl && masterSheetId) {
                     const payloadToGas = { 
                         ...masterData, 
                         '닉네임': masterData.nickname, name: masterData.nickname, nick: masterData.nickname, '주문자': masterData.nickname, '아이디': masterData.nickname, '고객명': masterData.nickname,
                         phone: masterData.phone ? "'" + masterData.phone : '', 
-                        zipcode: masterData.zipcode ? "'" + masterData.zipcode : '' 
+                        zipcode: masterData.zipcode ? "'" + masterData.zipcode : '',
+                        broadcastName: broadcastName || ''
                     };
-                    try { await fetchGas(googleScriptUrl, { action: 'save_master_address', masterId: getCleanSheetId(masterSheetId), data: payloadToGas }); } catch (err) {}
+                    try { 
+                        const res = await fetchGas(googleScriptUrl, { action: 'save_master_address', masterId: getCleanSheetId(masterSheetId), data: payloadToGas }); 
+                        if (!res || (!res.success && res.status !== 'success')) {
+                            setGlobalError("🚨 찐고객사전 시트 저장 실패: 앱스 스크립트 배포 버전을 확인해주세요.");
+                        }
+                    } catch (err) {
+                        setGlobalError("🚨 통신 오류로 찐고객사전 시트에 주소를 저장하지 못했습니다.");
+                    }
                 }
             };
 
@@ -2238,22 +2268,30 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     if (res.masterAddresses && Array.isArray(res.masterAddresses)) {
                         const masterAddrs = res.masterAddresses.map(a => ({
                             ...a,
-                            nickname: String(a.nickname || a['닉네임'] || '').trim(),
-                            phone: fixPhoneNumber(String(a.phone || '').trim()),
-                            _parsedTime: parseSafeDate(a.timestamp).getTime(),
+                            nickname: String(a.nickname || a['닉네임'] || a['주문자'] || '').trim(),
+                            realname: String(a.realname || a['수령인명'] || a['수령인'] || a['이름'] || a['성명'] || '').trim(),
+                            phone: fixPhoneNumber(String(a.phone || a['연락처'] || a['핸드폰번호'] || a['전화번호'] || '').trim()),
+                            address: String(a.address || a['주소'] || a['배송지'] || '').trim(),
+                            zipcode: String(a.zipcode || a['우편번호'] || '').trim(),
+                            memo: String(a.memo || a['배송메모'] || a['요청사항'] || a['메모'] || '').trim(),
+                            timestamp: a.timestamp || a['저장시간'] || a['일시'] || '',
+                            _parsedTime: parseSafeDate(a.timestamp || a['저장시간'] || '').getTime(),
                             _source: 'master'
                         })).filter(a => a.nickname || a.realname);
                         mergedAddr = [...masterAddrs];
                         gasMsg += `주소(${masterAddrs.length}) `;
                     }
                     
-                    const addrKeys = mergedAddr.map(a => a.nickname + (a.address||'') + (a.phone||'')).join(',');
-                    if (addrKeys !== prevAddrsStr.current) {
-                        if (mergedAddr.length > prevAddrCount.current && prevAddrCount.current !== 0) playBellSound();
-                        if (mergedAddr.length > 0) setAddresses(mergedAddr);
-                        prevAddrsStr.current = addrKeys;
+                    // ✨ 수동으로 주소를 방금 입력/수정한 경우 12초 동안은 서버의 이전 캐시가 로컬 최신 주소를 덮어쓰지 못하도록 완벽 보호!
+                    if (Date.now() - addressSyncLock.current > 12000) {
+                        const addrKeys = mergedAddr.map(a => a.nickname + (a.address||'') + (a.phone||'')).join(',');
+                        if (addrKeys !== prevAddrsStr.current) {
+                            if (mergedAddr.length > prevAddrCount.current && prevAddrCount.current !== 0) playBellSound();
+                            if (mergedAddr.length > 0) setAddresses(mergedAddr);
+                            prevAddrsStr.current = addrKeys;
+                        }
+                        prevAddrCount.current = mergedAddr.length;
                     }
-                    prevAddrCount.current = mergedAddr.length;
 
                     if (res.inventory && Array.isArray(res.inventory)) {
                         if (Date.now() - inventorySyncLock.current > 10000) {
@@ -2452,7 +2490,12 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
 
             const filteredDeposits = useMemo(() => { 
                 let result = [...allDeposits]; 
-                result = result.filter(d => !deletedDepositIds.has(d.id)); 
+                // ✨ 삭제된 입금 또는 이전 마감 방송(예: 10/16)에서 이미 사용 완료되어 박제된 입금 내역은 새 방송 목록에서 깔끔하게 숨김! (검색 시에만 노출)
+                result = result.filter(d => {
+                    if (deletedDepositIds.has(d.id) || (d.legacyId && deletedDepositIds.has(d.legacyId))) return false;
+                    if (!deferredDepositSearch && (archivedDepositIds.has(d.id) || (d.legacyId && archivedDepositIds.has(d.legacyId)))) return false;
+                    return true;
+                }); 
                 if (deferredDepositSearch) result = result.filter(d => String(d.name||'').includes(deferredDepositSearch) || String(d.amount).includes(deferredDepositSearch)); 
                 
                 let targetNickClean = '', targetNickKo = '', targetRealClean = '', targetRealKo = '', addrRealClean = '', addrRealKo = '';
@@ -2510,7 +2553,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     return 0; 
                 });
                 return decorated.map(d => d.item); 
-            }, [allDeposits, deferredDepositSearch, selectedNick, deletedDepositIds, matchedDeposits, depositorNames, addressLookup]);
+            }, [allDeposits, deferredDepositSearch, selectedNick, deletedDepositIds, archivedDepositIds, matchedDeposits, depositorNames, addressLookup]);
             
 
 const dashboardStats = useMemo(() => {
@@ -2820,6 +2863,33 @@ const dashboardStats = useMemo(() => {
                     if (allDeposits.length === 0 || orders.length === 0) return;
                     let updatedOrders = [...orders]; let newMatchedIds = new Set(matchedDeposits); let hasChanges = false; const customerBalances = {};
                     let newDepositLinks = { ...depositLinks };
+                    let newDepositLogs = { ...(customerDepositLogs || {}) };
+                    let logsChanged = false;
+
+                    // ✨ 이미 연결되어 있는 입금건이라도 영구 기록(customerDepositLogs)에 누락되어 있다면 즉시 스냅샷으로 박제!
+                    allDeposits.forEach(dep => {
+                        const isMatched = newMatchedIds.has(dep.id) || (dep.legacyId && newMatchedIds.has(dep.legacyId));
+                        const linkedCust = newDepositLinks[dep.id] || (dep.legacyId && newDepositLinks[dep.legacyId]);
+                        if (isMatched && linkedCust) {
+                            const existingList = Array.isArray(newDepositLogs[linkedCust]) ? newDepositLogs[linkedCust] : [];
+                            const alreadyInLog = existingList.some(item => item.id === dep.id || (dep.legacyId && item.legacyId === dep.legacyId));
+                            if (!alreadyInLog) {
+                                const fullTimeStr = formatDepositFullDateTime(dep.rawTime || dep.time || dep.date || '') || dep.time || '';
+                                newDepositLogs[linkedCust] = [
+                                    ...existingList,
+                                    {
+                                        id: dep.id,
+                                        legacyId: dep.legacyId || '',
+                                        name: dep.name,
+                                        amount: Number(dep.amount),
+                                        time: fullTimeStr,
+                                        fullTime: fullTimeStr
+                                    }
+                                ];
+                                logsChanged = true;
+                            }
+                        }
+                    });
 
                     // ✨ [자동 복구 로직] ID 변경(legacyId -> id)으로 인해 동일 입금건이 2번 중복 합산된 경우 실제 연결된 고유 입금건 합계로 즉시 정상화!
                     const linkedSumByCustomer = {};
@@ -2886,7 +2956,8 @@ const dashboardStats = useMemo(() => {
                         const alreadyMatched = newMatchedIds.has(deposit.id) || (deposit.legacyId && newMatchedIds.has(deposit.legacyId));
                         const alreadyDeleted = deletedDepositIds.has(deposit.id) || (deposit.legacyId && deletedDepositIds.has(deposit.legacyId));
                         const alreadyIgnored = ignoredAutoMatch.has(deposit.id) || (deposit.legacyId && ignoredAutoMatch.has(deposit.legacyId));
-                        if (alreadyMatched || alreadyDeleted || alreadyIgnored) return;
+                        const alreadyArchived = archivedDepositIds.has(deposit.id) || (deposit.legacyId && archivedDepositIds.has(deposit.legacyId));
+                        if (alreadyMatched || alreadyDeleted || alreadyIgnored || alreadyArchived) return;
 
                         const depositNameClean = cleanForMatch(deposit.name); if (depositNameClean.length < 1) return; 
                         let exactMatches = matchLookup[depositNameClean] || []; exactMatches = [...new Set(exactMatches)];
@@ -2910,22 +2981,63 @@ const dashboardStats = useMemo(() => {
                             newMatchedIds.add(deposit.id);
                             if (deposit.legacyId) newMatchedIds.add(deposit.legacyId);
                             newDepositLinks[deposit.id] = matchedCustomer;
+
+                            // ✨ 자동 매칭되는 순간 고객의 영구 입금기록 장부(customerDepositLogs)에 입금자명·날짜시간·금액을 즉시 박제! (나중에 입금 시트에서 지워도 절대 안 날아감)
+                            const fullTimeStr = formatDepositFullDateTime(deposit.rawTime || deposit.time || deposit.date || '') || deposit.time || '';
+                            const prevCustLogs = Array.isArray(newDepositLogs[matchedCustomer]) ? newDepositLogs[matchedCustomer] : [];
+                            if (!prevCustLogs.some(item => item.id === deposit.id || (deposit.legacyId && item.legacyId === deposit.legacyId))) {
+                                newDepositLogs[matchedCustomer] = [
+                                    ...prevCustLogs,
+                                    {
+                                        id: deposit.id,
+                                        legacyId: deposit.legacyId || '',
+                                        name: deposit.name,
+                                        amount: depositAmount,
+                                        time: fullTimeStr,
+                                        fullTime: fullTimeStr
+                                    }
+                                ];
+                                logsChanged = true;
+                            }
                             hasChanges = true;
                         }
                     });
                     if (hasChanges) { setOrders(updatedOrders); setMatchedDeposits(newMatchedIds); setDepositLinks(newDepositLinks); }
+                    if (logsChanged) { setCustomerDepositLogs(newDepositLogs); }
                 }, 500); 
                 return () => clearTimeout(timer);
-            }, [allDeposits, orders, matchedDeposits, depositorNames, deletedDepositIds, getCalculatedShipping, ignoredAutoMatch, addressLookup, depositLinks, setDepositLinks]);
+            }, [allDeposits, orders, matchedDeposits, depositorNames, deletedDepositIds, archivedDepositIds, getCalculatedShipping, ignoredAutoMatch, addressLookup, depositLinks, setDepositLinks, customerDepositLogs, setCustomerDepositLogs]);
 
             const lastSavedDataStr = useRef('');
             const savedDepositsHistoryMapRef = useRef({});
 
-            const loadOrdersFromGoogleSheet = useCallback(async (isSilent = false) => {
+            // ✨ 구글 시트의 방송 목록을 불러와서 원하는 날짜의 방송 주문서로 언제든 전환/복원할 수 있는 모달 상태
+            const [sheetListModal, setSheetListModal] = useState({ isOpen: false, tabs: [], loading: false });
+
+            const openSheetSelectorModal = useCallback(async () => {
+                if (!googleScriptUrl || !masterSheetId) return openModal('스크립트 URL과 마스터 시트 ID를 먼저 설정해주세요.', 'alert');
+                setSheetListModal({ isOpen: true, tabs: [], loading: true });
+                try {
+                    const actualSheetId = getCleanSheetId(masterSheetId);
+                    const res = await fetchGas(`${googleScriptUrl}?action=get_order_tabs&masterId=${actualSheetId}&t=${Date.now()}`);
+                    if (res && res.success && Array.isArray(res.tabs)) {
+                        setSheetListModal({ isOpen: true, tabs: res.tabs, loading: false });
+                    } else {
+                        setSheetListModal({ isOpen: false, tabs: [], loading: false });
+                        loadOrdersFromGoogleSheet(false, '메인주문');
+                    }
+                } catch (e) {
+                    setSheetListModal({ isOpen: false, tabs: [], loading: false });
+                    loadOrdersFromGoogleSheet(false, '메인주문');
+                }
+            }, [googleScriptUrl, masterSheetId, openModal]);
+
+            const loadOrdersFromGoogleSheet = useCallback(async (isSilent = false, targetTabName = '메인주문') => {
                 if (!googleScriptUrl || !masterSheetId) return;
                 try {
                     const actualSheetId = getCleanSheetId(masterSheetId);
-                    const res = await fetchGas(`${googleScriptUrl}?action=get_orders&masterId=${actualSheetId}&t=${Date.now()}`);
+                    const tabParam = targetTabName ? `&tabName=${encodeURIComponent(targetTabName)}` : '';
+                    const res = await fetchGas(`${googleScriptUrl}?action=get_orders&masterId=${actualSheetId}${tabParam}&t=${Date.now()}`);
                     if (res && res.success && Array.isArray(res.data) && res.data.length > 0) {
                         const loadedOrders = [];
                         const loadedCards = {};
@@ -2984,22 +3096,20 @@ const dashboardStats = useMemo(() => {
 
                         if (Object.keys(loadedDepJsonMap).length > 0) {
                             savedDepositsHistoryMapRef.current = Object.assign({}, savedDepositsHistoryMapRef.current, loadedDepJsonMap);
+                            setCustomerDepositLogs(loadedDepJsonMap);
+                        } else {
+                            setCustomerDepositLogs({});
                         }
 
                         if (loadedOrders.length > 0) {
                             setOrders(loadedOrders);
-                            if (Object.keys(loadedCards).length > 0) setCardPayments(prev => Object.assign({}, prev, loadedCards));
-                            if (Object.keys(loadedTrks).length > 0) setTrackingNumbers(prev => Object.assign({}, prev, loadedTrks));
-                            if (loadedConfirmed.length > 0) {
-                                setCheckedOrders(prev => {
-                                    const next = new Set(prev);
-                                    loadedConfirmed.forEach(n => next.add(n));
-                                    return next;
-                                });
-                            }
-                            if (!isSilent) openModal(`마스터 시트에서 주문 ${loadedOrders.length}건을 불러왔습니다!`, 'alert');
+                            setCardPayments(loadedCards);
+                            setShippingOverrides(loadedShips);
+                            setTrackingNumbers(loadedTrks);
+                            setCheckedOrders(new Set(loadedConfirmed));
+                            if (!isSilent) openModal(`[${targetTabName}] 시트에서 주문 ${loadedOrders.length}건을 안전하게 불러왔습니다!`, 'alert');
                         } else if (!isSilent) {
-                            openModal('마스터 시트(메인주문)에 저장된 주문 내역이 없습니다.', 'alert');
+                            openModal(`[${targetTabName}] 시트에 저장된 주문 내역이 없습니다.`, 'alert');
                         }
                     } else if (!isSilent) {
                         openModal('시트에서 주문 내역을 불러오지 못했습니다.', 'alert');
@@ -3007,7 +3117,7 @@ const dashboardStats = useMemo(() => {
                 } catch (e) {
                     if (!isSilent) openModal('시트 불러오기 중 통신 오류가 발생했습니다.', 'alert');
                 }
-            }, [googleScriptUrl, masterSheetId, setOrders, setCardPayments, setTrackingNumbers, setCheckedOrders, setBroadcastName, openModal]);
+            }, [googleScriptUrl, masterSheetId, setOrders, setCardPayments, setShippingOverrides, setTrackingNumbers, setCheckedOrders, setBroadcastName, setCustomerDepositLogs, openModal]);
 
             // 최초 실행 시 로컬 주문서가 비어있다면 마스터 시트(메인주문)에서 자동으로 주문내역을 복구합니다.
             const initialCloudLoadRef = useRef(false);
@@ -3047,7 +3157,10 @@ const dashboardStats = useMemo(() => {
                     let customerDepsJson = '';
                     if (!printedDeposits[customerVal]) {
                         depositToSave = customerTotalDeposits[customerVal] || 0;
-                        let matchedDepsForCust = (allDepositsRef.current || []).filter(d => {
+                        // ✨ 1순위: 고객 주문서에 영구 박제된 입금기록 장부(customerDepositLogs) 사용 (입금 시트에서 원본을 지웠더라도 기록이 100% 살아있음!)
+                        const permanentLogs = (customerDepositLogs && Array.isArray(customerDepositLogs[customerVal])) ? customerDepositLogs[customerVal] : [];
+                        // ✨ 2순위: 현재 실시간 입금 목록에서 연결된 내역 확인
+                        const liveMatchedDeps = (allDepositsRef.current || []).filter(d => {
                             const isLinked = (depositLinks[d.id] === customerVal) || (d.legacyId && depositLinks[d.legacyId] === customerVal);
                             const isMatched = matchedDeposits.has(d.id) || (d.legacyId && matchedDeposits.has(d.legacyId));
                             return isLinked && isMatched;
@@ -3058,27 +3171,31 @@ const dashboardStats = useMemo(() => {
                             amount: Number(d.amount)
                         }));
 
-                        // ✨ 만약 새로고침 등으로 depositLinks가 비어있더라도 입금 시트에서 이름/실명이 일치하는 입금내역(시간 포함)을 자동으로 찾아 연결!
+                        // 영구 장부와 실시간 매칭 내역을 중복 없이 병합
+                        const mergedDepsMap = new Map();
+                        permanentLogs.forEach(item => {
+                            const key = item.id || `${item.name}_${item.amount}_${item.time}`;
+                            mergedDepsMap.set(key, {
+                                id: item.id || key,
+                                time: item.fullTime || item.time || '',
+                                name: item.name || customerVal,
+                                amount: Number(item.amount)
+                            });
+                        });
+                        liveMatchedDeps.forEach(item => {
+                            const key = item.id || `${item.name}_${item.amount}_${item.time}`;
+                            if (!mergedDepsMap.has(key)) {
+                                mergedDepsMap.set(key, item);
+                            }
+                        });
+
+                        let matchedDepsForCust = Array.from(mergedDepsMap.values());
+
+                        // ✨ 시트에서 불러온 주문서이거나 새로고침한 경우, 기존에 저장되어 있던 입금내역JSON을 보존
                         if (matchedDepsForCust.length === 0 && depositToSave > 0) {
                             const savedHist = savedDepositsHistoryMapRef.current[customerVal];
                             if (Array.isArray(savedHist) && savedHist.length > 0) {
                                 matchedDepsForCust = savedHist;
-                            } else {
-                                const cNickClean = cleanForMatch(customerVal);
-                                const cRealClean = cleanForMatch(depositorNames[customerVal] || addr.realname || '');
-                                const fallbackMatches = (allDepositsRef.current || []).filter(d => {
-                                    const dClean = cleanForMatch(d.name);
-                                    if (!dClean) return false;
-                                    return dClean === cNickClean || (cRealClean && dClean === cRealClean);
-                                });
-                                if (fallbackMatches.length > 0) {
-                                    matchedDepsForCust = fallbackMatches.map(d => ({
-                                        id: d.id,
-                                        time: formatDepositFullDateTime(d.rawTime || d.time || d.date || '') || d.time || '',
-                                        name: d.name,
-                                        amount: Number(d.amount)
-                                    }));
-                                }
                             }
                         }
 
@@ -3165,7 +3282,7 @@ const dashboardStats = useMemo(() => {
                         lastSavedDataStr.current = currentDataStr;
                     } 
                 } catch(e) {} finally { if (isManual) setIsSaving(false); } 
-            }, [orders, cardPayments, getCalculatedShipping, googleScriptUrl, addressLookup, masterSheetId, broadcastName, specialCustomers, noShowCustomers, waitlistCustomers, customerPasswords, trackingNumbers, checkedOrders, depositLinks, matchedDeposits, depositorNames, freeShippingThreshold, quickShipping, feeRateNum, waitlistRankMap]);
+            }, [orders, cardPayments, getCalculatedShipping, googleScriptUrl, addressLookup, masterSheetId, broadcastName, specialCustomers, noShowCustomers, waitlistCustomers, customerPasswords, trackingNumbers, checkedOrders, depositLinks, customerDepositLogs, matchedDeposits, depositorNames, freeShippingThreshold, quickShipping, feeRateNum, waitlistRankMap]);
 
             const autoSaveRef = useRef(); useEffect(() => { autoSaveRef.current = autoSaveToGoogleSheet; }, [autoSaveToGoogleSheet]);
             useEffect(() => { const saveInterval = setInterval(() => { if (autoSaveRef.current) autoSaveRef.current(); }, 10000); return () => clearInterval(saveInterval); }, []); 
@@ -3224,6 +3341,7 @@ const dashboardStats = useMemo(() => {
             
             const handleAddressMapping = useCallback((orderNick, addressNick) => { 
                 openModal(`'${orderNick}' 주문자에게 '${addressNick}' 님의 주소를 연결하시겠습니까?`, 'confirm', async () => {
+                    addressSyncLock.current = Date.now();
                     setAddressMapping(prev => ({ ...prev, [orderNick]: addressNick })); 
                     const addrData = addresses.find(a => normalizeString(a.nickname) === normalizeString(addressNick));
                     if (addrData && googleScriptUrl && masterSheetId) {
@@ -3231,12 +3349,13 @@ const dashboardStats = useMemo(() => {
                             ...addrData, 
                             nickname: orderNick, '닉네임': orderNick, name: orderNick, nick: orderNick, '주문자': orderNick, '아이디': orderNick, '고객명': orderNick, 
                             phone: addrData.phone ? "'" + addrData.phone : '', 
+                            broadcastName: broadcastName || '',
                             _source: 'master' 
                         };
                         try { await fetchGas(googleScriptUrl, { action: 'save_master_address', masterId: getCleanSheetId(masterSheetId), data: mappedData }); } catch (err) { setGlobalError("🚨 통신 에러: 주소 저장 실패"); }
                     }
                 }); 
-            }, [openModal, setAddressMapping, addresses, googleScriptUrl, masterSheetId, setGlobalError]);
+            }, [openModal, setAddressMapping, addresses, googleScriptUrl, masterSheetId, broadcastName, setGlobalError]);
             
             const handleAddressUnmapping = useCallback((orderNick) => { 
                 openModal(`매칭된 주소를 해제하시겠습니까?`, 'confirm', () => setAddressMapping(prev => { 
@@ -3412,8 +3531,16 @@ const dashboardStats = useMemo(() => {
             const handleFullDepositToggle = useCallback((nick, grandTotal, currentDeposit) => { 
                 if (currentDeposit >= grandTotal) { 
                     setOrders(prev => prev.map(o => o.customer === nick ? { ...o, deposit: 0 } : o)); 
+                    setCustomerDepositLogs(prev => {
+                        const next = Object.assign({}, prev);
+                        delete next[nick];
+                        return next;
+                    });
                 } 
                 else { 
+                    const nowKst = formatDepositFullDateTime(new Date().toISOString());
+                    const addrRes = addressLookup.get(nick);
+                    const payerName = depositorNames[nick] || (addrRes && addrRes.data && addrRes.data.realname) || nick;
                     setOrders(prev => { 
                         let done = false; 
                         return prev.map(o => { 
@@ -3427,8 +3554,21 @@ const dashboardStats = useMemo(() => {
                             return o; 
                         }); 
                     }); 
+                    setCustomerDepositLogs(prev => {
+                        const existing = Array.isArray(prev[nick]) ? prev[nick] : [];
+                        if (existing.length > 0) return prev;
+                        return Object.assign({}, prev, {
+                            [nick]: [{
+                                id: `full_${Date.now()}`,
+                                name: `${payerName} (완납체크)`,
+                                amount: grandTotal,
+                                time: nowKst,
+                                fullTime: nowKst
+                            }]
+                        });
+                    });
                 } 
-            }, [setOrders]);
+            }, [setOrders, setCustomerDepositLogs, addressLookup, depositorNames]);
 
             const addOrderLogic = useCallback((nick, content, qty = 1, force = false, afterId = null, customPrice = null, markAsModified = false, isAuto = false) => {
                 const cNick = String(nick).replace(/@/g, '').trim(); const cContent = String(content || '').trim();
@@ -3488,38 +3628,32 @@ const dashboardStats = useMemo(() => {
                     });
                     
                     if(priceNum > 0) setProductHistory(prev => ({...prev, [cleanProduct]: priceNum}));
-                    
                     if (!isFixedProductMode) { setManualProduct(''); setManualPrice(''); }
                     return;
                 }
                 
-                addOrderLogic(manualNick, manualProduct, 1, false, null, manualPrice, true); 
+                bringToTopAndScroll(manualNick); 
+                addOrderLogic(manualNick, manualProduct, 1, true, null, manualPrice, true); 
                 setManualNick(''); 
                 if (!isFixedProductMode) { setManualProduct(''); setManualPrice(''); } 
+                setShowNickSuggestions(false); 
             };
 
-            const deductCustomerDeposit = useCallback((targetNick, amountToSubtract) => {
+            const deductCustomerDeposit = useCallback((targetNick, amountToDeduct) => {
                 setOrders(prev => {
-                    let totalDep = 0;
-                    prev.forEach(o => {
-                        if (o.customer === targetNick) totalDep += Number(o.deposit || 0);
-                    });
-                    const nextDep = Math.max(0, totalDep - Number(amountToSubtract || 0));
-                    let assigned = false;
+                    let rem = Number(amountToDeduct);
                     return prev.map(o => {
-                        if (o.customer === targetNick) {
-                            if (!assigned) {
-                                assigned = true;
-                                return { ...o, deposit: nextDep };
-                            }
-                            return { ...o, deposit: 0 };
+                        if (o.customer === targetNick && (o.deposit || 0) > 0 && rem > 0) {
+                            const deduct = Math.min(o.deposit, rem);
+                            rem -= deduct;
+                            return { ...o, deposit: o.deposit - deduct };
                         }
                         return o;
                     });
                 });
             }, [setOrders]);
 
-            const clearDepositMatchState = useCallback((dep) => {
+            const clearDepositMatchState = useCallback((dep, targetNick = null) => {
                 setMatchedDeposits(p => {
                     const next = new Set(p);
                     next.delete(dep.id);
@@ -3527,7 +3661,7 @@ const dashboardStats = useMemo(() => {
                     return next;
                 });
                 setDepositLinks(p => {
-                    const next = { ...p };
+                    const next = Object.assign({}, p);
                     delete next[dep.id];
                     if (dep.legacyId) delete next[dep.legacyId];
                     return next;
@@ -3538,7 +3672,17 @@ const dashboardStats = useMemo(() => {
                     if (dep.legacyId) next.add(dep.legacyId);
                     return next;
                 });
-            }, [setMatchedDeposits, setDepositLinks, setIgnoredAutoMatch]);
+                setCustomerDepositLogs(prev => {
+                    const next = Object.assign({}, prev);
+                    const nicksToClean = targetNick ? [targetNick] : Object.keys(next);
+                    nicksToClean.forEach(n => {
+                        if (Array.isArray(next[n])) {
+                            next[n] = next[n].filter(item => item.id !== dep.id && (!dep.legacyId || item.legacyId !== dep.legacyId));
+                        }
+                    });
+                    return next;
+                });
+            }, [setMatchedDeposits, setDepositLinks, setIgnoredAutoMatch, setCustomerDepositLogs]);
             
             const handleDepositClick = (dep, forceAction = null) => {
                 const isUsed = matchedDeposits?.has(dep.id) || (dep.legacyId && matchedDeposits?.has(dep.legacyId));
@@ -3550,7 +3694,7 @@ const dashboardStats = useMemo(() => {
                         if (targetNick) { 
                             deductCustomerDeposit(targetNick, dep.amount);
                         }
-                        clearDepositMatchState(dep);
+                        clearDepositMatchState(dep, targetNick);
                     });
                     return;
                 }
@@ -3561,11 +3705,31 @@ const dashboardStats = useMemo(() => {
                 setMatchedDeposits(p => { const next = new Set(p); next.add(dep.id); if (dep.legacyId) next.add(dep.legacyId); return next; });
                 setIgnoredAutoMatch(p => { const next = new Set(p); next.add(dep.id); if (dep.legacyId) next.add(dep.legacyId); return next; });
                 setDepositLinks(p => ({ ...p, [dep.id]: targetNick }));
+
+                // ✨ 수동으로 [연결]을 누르는 순간에도 고객의 영구 입금기록 장부(customerDepositLogs)에 즉시 박제!
+                const fullTimeStr = formatDepositFullDateTime(dep.rawTime || dep.time || dep.date || '') || dep.time || '';
+                setCustomerDepositLogs(prev => {
+                    const existing = Array.isArray(prev[targetNick]) ? prev[targetNick] : [];
+                    if (existing.some(item => item.id === dep.id || (dep.legacyId && item.legacyId === dep.legacyId))) return prev;
+                    return Object.assign({}, prev, {
+                        [targetNick]: [
+                            ...existing,
+                            {
+                                id: dep.id,
+                                legacyId: dep.legacyId || '',
+                                name: dep.name,
+                                amount: Number(dep.amount),
+                                time: fullTimeStr,
+                                fullTime: fullTimeStr
+                            }
+                        ]
+                    });
+                });
             };
 
             const handleDepositUnmatch = useCallback((dep, nick) => {
                 deductCustomerDeposit(nick, dep.amount);
-                clearDepositMatchState(dep);
+                clearDepositMatchState(dep, nick);
             }, [deductCustomerDeposit, clearDepositMatchState]);
 
             const handleCopyDepositName = (e, name) => {
@@ -3753,6 +3917,54 @@ const dashboardStats = useMemo(() => {
                         </div>
                     )}
 
+                    {/* ✨ 시트 불러오기 (방송 날짜별 시트 선택 모달) */}
+                    {sheetListModal.isOpen && (
+                        <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[9999] animate-pop" onClick={() => setSheetListModal({ isOpen: false, tabs: [], loading: false })}>
+                            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl p-5 w-full max-w-md mx-4 flex flex-col max-h-[80vh]" onClick={e => e.stopPropagation()}>
+                                <div className="mb-3 border-b dark:border-slate-700 pb-2.5 flex justify-between items-center">
+                                    <h3 className="text-base font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                                        <Icon name="folder-open" weight="fill" className="text-blue-500"/> 마감/보관된 방송 주문서 불러오기
+                                    </h3>
+                                    <button onClick={() => setSheetListModal({ isOpen: false, tabs: [], loading: false })} className="text-slate-400 hover:text-slate-600"><Icon name="x" weight="bold" size={18}/></button>
+                                </div>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mb-3 leading-relaxed">
+                                    불러올 방송 시트를 선택하세요. 각 방송 시트에는 <strong>마감 당시 매칭했던 입금내역·시간·주소·송장번호가 섞이지 않고 그대로 박제</strong>되어 있습니다.
+                                </p>
+                                <div className="flex-1 overflow-y-auto space-y-1.5 pr-1">
+                                    {sheetListModal.loading ? (
+                                        <div className="py-8 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
+                                            <Icon name="spinner" className="animate-spin text-blue-500" size={16}/> 방송 시트 목록을 불러오는 중...
+                                        </div>
+                                    ) : sheetListModal.tabs.length === 0 ? (
+                                        <div className="py-6 text-center text-xs text-slate-400">보관된 방송 시트가 없습니다.</div>
+                                    ) : (
+                                        sheetListModal.tabs.map((tab) => (
+                                            <button
+                                                key={tab}
+                                                type="button"
+                                                onClick={() => {
+                                                    setSheetListModal({ isOpen: false, tabs: [], loading: false });
+                                                    loadOrdersFromGoogleSheet(false, tab);
+                                                }}
+                                                className="w-full p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 flex items-center justify-between text-left transition-all"
+                                            >
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                    <Icon name={tab === '메인주문' ? "star" : "calendar-blank"} weight="fill" className={tab === '메인주문' ? "text-amber-500" : "text-blue-500"} />
+                                                    <span className="font-bold text-xs text-slate-800 dark:text-slate-200 truncate">
+                                                        {tab === '메인주문' ? '현재 작업 시트 (메인주문)' : tab.replace(/^주문_/, '')}
+                                                    </span>
+                                                </div>
+                                                <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/40 px-2 py-0.5 rounded shrink-0">
+                                                    불러오기
+                                                </span>
+                                            </button>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     <div ref={panelChat.ref} className="flex flex-col bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg shadow-sm resizable-panel" style={{ width: panelChat.width, minWidth: '130px' }}>
                         <div className="p-1.5 bg-slate-100 dark:bg-slate-900 border-b dark:border-slate-700 grid grid-cols-3 gap-1 shrink-0">
                             {quickMessages.map((msg, idx) => (
@@ -3841,17 +4053,17 @@ const dashboardStats = useMemo(() => {
                         <div className="p-2 flex flex-col gap-2 bg-white dark:bg-slate-800 border-b dark:border-slate-700 z-20 shadow-sm shrink-0">
                             <div className="flex justify-between items-center">
                                 <span className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1">
-                                    <Icon name="package" weight="fill"/> 주문서 <span className="text-xs font-normal text-slate-500">({filteredGroupedOrders.length}명 / {totalItemsCount}건)</span>
+                                    <Icon name="package" weight="fill"/> 주문서 <span className="text-xs font-extrabold text-blue-600 dark:text-blue-400">[{broadcastName || '오늘의방송'}]</span> <span className="text-xs font-normal text-slate-500">({filteredGroupedOrders.length}명 / {totalItemsCount}건)</span>
                                     {isSaving && <Icon name="spinner" className="animate-spin text-blue-500 ml-2" />}
                                 </span>
                                 <div className="flex items-center gap-1.5">
-                                    <button onClick={() => loadOrdersFromGoogleSheet(false)} className="px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 shadow-sm transition-colors bg-blue-600 hover:bg-blue-700 text-white" title="구글 마스터 시트(메인주문)에서 주문서 불러오기">
-                                        <Icon name="cloud-arrow-down" weight="fill" /> 시트 불러오기
+                                    <button onClick={openSheetSelectorModal} className="px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 shadow-sm transition-colors bg-blue-600 hover:bg-blue-700 text-white" title="날짜별 마감된 방송 주문서 불러오기">
+                                        <Icon name="folder-open" weight="fill" /> 이전방송 불러오기
                                     </button>
-                                    <button onClick={() => autoSaveToGoogleSheet(true)} disabled={isSaving} className={`px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 shadow-sm transition-colors ${isSaving ? 'bg-slate-400 text-slate-200 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 text-white'}`} title="마스터 시트에 즉시 저장">
+                                    <button onClick={() => autoSaveToGoogleSheet(true)} disabled={isSaving} className={`px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 shadow-sm transition-colors ${isSaving ? 'bg-slate-400 text-slate-200 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 text-white'}`} title="현재 방송 시트에 즉시 마감/저장">
                                         <Icon name="floppy-disk" weight="fill" /> 수동 저장
                                     </button>
-                                    <button onClick={handleResetAllData} className="bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 shadow-sm transition-colors"><Icon name="trash" weight="fill"/> 초기화</button>
+                                    <button onClick={handleResetAllData} className="bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 shadow-sm transition-colors" title="현재 방송을 마감 보관하고 새 방송 시작하기"><Icon name="sparkle" weight="fill"/> 새방송 초기화</button>
                                 </div>
                             </div>
                             <form onSubmit={handleQuickAddProduct} className="flex w-full gap-1 items-center bg-indigo-50 dark:bg-indigo-900/20 p-1.5 rounded border border-indigo-200 dark:border-indigo-800 shadow-sm overflow-hidden">
@@ -3920,7 +4132,17 @@ const dashboardStats = useMemo(() => {
                                 const isCard = Boolean(cardPayments[nick]); const cardFee = (isCard && baseBal > 0) ? Math.round(baseBal * feeMultiplier) : 0;
                                 const grand = baseGrand + cardFee; const bal = baseBal + cardFee;
                                 const { data: addrData, type: addrType } = addressLookup.get(nick);
-                                const customerDeps = allDeposits.filter(d => ((depositLinks[d.id] === nick) || (d.legacyId && depositLinks[d.legacyId] === nick)) && (matchedDeposits.has(d.id) || (d.legacyId && matchedDeposits.has(d.legacyId))));
+                                
+                                // ✨ 입금 수집기 시트에서 원본 입금내역을 지웠더라도, 영구 박제된 customerDepositLogs 기록을 통해 언제 어떻게 입금되었는지 끝까지 표시!
+                                const permanentLogsForNick = (customerDepositLogs && Array.isArray(customerDepositLogs[nick])) ? customerDepositLogs[nick] : [];
+                                const liveDepsForNick = allDeposits.filter(d => ((depositLinks[d.id] === nick) || (d.legacyId && depositLinks[d.legacyId] === nick)) && (matchedDeposits.has(d.id) || (d.legacyId && matchedDeposits.has(d.legacyId)))).map(d => {
+                                    const ft = formatDepositFullDateTime(d.rawTime || d.time || d.date || '') || d.time || '';
+                                    return { id: d.id, legacyId: d.legacyId || '', name: d.name, amount: Number(d.amount), time: ft, fullTime: ft };
+                                });
+                                const combinedDepsMap = new Map();
+                                permanentLogsForNick.forEach(item => combinedDepsMap.set(item.id, item));
+                                liveDepsForNick.forEach(item => { if (!combinedDepsMap.has(item.id)) combinedDepsMap.set(item.id, item); });
+                                const customerDeps = Array.from(combinedDepsMap.values());
                                 
                                 return (<CustomerBlock key={nick} nick={nick} items={items} isSelected={selectedNick === nick} currentShipping={ship} isCard={isCard} isPaidState={bal <= 0 && activeItems.length > 0} grandTotal={grand} depositTotal={depSum} balance={bal} baseGrandTotal={baseGrand} baseBalance={baseBal} addr={addrData} addrType={addrType} addressMapping={addressMapping} autoDepositorName={addrData?.realname || ''} displayDepositorName={depositorNames[nick] || addrData?.realname || '입금자'} isAutoDepositor={!depositorNames[nick] && addrData?.realname} depositorNames={depositorNames} copyStatus={copyStatus} isOrderConfirmed={checkedOrders.has(nick)} isEditingShipping={editingShippingNick === nick} setSelectedNick={setSelectedNick} addOrderLogic={addOrderLogic} handleNicknameEdit={handleNicknameEdit} toggleCardPayment={toggleCardPayment} handleShippingChange={handleShippingChange} setEditingShippingNick={setEditingShippingNick} openModal={openModal} setDepositorNames={setDepositorNames} handleFullDepositToggle={handleFullDepositToggle} copyOrderSheet={copyOrderSheet} handleOrderCheckToggle={handleOrderCheckToggle} handleAddressUnmapping={handleAddressUnmapping} handleAddressMapping={handleAddressMapping} handleProductChange={handleProductChange} handleQuantityUpdate={handleQuantityUpdate} handleOrderCancel={handleOrderCancel} handleOrderDelete={handleOrderDelete} toggleVIP={specialCustomers} specialCustomers={specialCustomers} handleOpenQuickAddress={handleOpenQuickAddress} findAddressSuggestions={findAddressSuggestions} cashReceiptStatus={cashReceipts[nick]} toggleCashReceipt={toggleCashReceipt} inventory={inventory} productHistory={productHistory} customerDeposits={customerDeps} handleDepositUnmatch={handleDepositUnmatch} handleMultiAddOpen={setMultiAddNick} toggleNoShow={toggleNoShow} toggleWaitlist={toggleWaitlist} noShowStatus={noShowCustomers[nick]} waitlistStatus={waitlistCustomers[nick]} customerPassword={customerPasswords && customerPasswords[nick]} handleSetCustomerPassword={handleSetCustomerPassword} trackingNumber={trackingNumbers && trackingNumbers[nick]} handleSetTrackingNumber={handleSetTrackingNumber} waitlistRankMap={waitlistRankMap} />);
                             })}
@@ -4655,6 +4877,7 @@ const dashboardStats = useMemo(() => {
 
             const [matchedDeposits, setMatchedDeposits] = useState(() => { try { const s = localStorage.getItem(getLsKey('matchedDeposits')); const p = JSON.parse(s); return Array.isArray(p) ? new Set(p) : new Set(); } catch(e){ return new Set(); } });
             const [depositLinks, setDepositLinks] = useLocalStorage('depositLinks', {});
+            const [customerDepositLogs, setCustomerDepositLogs] = useLocalStorage('customerDepositLogs', {});
             const [depositorNames, setDepositorNames] = useLocalStorage('depositorNames', {});
             const [clickedChats, setClickedChats] = useState(() => { try { const s = localStorage.getItem(getLsKey('clickedChats')); const p = JSON.parse(s); return Array.isArray(p) ? new Set(p) : new Set(); } catch(e){ return new Set(); } });
             
@@ -4722,30 +4945,46 @@ const dashboardStats = useMemo(() => {
             const openModal = useCallback((msg, type = 'alert', onConfirm = null, onCancel = null, initVal = '') => { setModalConfig({ isOpen: true, type, message: msg, onConfirm: (val) => { setModalConfig(p => ({...p, isOpen: false})); if(onConfirm) onConfirm(val); }, onCancel: () => { setModalConfig(p => ({...p, isOpen: false})); if(onCancel) onCancel(); }, initialValue: initVal }); }, []);
 
             const handleResetAllData = () => {
-                openModal('정말 모든 데이터를 초기화하시겠습니까?\n(주문서, 입금 연결, 채팅 기록, 실시간 재고(잠긴 상품 제외), 기타 설정이 삭제됩니다)', 'confirm', () => {
-                    setOrders([]); setProductHistory({}); setShippingOverrides({}); setCardPayments({}); setMatchedDeposits(new Set()); setDepositLinks({}); setDepositorNames({}); setClickedChats(new Set());
-                    setKeywords([]); setSentAddressRequests(new Set()); setDeletedDepositIds(new Set()); setCheckedOrders(new Set()); setAddressMapping({}); setCashReceipts({}); 
-                    
-                    // ✨ 초기화 시 자물쇠(isLocked)가 걸린 상품들만 추출하기
-                    const lockedItems = Array.isArray(inventory) ? inventory.filter(i => i.isLocked) : [];
-                    setInventory(lockedItems); 
-                    
-                    setManualDeposits([]); localStorage.removeItem(getLsKey('ignoredAutoMatch'));
-                    setNoShowCustomers({}); setWaitlistCustomers({});
-                    setTrackingNumbers({});
-                    window.localStorage.removeItem(getLsKey('savedChats'));
-                    
-                    if (googleScriptUrl && masterSheetId) {
-                        // ✨ 구글 시트에도 빈 배열([])이 아닌 잠긴 상품만 남겨서 덮어쓰기!
-                        const payload = lockedItems.map(i => ({ name: i.name, price: i.price, status: i.isSoldOut ? '품절' : '' }));
-                        fetchGas(googleScriptUrl, { action: 'save_inventory', masterId: getCleanSheetId(masterSheetId), data: payload }).catch(()=>{});
-                    }
+                openModal(`현재 [${broadcastName}] 주문서는 구글 시트(주문_${broadcastName})에 그대로 안전하게 영구 보관됩니다!\n\n새로운 방송을 시작하기 위해 화면을 초기화하시겠습니까?\n(※ 이전 방송에서 이미 매칭된 입금내역은 새 방송과 섞이지 않도록 자동으로 사용완료 처리됩니다)`, 'confirm', () => {
+                    // ✨ 새 방송 시작할 때 새 방송 이름을 바로 입력받아 이전 방송 시트를 덮어쓰는 실수를 100% 원천 차단!
+                    setTimeout(() => {
+                        openModal('새로 시작할 방송명을 입력해 주세요.\n(예: 10/19 여성복)', 'prompt', (newBroadcastTitle) => {
+                            if (newBroadcastTitle && newBroadcastTitle.trim()) {
+                                setBroadcastName(newBroadcastTitle.trim());
+                            }
+                            // ✨ 이전 방송에서 이미 매칭했던 입금 ID들을 archivedDepositIds에 영구 보관하여 새 방송에서 중복 매칭되는 현상 완벽 차단!
+                            try {
+                                const prevArchivedStr = localStorage.getItem(getLsKey('archivedDepositIds'));
+                                const prevArchived = prevArchivedStr ? JSON.parse(prevArchivedStr) : [];
+                                const mergedArchived = Array.from(new Set([...prevArchived, ...matchedDeposits]));
+                                localStorage.setItem(getLsKey('archivedDepositIds'), JSON.stringify(mergedArchived));
+                            } catch (e) {}
+
+                            setOrders([]); setProductHistory({}); setShippingOverrides({}); setCardPayments({}); setMatchedDeposits(new Set()); setDepositLinks({}); setCustomerDepositLogs({}); setDepositorNames({}); setClickedChats(new Set());
+                            setKeywords([]); setSentAddressRequests(new Set()); setDeletedDepositIds(new Set()); setCheckedOrders(new Set()); setAddressMapping({}); setCashReceipts({}); 
+                            
+                            // ✨ 초기화 시 자물쇠(isLocked)가 걸린 상품들만 추출하기
+                            const lockedItems = Array.isArray(inventory) ? inventory.filter(i => i.isLocked) : [];
+                            setInventory(lockedItems); 
+                            
+                            setManualDeposits([]); localStorage.removeItem(getLsKey('ignoredAutoMatch'));
+                            setNoShowCustomers({}); setWaitlistCustomers({});
+                            setTrackingNumbers({});
+                            window.localStorage.removeItem(getLsKey('savedChats'));
+                            
+                            if (googleScriptUrl && masterSheetId) {
+                                const payload = lockedItems.map(i => ({ name: i.name, price: i.price, status: i.isSoldOut ? '품절' : '' }));
+                                fetchGas(googleScriptUrl, { action: 'save_inventory', masterId: getCleanSheetId(masterSheetId), data: payload }).catch(()=>{});
+                            }
+                            window.location.reload();
+                        }, null, '');
+                    }, 150);
                 });
             };
 
             const handleExportBackup = () => {
                 const backupData = {
-                    orders, productHistory, shippingOverrides, addresses, cardPayments, cashReceipts, manualDeposits, matchedDeposits: [...matchedDeposits], depositLinks, depositorNames, clickedChats: [...clickedChats],
+                    orders, productHistory, shippingOverrides, addresses, cardPayments, cashReceipts, manualDeposits, matchedDeposits: [...matchedDeposits], depositLinks, customerDepositLogs, depositorNames, clickedChats: [...clickedChats],
                     keywords, sentAddressRequests: [...sentAddressRequests], deletedDepositIds: [...deletedDepositIds], checkedOrders: [...checkedOrders], addressMapping, specialCustomers, inventory,
                     noShowCustomers, waitlistCustomers, trackingNumbers, quickMessages, settings: {
                         googleScriptUrl, youtubeApiKey, youtubeVideoId, depSheetId, addrSheetId, masterSheetId, broadcastName, quickShipping, jejuShipping, freeShippingThreshold, cardFeeRate, templateConfig, bankAccount, addressStartDate, soundVolume
@@ -4774,6 +5013,7 @@ const dashboardStats = useMemo(() => {
                             if (data.manualDeposits) setManualDeposits(data.manualDeposits);
                             if (data.matchedDeposits) setMatchedDeposits(new Set(data.matchedDeposits));
                             if (data.depositLinks) setDepositLinks(data.depositLinks);
+                            if (data.customerDepositLogs) setCustomerDepositLogs(data.customerDepositLogs);
                             if (data.depositorNames) setDepositorNames(data.depositorNames);
                             if (data.clickedChats) setClickedChats(new Set(data.clickedChats));
                             if (data.keywords) setKeywords(data.keywords);
@@ -4848,7 +5088,7 @@ const dashboardStats = useMemo(() => {
 
             <div className="flex-1 overflow-hidden flex flex-col">
                 <div className={`flex-1 overflow-hidden ${activeTab === 'live' ? 'flex' : 'hidden'}`}>
-                    <LiveTab youtubeApiKey={youtubeApiKey} youtubeVideoId={youtubeVideoId} orders={orders} setOrders={setOrders} productHistory={productHistory} setProductHistory={setProductHistory} quickShipping={quickShipping} jejuShipping={jejuShipping} freeShippingThreshold={freeShippingThreshold} cardFeeRate={cardFeeRate} shippingOverrides={shippingOverrides} setShippingOverrides={setShippingOverrides} bankAccount={bankAccount} googleScriptUrl={googleScriptUrl} depSheetId={depSheetId} masterSheetId={masterSheetId} addresses={addresses} setAddresses={setAddresses} cardPayments={cardPayments} setCardPayments={setCardPayments} manualDeposits={manualDeposits} setManualDeposits={setManualDeposits} matchedDeposits={matchedDeposits} setMatchedDeposits={setMatchedDeposits} depositLinks={depositLinks} setDepositLinks={setDepositLinks} depositorNames={depositorNames} setDepositorNames={setDepositorNames} clickedChats={clickedChats} setClickedChats={setClickedChats} openModal={openModal} keywords={keywords} setKeywords={setKeywords} sentAddressRequests={sentAddressRequests} setSentAddressRequests={setSentAddressRequests} deletedDepositIds={deletedDepositIds} setDeletedDepositIds={setDeletedDepositIds} checkedOrders={checkedOrders} setCheckedOrders={setCheckedOrders} addressMapping={addressMapping} setAddressMapping={setAddressMapping} templateConfig={templateConfig} specialCustomers={specialCustomers} setSpecialCustomers={setSpecialCustomers} inventory={inventory} setInventory={setInventory} quickMessages={quickMessages} handleResetAllData={handleResetAllData} broadcastName={broadcastName} setBroadcastName={setBroadcastName} setGlobalError={setGlobalError} cashReceipts={cashReceipts} setCashReceipts={setCashReceipts} soundEnabled={soundEnabled} soundVolume={soundVolume} noShowCustomers={noShowCustomers} setNoShowCustomers={setNoShowCustomers} waitlistCustomers={waitlistCustomers} setWaitlistCustomers={setWaitlistCustomers} customerPasswords={customerPasswords} setCustomerPasswords={setCustomerPasswords} trackingNumbers={trackingNumbers} setTrackingNumbers={setTrackingNumbers} />
+                    <LiveTab youtubeApiKey={youtubeApiKey} youtubeVideoId={youtubeVideoId} orders={orders} setOrders={setOrders} productHistory={productHistory} setProductHistory={setProductHistory} quickShipping={quickShipping} jejuShipping={jejuShipping} freeShippingThreshold={freeShippingThreshold} cardFeeRate={cardFeeRate} shippingOverrides={shippingOverrides} setShippingOverrides={setShippingOverrides} bankAccount={bankAccount} googleScriptUrl={googleScriptUrl} depSheetId={depSheetId} masterSheetId={masterSheetId} addresses={addresses} setAddresses={setAddresses} cardPayments={cardPayments} setCardPayments={setCardPayments} manualDeposits={manualDeposits} setManualDeposits={setManualDeposits} matchedDeposits={matchedDeposits} setMatchedDeposits={setMatchedDeposits} depositLinks={depositLinks} setDepositLinks={setDepositLinks} customerDepositLogs={customerDepositLogs} setCustomerDepositLogs={setCustomerDepositLogs} depositorNames={depositorNames} setDepositorNames={setDepositorNames} clickedChats={clickedChats} setClickedChats={setClickedChats} openModal={openModal} keywords={keywords} setKeywords={setKeywords} sentAddressRequests={sentAddressRequests} setSentAddressRequests={setSentAddressRequests} deletedDepositIds={deletedDepositIds} setDeletedDepositIds={setDeletedDepositIds} checkedOrders={checkedOrders} setCheckedOrders={setCheckedOrders} addressMapping={addressMapping} setAddressMapping={setAddressMapping} templateConfig={templateConfig} specialCustomers={specialCustomers} setSpecialCustomers={setSpecialCustomers} inventory={inventory} setInventory={setInventory} quickMessages={quickMessages} handleResetAllData={handleResetAllData} broadcastName={broadcastName} setBroadcastName={setBroadcastName} setGlobalError={setGlobalError} cashReceipts={cashReceipts} setCashReceipts={setCashReceipts} soundEnabled={soundEnabled} soundVolume={soundVolume} noShowCustomers={noShowCustomers} setNoShowCustomers={setNoShowCustomers} waitlistCustomers={waitlistCustomers} setWaitlistCustomers={setWaitlistCustomers} customerPasswords={customerPasswords} setCustomerPasswords={setCustomerPasswords} trackingNumbers={trackingNumbers} setTrackingNumbers={setTrackingNumbers} />
                 </div>
                 <div className={`flex-1 overflow-y-auto ${activeTab === 'management' ? 'block' : 'hidden'}`}>
                     <OrderManagementTab orders={orders} shippingOverrides={shippingOverrides} quickShipping={quickShipping} jejuShipping={jejuShipping} freeShippingThreshold={freeShippingThreshold} cardFeeRate={cardFeeRate} broadcastName={broadcastName} addresses={addresses} handleExportBackup={handleExportBackup} handleImportBackup={handleImportBackup} addressMapping={addressMapping} cardPayments={cardPayments} specialCustomers={specialCustomers} openModal={openModal} cashReceipts={cashReceipts} inventory={inventory} productHistory={productHistory} noShowCustomers={noShowCustomers} waitlistCustomers={waitlistCustomers} trackingNumbers={trackingNumbers} setTrackingNumbers={setTrackingNumbers} googleScriptUrl={googleScriptUrl} masterSheetId={masterSheetId} />
