@@ -1285,7 +1285,7 @@ useEffect(() => {
                                 
                                 <div onClick={(e) => { e.stopPropagation(); openModal(`'${nick}'님의 입금자명(실명)을 입력하세요.`, 'prompt', (newName) => { if(newName !== null) setDepositorNames(prev => ({...prev, [nick]: newName})); }, null, depositorNames[nick] || ''); }} className={`cursor-pointer flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border hover:bg-slate-100 transition-colors ml-1 shrink-0 ${depositorNames[nick] ? 'bg-slate-200 text-slate-700 border-slate-400' : (isAutoDepositor ? 'bg-green-50 text-green-700 border-green-200' : 'bg-white text-slate-500 border-slate-300')}`} title={isAutoDepositor ? "주소록 실명 연동됨" : "실명 입금자 등록"}><Icon name="user" weight={depositorNames[nick] || isAutoDepositor ? "fill" : "regular"}/> <span>{displayDepositorName}</span></div>
                                 <button type="button" onClick={(e) => { e.stopPropagation(); handleSetCustomerPassword(nick, effectivePin); }} className={`ml-1 flex items-center gap-0.5 px-1.5 py-0.5 rounded border text-[10px] font-bold transition-colors shrink-0 ${effectivePin ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100' : 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100 animate-pulse'}`} title="고객 주문서 조회용 비밀번호(핸드폰 뒤 4자리) 설정"><Icon name="key" weight="fill" size={11}/><span>{effectivePin ? effectivePin : '비번설정'}</span></button>
-                                <button type="button" onClick={(e) => { e.stopPropagation(); handleSetTrackingNumber(nick, trackingNumber); }} className={`ml-1 flex items-center gap-0.5 px-1.5 py-0.5 rounded border text-[10px] font-bold transition-colors shrink-0 ${trackingNumber ? 'bg-red-50 border-red-200 text-red-600 hover:bg-red-100' : 'bg-white border-slate-300 text-slate-500 hover:bg-slate-100'}`} title="롯데택배 송장번호 입력/수정"><Icon name="package" weight="fill" size={11}/><span>{trackingNumber ? `송장:${trackingNumber}` : '송장입력'}</span></button>
+                                <button type="button" onClick={(e) => { e.stopPropagation(); handleSetTrackingNumber(nick, trackingNumber === '__CLEAR__' ? '' : trackingNumber); }} className={`ml-1 flex items-center gap-0.5 px-1.5 py-0.5 rounded border text-[10px] font-bold transition-colors shrink-0 ${(trackingNumber && trackingNumber !== '__CLEAR__') ? 'bg-red-50 border-red-200 text-red-600 hover:bg-red-100' : 'bg-white border-slate-300 text-slate-500 hover:bg-slate-100'}`} title="롯데택배 송장번호 입력/수정"><Icon name="package" weight="fill" size={11}/><span>{(trackingNumber && trackingNumber !== '__CLEAR__') ? `송장:${trackingNumber}` : '송장입력'}</span></button>
                                 <div onClick={(e) => { e.stopPropagation(); handleFullDepositToggle(nick, baseGrandTotal, depositTotal); }} className={`cursor-pointer ml-1 flex items-center gap-1 px-1.5 py-0.5 rounded border transition-colors shrink-0 ${isPaidState ? 'bg-green-600 border-green-700 text-white shadow-inner' : 'bg-white border-slate-300 text-slate-500 hover:bg-slate-100'}`} title={isPaidState ? "입금 완료됨 (클릭시 취소)" : "클릭시 전액 입금 처리"}><Icon name={isPaidState ? "toggle-right" : "toggle-left"} weight="fill" size={16} /><span className="text-[10px] font-bold">{isPaidState ? "완납" : "미납"}</span></div>
                                 <button onClick={(e) => { e.stopPropagation(); copyOrderSheet(nick, items, baseGrandTotal, depositTotal, balance, isCard, cashReceiptStatus, addr, e); }} className="ml-1 flex items-center gap-1 px-2 py-0.5 rounded border transition-colors shrink-0 bg-[#FEE500] border-[#E5CE00] text-gray-900 hover:bg-[#FADA0A] active:scale-95" title="주문서 카톡 복사"><Icon name="chat-circle-dots" weight="fill" size={16}/><span className="text-[10px] font-bold">카톡</span></button>
                                 <div onClick={(e) => { e.stopPropagation(); handleOrderCheckToggle(nick); }} className="ml-1 cursor-pointer flex items-center gap-0.5 shrink-0" title="고객 주문서 확인 여부"><input type="checkbox" checked={isOrderConfirmed} readOnly className="custom-checkbox" /><span className={`text-[9px] font-bold ${isOrderConfirmed ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'}`}>{isOrderConfirmed ? '확인됨' : '미확인'}</span></div>
@@ -1821,6 +1821,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             // ✨ 누락되었던 동기화 제어용 useRef 선언 복구 (에러 해결)
             const inventorySyncLock = useRef(0);
             const addressSyncLock = useRef(0);
+            const trackingSyncLock = useRef(0);
             const prevDepsStr = useRef('');
             const prevAddrsStr = useRef('');
             const prevInvStr = useRef('');
@@ -2158,7 +2159,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
 
             try {
                 let gasMsg = "";
-                const fetchUrl = `${googleScriptUrl}?action=get_all&depId=${getCleanSheetId(depSheetId)}&masterId=${getCleanSheetId(masterSheetId)}&skipHeavy=false&t=${Date.now()}`;
+                const fetchUrl = `${googleScriptUrl}?action=get_all&depId=${getCleanSheetId(depSheetId)}&masterId=${getCleanSheetId(masterSheetId)}&broadcastName=${encodeURIComponent(broadcastName || '')}&skipHeavy=false&t=${Date.now()}`;
                 const res = await fetchGas(fetchUrl, null, 7500);
                 
                 clearTimeout(slowWarningTimer);
@@ -2388,6 +2389,38 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                 return changed ? next : prev;
                             });
                         }
+                    }
+
+                    // ✨ 시트에 직접 넣었거나 저장된 송장번호도 3초 폴링 때 화면(trackingNumbers)으로 자동 동기화하여 10초 자동저장이 빈칸으로 덮어쓰지 못하게 완벽 보호!
+                    if (res.orderTrackingMap && typeof res.orderTrackingMap === 'object' && (Date.now() - trackingSyncLock.current > 12000)) {
+                        setTrackingNumbers(prev => {
+                            let changed = false;
+                            const next = Object.assign({}, prev);
+                            const activeNicks = Array.from(new Set(orders.filter(o => !o.isCancelled).map(o => o.customer)));
+
+                            Object.entries(res.orderTrackingMap).forEach(([k, v]) => {
+                                if (!k.startsWith('__') && v && next[k] !== '__CLEAR__' && next[k] !== v) {
+                                    next[k] = v;
+                                    changed = true;
+                                }
+                            });
+
+                            activeNicks.forEach(nick => {
+                                if (next[nick] === '__CLEAR__') return;
+                                const addrInfo = addressLookup.get(nick)?.data;
+                                const rName = addrInfo?.realname || depositorNames[nick] || '';
+                                const matchedTrk = res.orderTrackingMap[nick]
+                                    || res.orderTrackingMap['__H__' + cleanForMatch(nick)]
+                                    || (rName && res.orderTrackingMap['__NAME__' + normalizeString(rName)])
+                                    || '';
+                                if (matchedTrk && next[nick] !== matchedTrk) {
+                                    next[nick] = matchedTrk;
+                                    changed = true;
+                                }
+                            });
+
+                            return changed ? next : prev;
+                        });
                     }
 
                     setGasStatus(prev => prev === gasMsg ? prev : gasMsg);
@@ -2837,13 +2870,16 @@ const dashboardStats = useMemo(() => {
             }, [openModal, setCustomerPasswords, googleScriptUrl, masterSheetId]);
 
             const handleSetTrackingNumber = useCallback((nick, currentTrk = '') => {
+                const initVal = currentTrk === '__CLEAR__' ? '' : (currentTrk || '');
                 openModal(`'${nick}' 님의 롯데택배 송장번호를 입력하세요.\n(비우고 확인을 누르면 삭제됩니다)`, 'prompt', (newTrk) => {
                     if (newTrk !== null) {
+                        trackingSyncLock.current = Date.now();
                         const cleanTrk = String(newTrk).replace(/[^0-9,-]/g, '').trim();
                         setTrackingNumbers(prev => {
                             const next = Object.assign({}, prev);
                             if (cleanTrk) next[nick] = cleanTrk;
-                            else delete next[nick];
+                            else next[nick] = '__CLEAR__';
+                            try { window.localStorage.setItem(getLsKey('trackingNumbers'), JSON.stringify(next)); } catch (e) {}
                             return next;
                         });
                         if (googleScriptUrl && masterSheetId) {
@@ -2851,11 +2887,11 @@ const dashboardStats = useMemo(() => {
                                 action: 'save_tracking_numbers',
                                 masterId: getCleanSheetId(masterSheetId),
                                 broadcastName: broadcastName,
-                                data: [{ nickname: nick, trackingNumber: cleanTrk }]
+                                data: [{ nickname: nick, trackingNumber: cleanTrk ? cleanTrk : '__CLEAR__' }]
                             }).catch(() => {});
                         }
                     }
-                }, null, currentTrk || '');
+                }, null, initVal);
             }, [openModal, setTrackingNumbers, googleScriptUrl, masterSheetId, broadcastName]);
 
             useEffect(() => {
@@ -3215,7 +3251,8 @@ const dashboardStats = useMemo(() => {
                     const cleanPhone = addr.phone ? fixPhoneNumber(addr.phone) : '';
                     const pinToSave = (customerPasswords && customerPasswords[customerVal]) || (cleanPhone.length >= 4 ? cleanPhone.slice(-4) : '');
                     const isConfirmedOrder = checkedOrders && checkedOrders.has(customerVal);
-                    const trkToSave = (trackingNumbers && trackingNumbers[customerVal]) || '';
+                    const rawTrkVal = (trackingNumbers && trackingNumbers[customerVal]) || '';
+                    const trkToSave = rawTrkVal === '__CLEAR__' ? '__CLEAR__' : (rawTrkVal ? "'" + rawTrkVal : '');
                     
                     return { 
                         '닉네임': customerVal,
@@ -3236,7 +3273,7 @@ const dashboardStats = useMemo(() => {
                         '비밀번호': pinToSave ? "'" + pinToSave : '',
                         '주문확인': isConfirmedOrder ? 'O' : '',
                         '입금내역JSON': customerDepsJson,
-                        '송장번호': trkToSave ? "'" + trkToSave : ''
+                        '송장번호': trkToSave
                     }; 
                 }); 
 
@@ -4527,7 +4564,7 @@ const dashboardStats = useMemo(() => {
                         '핸드폰번호': cleanPhone, 
                         '주소': fullAddress, 
                         '배송메모': addrInfo.memo || '',
-                        '송장번호': (trackingNumbers && trackingNumbers[nick]) ? trackingNumbers[nick] : ''
+                        '송장번호': (trackingNumbers && trackingNumbers[nick] && trackingNumbers[nick] !== '__CLEAR__') ? trackingNumbers[nick] : ''
                     }); 
                     
                     excelRows.push(createRow(`[ ${nick} ]`)); 
@@ -4704,6 +4741,27 @@ const dashboardStats = useMemo(() => {
                         const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
                         const rows = window.XLSX.utils.sheet_to_json(firstSheet, { defval: '' });
 
+                        // 현재 열려있는 주문서의 고객 목록 (닉네임 & 수령인명)
+                        const activeCustomerNicks = Array.from(new Set(orders.filter(o => !o.isCancelled).map(o => o.customer)));
+                        const resolveNickInOpenOrders = (inputNick, inputRealname, inputPhone) => {
+                            const cleanInNick = normalizeString(inputNick);
+                            const cleanInName = normalizeString(inputRealname);
+                            const cleanInPhone = String(inputPhone || '').replace(/[^0-9]/g, '');
+
+                            for (const cNick of activeCustomerNicks) {
+                                const cNorm = normalizeString(cNick);
+                                const addrInfo = findAddress(cNick);
+                                const cRealNorm = normalizeString(addrInfo?.realname || '');
+                                const cPhone = String(addrInfo?.phone || '').replace(/[^0-9]/g, '');
+
+                                if (cleanInNick && (cNorm === cleanInNick || cleanForMatch(cNick) === cleanForMatch(inputNick))) return cNick;
+                                if (cleanInName && (cRealNorm === cleanInName || cNorm === cleanInName)) return cNick;
+                                if (cleanInNick && cRealNorm && cRealNorm === cleanInNick) return cNick;
+                                if (cleanInPhone && cleanInPhone.length >= 8 && cPhone === cleanInPhone) return cNick;
+                            }
+                            return inputNick || inputRealname || '';
+                        };
+
                         const parsedList = [];
                         const localTrkMap = {};
 
@@ -4720,8 +4778,9 @@ const dashboardStats = useMemo(() => {
                                 else if (cleanK.includes('송장') || cleanK.includes('운송장') || cleanK.includes('등기')) trk = val.replace(/[^0-9,-]/g, '');
                             });
                             if (trk && (nick || realname || phone)) {
-                                parsedList.push({ nickname: nick, realname, phone, trackingNumber: trk });
-                                if (nick) localTrkMap[nick] = trk;
+                                const matchedOpenNick = resolveNickInOpenOrders(nick, realname, phone);
+                                parsedList.push({ nickname: matchedOpenNick || nick, realname: realname || nick, phone, trackingNumber: trk });
+                                if (matchedOpenNick) localTrkMap[matchedOpenNick] = trk;
                             }
                         });
 
@@ -4832,7 +4891,7 @@ const dashboardStats = useMemo(() => {
             const [orders, setOrders] = useLocalStorage('youtubeOrders', []);
             const [activeTab, setActiveTab] = useState('live');
             
-            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzLDOGu-X6VB8gaDoN2jVnSg-dRKP5dxMPYfvFMrqwdm4UTsS7tU21-qi9NyC12s7cp/exec';
+            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzqWEe8-gAiy4O1nHNukhlE1FN1J4KqKD4y7iq90qhHhhmL1WQFcSRxduCV6NgxWw2t/exec';
             const [googleScriptUrl, setGoogleScriptUrl] = useLocalStorage('googleScriptUrl', NEW_SCRIPT_URL);
         
         const [youtubeApiKey, setYoutubeApiKey] = useLocalStorage('youtubeApiKey', '');
@@ -4851,7 +4910,7 @@ const dashboardStats = useMemo(() => {
 
             useEffect(() => {
                 const currentUrl = window.localStorage.getItem(getLsKey('googleScriptUrl'));
-                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbzLDOGu-X6VB8gaDoN2jVnSg-dRKP5dxMPYfvFMrqwdm4UTsS7tU21-qi9NyC12s7cp')) {
+                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbzqWEe8-gAiy4O1nHNukhlE1FN1J4KqKD4y7iq90qhHhhmL1WQFcSRxduCV6NgxWw2t')) {
                     setGoogleScriptUrl(NEW_SCRIPT_URL);
                 }
             }, [setGoogleScriptUrl]);
