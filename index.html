@@ -1625,8 +1625,19 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         return Array.from(deduplicatedMap.values()); 
                     });
                 };
+                const handleClearChats = () => {
+                    setChats([]);
+                    setSortOrderReset();
+                };
+                const setSortOrderReset = () => {
+                    if (sortOrderCache && sortOrderCache.current) sortOrderCache.current = [];
+                };
                 window.addEventListener('import-chats', handleImportChats);
-                return () => window.removeEventListener('import-chats', handleImportChats);
+                window.addEventListener('clear-chats', handleClearChats);
+                return () => {
+                    window.removeEventListener('import-chats', handleImportChats);
+                    window.removeEventListener('clear-chats', handleClearChats);
+                };
             }, [setChats]);
             
             const [hiddenChatIds, setHiddenChatIds] = useState(() => { try { const s = localStorage.getItem(getLsKey('hiddenChatIds')); const p = JSON.parse(s); return Array.isArray(p) ? p : []; } catch(e){ return []; } });
@@ -5005,37 +5016,88 @@ const dashboardStats = useMemo(() => {
 
             const handleResetAllData = () => {
                 openModal(`현재 [${broadcastName}] 주문서는 구글 시트(주문_${broadcastName})에 그대로 안전하게 영구 보관됩니다!\n\n새로운 방송을 시작하기 위해 화면을 초기화하시겠습니까?\n(※ 이전 방송에서 이미 매칭된 입금내역은 새 방송과 섞이지 않도록 자동으로 사용완료 처리됩니다)`, 'confirm', () => {
-                    // ✨ 새 방송 시작할 때 새 방송 이름을 바로 입력받아 이전 방송 시트를 덮어쓰는 실수를 100% 원천 차단!
                     setTimeout(() => {
-                        openModal('새로 시작할 방송명을 입력해 주세요.\n(예: 10/19 여성복)', 'prompt', (newBroadcastTitle) => {
-                            if (newBroadcastTitle && newBroadcastTitle.trim()) {
-                                setBroadcastName(newBroadcastTitle.trim());
-                            }
-                            // ✨ 이전 방송에서 이미 매칭했던 입금 ID들을 archivedDepositIds에 영구 보관하여 새 방송에서 중복 매칭되는 현상 완벽 차단!
+                        openModal('새로 시작할 방송명을 입력해 주세요.\n(예: 10/19 여성복)', 'prompt', async (newBroadcastTitle) => {
+                            const nextTitle = (newBroadcastTitle && newBroadcastTitle.trim()) ? newBroadcastTitle.trim() : broadcastName;
+                            setBroadcastName(nextTitle);
+
+                            let mergedArchived = [];
                             try {
                                 const prevArchivedStr = localStorage.getItem(getLsKey('archivedDepositIds'));
                                 const prevArchived = prevArchivedStr ? JSON.parse(prevArchivedStr) : [];
-                                const mergedArchived = Array.from(new Set([...prevArchived, ...matchedDeposits]));
+                                mergedArchived = Array.from(new Set([...prevArchived, ...matchedDeposits]));
                                 localStorage.setItem(getLsKey('archivedDepositIds'), JSON.stringify(mergedArchived));
                             } catch (e) {}
 
-                            setOrders([]); setProductHistory({}); setShippingOverrides({}); setCardPayments({}); setMatchedDeposits(new Set()); setDepositLinks({}); setCustomerDepositLogs({}); setDepositorNames({}); setClickedChats(new Set());
-                            setKeywords([]); setSentAddressRequests(new Set()); setDeletedDepositIds(new Set()); setCheckedOrders(new Set()); setAddressMapping({}); setCashReceipts({}); 
-                            
-                            // ✨ 초기화 시 자물쇠(isLocked)가 걸린 상품들만 추출하기
                             const lockedItems = Array.isArray(inventory) ? inventory.filter(i => i.isLocked) : [];
-                            setInventory(lockedItems); 
-                            
-                            setManualDeposits([]); localStorage.removeItem(getLsKey('ignoredAutoMatch'));
-                            setNoShowCustomers({}); setWaitlistCustomers({});
-                            setTrackingNumbers({});
-                            window.localStorage.removeItem(getLsKey('savedChats'));
-                            
+
+                            // 0.8초 로컬스토리지 딜레이 없이 즉시 초기화 반영
+                            try {
+                                localStorage.setItem(getLsKey('broadcastName'), JSON.stringify(nextTitle));
+                                localStorage.setItem(getLsKey('youtubeOrders'), JSON.stringify([]));
+                                localStorage.setItem(getLsKey('productHistory'), JSON.stringify({}));
+                                localStorage.setItem(getLsKey('shippingOverrides'), JSON.stringify({}));
+                                localStorage.setItem(getLsKey('cardPayments'), JSON.stringify({}));
+                                localStorage.setItem(getLsKey('matchedDeposits'), JSON.stringify(mergedArchived));
+                                localStorage.setItem(getLsKey('depositLinks'), JSON.stringify({}));
+                                localStorage.setItem(getLsKey('customerDepositLogs'), JSON.stringify({}));
+                                localStorage.setItem(getLsKey('depositorNames'), JSON.stringify({}));
+                                localStorage.setItem(getLsKey('clickedChats'), JSON.stringify([]));
+                                localStorage.setItem(getLsKey('chatKeywords'), JSON.stringify([]));
+                                localStorage.setItem(getLsKey('sentAddressRequests'), JSON.stringify([]));
+                                localStorage.setItem(getLsKey('deletedDepositIds'), JSON.stringify([]));
+                                localStorage.setItem(getLsKey('checkedOrders'), JSON.stringify([]));
+                                localStorage.setItem(getLsKey('addressMapping'), JSON.stringify({}));
+                                localStorage.setItem(getLsKey('cashReceipts'), JSON.stringify({}));
+                                localStorage.setItem(getLsKey('inventory'), JSON.stringify(lockedItems));
+                                localStorage.setItem(getLsKey('manualDeposits'), JSON.stringify([]));
+                                localStorage.setItem(getLsKey('noShowCustomers'), JSON.stringify({}));
+                                localStorage.setItem(getLsKey('waitlistCustomers'), JSON.stringify({}));
+                                localStorage.setItem(getLsKey('trackingNumbers'), JSON.stringify({}));
+                                localStorage.removeItem(getLsKey('ignoredAutoMatch'));
+                                localStorage.removeItem(getLsKey('savedChats'));
+                            } catch (e) {}
+
+                            setOrders([]); setProductHistory({}); setShippingOverrides({}); setCardPayments({}); 
+                            setMatchedDeposits(new Set(mergedArchived)); setDepositLinks({}); setCustomerDepositLogs({}); 
+                            setDepositorNames({}); setClickedChats(new Set()); setKeywords([]); 
+                            setSentAddressRequests(new Set()); setDeletedDepositIds(new Set()); setCheckedOrders(new Set()); 
+                            setAddressMapping({}); setCashReceipts({}); setInventory(lockedItems); 
+                            setManualDeposits([]); setNoShowCustomers({}); setWaitlistCustomers({}); setTrackingNumbers({});
+                            window.dispatchEvent(new CustomEvent('clear-chats'));
+
                             if (googleScriptUrl && masterSheetId) {
-                                const payload = lockedItems.map(i => ({ name: i.name, price: i.price, status: i.isSoldOut ? '품절' : '' }));
-                                fetchGas(googleScriptUrl, { action: 'save_inventory', masterId: getCleanSheetId(masterSheetId), data: payload }).catch(()=>{});
+                                const cleanMaster = getCleanSheetId(masterSheetId);
+                                const invPayload = lockedItems.map(i => ({ name: i.name, price: i.price, status: i.isSoldOut ? '품절' : '' }));
+                                const feeRateNum = (cardFeeRate !== undefined && cardFeeRate !== '' && Number(cardFeeRate) > 0) ? Number(cardFeeRate) : 10;
+                                const emptyOrderList = [{
+                                    '닉네임': '___WORKSPACE_META___',
+                                    '상품명': nextTitle,
+                                    '수량': Number(freeShippingThreshold) || 70000,
+                                    '단가(제품금액)': Number(quickShipping) || 4000,
+                                    '배송비': feeRateNum,
+                                    '입금액': 0,
+                                    '카드결제': '',
+                                    '수령인명': '',
+                                    '연락처': '',
+                                    '우편번호': '',
+                                    '주소': '',
+                                    '요청사항': '',
+                                    'VIP여부': '',
+                                    '노쇼여부': '',
+                                    '대기여부': '',
+                                    '비밀번호': '',
+                                    '주문확인': '',
+                                    '입금내역JSON': '',
+                                    '송장번호': ''
+                                }];
+                                try {
+                                    await Promise.all([
+                                        fetchGas(googleScriptUrl, { action: 'save_inventory', masterId: cleanMaster, data: invPayload }),
+                                        fetchGas(googleScriptUrl, { action: 'save_orders', masterId: cleanMaster, broadcastName: nextTitle, data: emptyOrderList, nicknames: [], confirmedNicknames: [] })
+                                    ]);
+                                } catch (e) {}
                             }
-                            window.location.reload();
                         }, null, '');
                     }, 150);
                 });
