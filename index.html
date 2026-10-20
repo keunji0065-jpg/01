@@ -2843,7 +2843,20 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             return combined.filter(d => !deletedDepositIds.has(d.id));
         }, [manualDeposits, serverDeposits, deletedDepositIds]);
 
-        // 자동 입금 매칭 로직
+        // ✨ 찐고객사전 전체에서 닉네임으로 실명(realname)을 즉시 찾기 위한 보조 맵
+        const masterRealnameMap = useMemo(() => {
+            const map = {};
+            addresses.forEach(a => {
+                if (a && a.nickname && a.realname) {
+                    map[normalizeString(a.nickname)] = a.realname;
+                    const hKey = normalizeHandleNick(a.nickname);
+                    if (hKey) map[hKey] = a.realname;
+                }
+            });
+            return map;
+        }, [addresses]);
+
+        // 자동 입금 매칭 로직 (닉네임 + 수령인 실명 + 찐고객사전 실명 + 한글 이름 완벽 매칭)
         useEffect(() => {
             if (!allDeposits || allDeposits.length === 0 || !orders || orders.length === 0) return;
 
@@ -2854,6 +2867,9 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                 activeCustomerGroups[o.customer].push(o);
             });
 
+            const customerNicks = Object.keys(activeCustomerGroups);
+            if (customerNicks.length === 0) return;
+
             let matchedAny = false;
             const newMatchedSet = new Set(matchedDeposits);
             const newLinks = { ...depositLinks };
@@ -2861,36 +2877,84 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             const depositAdditions = {};
 
             allDeposits.forEach(dep => {
-                if (String(dep.name).trim() === '시재') return;
-                if (newMatchedSet.has(dep.id) || (dep.legacyId && newMatchedSet.has(dep.legacyId))) return;
-                if (ignoredAutoMatch.has(dep.id) || (dep.legacyId && ignoredAutoMatch.has(dep.legacyId))) return;
-                if (archivedDepositIds.has(dep.id) || (dep.legacyId && archivedDepositIds.has(dep.legacyId))) return;
+                const rawDepName = String(dep.name || '').trim();
+                if (!rawDepName || rawDepName === '시재') return;
+                if (newMatchedSet.has(dep.id) || (dep.contentId && newMatchedSet.has(dep.contentId)) || (dep.legacyId && newMatchedSet.has(dep.legacyId))) return;
+                if (ignoredAutoMatch.has(dep.id) || (dep.contentId && ignoredAutoMatch.has(dep.contentId)) || (dep.legacyId && ignoredAutoMatch.has(dep.legacyId))) return;
+                if (archivedDepositIds.has(dep.id) || (dep.contentId && archivedDepositIds.has(dep.contentId)) || (dep.legacyId && archivedDepositIds.has(dep.legacyId))) return;
 
-                const depClean = cleanForMatch(dep.name);
-                if (!depClean) return;
+                const depClean = cleanForMatch(rawDepName);
+                const depNorm = normalizeString(rawDepName);
+                const depKo = extractKo(rawDepName);
+                if (!depClean && !depNorm) return;
 
-                let matchedNick = null;
-                for (const nick of Object.keys(activeCustomerGroups)) {
+                // 1순위: 닉네임 / 지정 입금자명 / 주소록 실명과 정확히 일치하는 고객 탐색
+                let matchedCands = customerNicks.filter(nick => {
                     const nickClean = cleanForMatch(nick);
-                    const customDepName = depositorNames[nick] ? cleanForMatch(depositorNames[nick]) : '';
-                    const addrRealName = addressLookup.get(nick)?.data?.realname ? cleanForMatch(addressLookup.get(nick).data.realname) : '';
+                    const nickNorm = normalizeString(nick);
+                    const nickHandle = normalizeHandleNick(nick);
+                    const customDep = depositorNames[nick] ? normalizeString(depositorNames[nick]) : '';
+                    const addrReal = addressLookup.get(nick)?.data?.realname || masterRealnameMap[nickNorm] || masterRealnameMap[nickHandle] || '';
+                    const addrRealNorm = normalizeString(addrReal);
+                    const addrRealClean = cleanForMatch(addrReal);
 
-                    if (depClean === nickClean || (customDepName && depClean === customDepName) || (addrRealName && depClean === addrRealName)) {
-                        matchedNick = nick;
-                        break;
+                    if (depNorm && (depNorm === nickNorm || depNorm === nickHandle || (customDep && depNorm === customDep) || (addrRealNorm && depNorm === addrRealNorm))) {
+                        return true;
+                    }
+                    if (depClean && (depClean === nickClean || (addrRealClean && depClean === addrRealClean))) {
+                        return true;
+                    }
+                    return false;
+                });
+
+                // 2순위: 입금자명(예: "홍길동", "김은지")이 2~4글자 한글 실명이고, 주문자 실명(또는 닉네임 한글 부분)과 일치하는 유일한 1명일 때 매칭
+                if (matchedCands.length === 0 && depKo && depKo.length >= 2) {
+                    const koCands = customerNicks.filter(nick => {
+                        const nickNorm = normalizeString(nick);
+                        const nickHandle = normalizeHandleNick(nick);
+                        const customDepKo = depositorNames[nick] ? extractKo(depositorNames[nick]) : '';
+                        const addrReal = addressLookup.get(nick)?.data?.realname || masterRealnameMap[nickNorm] || masterRealnameMap[nickHandle] || '';
+                        const addrRealKo = extractKo(addrReal);
+                        const nickKo = extractKo(nickHandle || nick);
+
+                        return (customDepKo && customDepKo === depKo) || (addrRealKo && addrRealKo === depKo) || (nickKo && nickKo === depKo);
+                    });
+                    if (koCands.length === 1) {
+                        matchedCands = koCands;
+                    }
+                }
+
+                // 동명이인이 2명 이상일 때는 사고 방지를 위해 미납 금액이 입금액과 정확히 일치하는 1명이 있으면 그 사람에게 매칭!
+                let matchedNick = null;
+                if (matchedCands.length === 1) {
+                    matchedNick = matchedCands[0];
+                } else if (matchedCands.length > 1) {
+                    const exactAmountMatches = matchedCands.filter(nick => {
+                        const items = activeCustomerGroups[nick] || [];
+                        const activeItems = items.filter(i => !i.isCancelled && !i.isWaitlist);
+                        const prodSum = activeItems.reduce((s, i) => s + Number(i.price), 0);
+                        const prodSumForShip = activeItems.reduce((s, i) => s + (Number(i.price) > 0 ? Number(i.price) : 0), 0);
+                        const ship = getCalculatedShipping(nick, prodSumForShip);
+                        const curDep = items.reduce((s, i) => s + (i.deposit || 0), 0) + (depositAdditions[nick] || 0);
+                        const unpaidBal = (prodSum + (activeItems.length > 0 ? ship : 0)) - curDep;
+                        return unpaidBal === Number(dep.amount);
+                    });
+                    if (exactAmountMatches.length === 1) {
+                        matchedNick = exactAmountMatches[0];
                     }
                 }
 
                 if (matchedNick) {
                     matchedAny = true;
                     newMatchedSet.add(dep.id);
+                    if (dep.contentId) newMatchedSet.add(dep.contentId);
                     if (dep.legacyId) newMatchedSet.add(dep.legacyId);
                     newLinks[dep.id] = matchedNick;
                     depositAdditions[matchedNick] = (depositAdditions[matchedNick] || 0) + Number(dep.amount);
 
                     const fullTimeStr = formatDepositFullDateTime(dep.rawTime || dep.time || dep.date || '') || dep.time || '';
                     const existingLogs = Array.isArray(newLogs[matchedNick]) ? [...newLogs[matchedNick]] : [];
-                    if (!existingLogs.some(item => item.id === dep.id || (dep.legacyId && item.legacyId === dep.legacyId))) {
+                    if (!existingLogs.some(item => item.id === dep.id || (dep.contentId && item.id === dep.contentId) || (dep.legacyId && item.legacyId === dep.legacyId))) {
                         existingLogs.push({
                             id: dep.id,
                             legacyId: dep.legacyId || '',
@@ -2919,7 +2983,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     });
                 });
             }
-        }, [allDeposits, orders, matchedDeposits, depositLinks, customerDepositLogs, ignoredAutoMatch, archivedDepositIds, depositorNames, addressLookup, setMatchedDeposits, setDepositLinks, setCustomerDepositLogs, setOrders]);
+        }, [allDeposits, orders, matchedDeposits, depositLinks, customerDepositLogs, ignoredAutoMatch, archivedDepositIds, depositorNames, addressLookup, masterRealnameMap, getCalculatedShipping, setMatchedDeposits, setDepositLinks, setCustomerDepositLogs, setOrders]);
 
         const filteredDeposits = useMemo(() => {
             if (!deferredDepositSearch) return allDeposits;
@@ -3138,15 +3202,19 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             ));
         };
 
+        const addOrderLogicRef = useRef(null);
+
         const handleChatClick = useCallback((chat) => {
             setClickedChats(prev => new Set(prev).add(chat.id));
             bringToTopAndScroll(chat.nickname);
-            if (isFixedProductMode && manualProduct) {
-                addOrderLogic(chat.nickname, manualProduct, 1, false, null, manualPrice, true);
-            } else {
-                addOrderLogic(chat.nickname, chat.content, 1, false, null, null, false);
+            if (addOrderLogicRef.current) {
+                if (isFixedProductMode && manualProduct) {
+                    addOrderLogicRef.current(chat.nickname, manualProduct, 1, false, null, manualPrice, true);
+                } else {
+                    addOrderLogicRef.current(chat.nickname, chat.content, 1, false, null, null, false);
+                }
             }
-        }, [setClickedChats, bringToTopAndScroll, isFixedProductMode, manualProduct, manualPrice, addOrderLogic]);
+        }, [setClickedChats, bringToTopAndScroll, isFixedProductMode, manualProduct, manualPrice]);
 
         const nicknameSuggestions = useMemo(() => {
             const term = deferredManualNick.trim().toLowerCase();
@@ -3510,6 +3578,16 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             const autoSaveRef = useRef(); useEffect(() => { autoSaveRef.current = autoSaveToGoogleSheet; }, [autoSaveToGoogleSheet]);
             useEffect(() => { const saveInterval = setInterval(() => { if (autoSaveRef.current) autoSaveRef.current(); }, 10000); return () => clearInterval(saveInterval); }, []); 
 
+            // ✨ 입금액(deposit), 주소(addresses), 카드결제(cardPayments) 상태가 변하면 10초를 기다리지 않고 1.2초 뒤 즉시 구글 시트 및 고객용 포털(Firebase)에 자동 저장!
+            const totalMatchedDepositSum = useMemo(() => orders.reduce((s, o) => s + (Number(o.deposit) || 0), 0), [orders]);
+            useEffect(() => {
+                if (orders.length === 0) return;
+                const quickSyncTimer = setTimeout(() => {
+                    if (autoSaveRef.current) autoSaveRef.current(false);
+                }, 1200);
+                return () => clearTimeout(quickSyncTimer);
+            }, [totalMatchedDepositSum, addresses.length, cardPayments]);
+
             useEffect(() => {
                 const handleSaveShortcut = (e) => {
                     if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S' || e.key === 'ㄴ')) {
@@ -3854,6 +3932,10 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     return [newOrder, ...prev];
                 });
             }, [resetCustomerConfirmation, setOrders, setInventory, setProductHistory, saveInventoryToServer]);
+
+            useEffect(() => {
+                addOrderLogicRef.current = addOrderLogic;
+            }, [addOrderLogic]);
 
             const handleManualSubmit = (e) => { 
                 e.preventDefault(); 
