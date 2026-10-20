@@ -35,6 +35,122 @@
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <script src="https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+    <script>
+        try {
+            const firebaseConfig = {
+                apiKey: "AIzaSyDgdH34cDnp2S9akHfFLYBSpHzzamHFuoc",
+                authDomain: "my-live-shop.firebaseapp.com",
+                databaseURL: "https://my-live-shop-default-rtdb.firebaseio.com",
+                projectId: "my-live-shop",
+                storageBucket: "my-live-shop.firebasestorage.app",
+                messagingSenderId: "598748133843",
+                appId: "1:598748133843:web:17c7d83321fc191f85d726",
+                measurementId: "G-9EX0P6H2Y7"
+            };
+            if (window.firebase && !window.firebase.apps.length) {
+                window.firebase.initializeApp(firebaseConfig);
+            }
+            window.emberRealtimeDb = window.firebase ? window.firebase.database() : null;
+        } catch (e) {
+            console.warn("Firebase 초기화 생략:", e);
+        }
+
+        // 강은지 주문서 재고 리스트를 고객용 상품목록(live_catalog.html) 규격으로 변환하여 0.1초 만에 직통 푸시하는 함수
+        window.pushInventoryToLiveCatalog = function(invList) {
+            if (!window.emberRealtimeDb || !Array.isArray(invList)) return;
+            try {
+                const getSafeKey = (name) => String(name || '').replace(/[.#$\[\]]/g, '_');
+                const validRows = [];
+                invList.forEach(item => {
+                    const name = String(item.name || '').trim();
+                    if (!name) return;
+                    const priceNum = Number(item.price) || 0;
+                    if (priceNum <= 0) return;
+                    validRows.push({
+                        originalName: name,
+                        isSoldOut: Boolean(item.isSoldOut),
+                        numericPrice: priceNum,
+                        formattedPrice: priceNum.toLocaleString(),
+                        sheetVideoCol: ''
+                    });
+                });
+
+                const groupMap = {};
+                validRows.forEach(row => {
+                    const numMatch = row.originalName.match(/^([0-9]+(?:-[0-9]+)?)/);
+                    const groupKey = numMatch ? numMatch[1] : row.originalName.split(/\s+/)[0];
+                    if (!groupMap[groupKey]) groupMap[groupKey] = [];
+                    groupMap[groupKey].push(row);
+                });
+
+                const finalGroups = [];
+                for (const key in groupMap) {
+                    const items = groupMap[key];
+                    if (items.length === 1) {
+                        finalGroups.push({
+                            id: getSafeKey(items[0].originalName),
+                            name: items[0].originalName,
+                            formattedPrice: items[0].formattedPrice,
+                            numericPrice: items[0].numericPrice,
+                            sheetVideoCol: '',
+                            options: [{
+                                originalName: items[0].originalName,
+                                displayName: '기본(단품)',
+                                isSoldOut: items[0].isSoldOut,
+                                numericPrice: items[0].numericPrice
+                            }]
+                        });
+                        continue;
+                    }
+                    const splitItems = items.map(item => item.originalName.split(/\s+/));
+                    const minLen = Math.min(...splitItems.map(arr => arr.length));
+                    let commonWordCount = 0;
+                    for (let i = 0; i < minLen; i++) {
+                        const word = splitItems[0][i];
+                        if (splitItems.every(arr => arr[i] === word)) commonWordCount++;
+                        else break;
+                    }
+                    if (commonWordCount === 0) commonWordCount = 1;
+                    const baseName = splitItems[0].slice(0, commonWordCount).join(' ');
+                    const safeKey = getSafeKey(baseName);
+                    const options = items.map((item, idx) => ({
+                        originalName: item.originalName,
+                        displayName: splitItems[idx].slice(commonWordCount).join(' ') || '기본(단품)',
+                        isSoldOut: item.isSoldOut,
+                        numericPrice: item.numericPrice
+                    }));
+                    finalGroups.push({
+                        id: safeKey,
+                        name: baseName,
+                        formattedPrice: items[0].formattedPrice,
+                        numericPrice: items[0].numericPrice,
+                        sheetVideoCol: '',
+                        options: options
+                    });
+                }
+
+                const groupArray = finalGroups.sort((a, b) => {
+                    const matchA = a.name.match(/^(\d+)(?:-(\d+))?/);
+                    const matchB = b.name.match(/^(\d+)(?:-(\d+))?/);
+                    const numA = matchA ? parseInt(matchA[1], 10) : -1;
+                    const numB = matchB ? parseInt(matchB[1], 10) : -1;
+                    if (numA === -1 && numB === -1) return a.name.localeCompare(b.name);
+                    if (numA !== numB) return numB - numA;
+                    const subA = matchA && matchA[2] ? parseInt(matchA[2], 10) : 0;
+                    const subB = matchB && matchB[2] ? parseInt(matchB[2], 10) : 0;
+                    return subB - subA;
+                });
+
+                window.emberRealtimeDb.ref('ember_live_data/_live_catalog').set({
+                    items: groupArray,
+                    rawCount: validRows.length,
+                    updatedAt: Date.now()
+                }).catch(() => {});
+            } catch (e) {}
+        };
+    </script>
     
     <script>
         tailwind.config = { 
@@ -1225,14 +1341,14 @@ useEffect(() => {
                 </div>
             );
         });
-
-        const CustomerBlock = memo(({ nick, items, isSelected, currentShipping, isCard, isPaidState, grandTotal, depositTotal, balance, baseGrandTotal, baseBalance, addr, addrType, addressMapping, autoDepositorName, displayDepositorName, isAutoDepositor, depositorNames, copyStatus, isOrderConfirmed, isEditingShipping, setSelectedNick, addOrderLogic, handleNicknameEdit, toggleCardPayment, handleShippingChange, setEditingShippingNick, openModal, setDepositorNames, handleFullDepositToggle, copyOrderSheet, handleOrderCheckToggle, handleAddressUnmapping, handleAddressMapping, handleProductChange, handleQuantityUpdate, handleOrderCancel, handleOrderDelete, toggleVIP, specialCustomers, handleOpenQuickAddress, findAddressSuggestions, cashReceiptStatus, toggleCashReceipt, inventory, productHistory, customerDeposits, handleDepositUnmatch, handleMultiAddOpen, toggleNoShow, toggleWaitlist, noShowStatus, waitlistStatus, customerPassword, handleSetCustomerPassword, waitlistRankMap, trackingNumber, handleSetTrackingNumber }) => {
+        const CustomerBlock = memo(({ nick, items, isSelected, currentShipping, isCard, isCardCompleted, isPaidState, grandTotal, depositTotal, balance, baseGrandTotal, baseBalance, addr, addrType, addressMapping, autoDepositorName, displayDepositorName, isAutoDepositor, depositorNames, copyStatus, isOrderConfirmed, isEditingShipping, setSelectedNick, addOrderLogic, handleNicknameEdit, toggleCardPayment, handleShippingChange, setEditingShippingNick, openModal, setDepositorNames, handleFullDepositToggle, copyOrderSheet, handleOrderCheckToggle, handleAddressUnmapping, handleAddressMapping, handleProductChange, handleQuantityUpdate, handleOrderCancel, handleOrderDelete, toggleVIP, specialCustomers, handleOpenQuickAddress, findAddressSuggestions, cashReceiptStatus, toggleCashReceipt, inventory, productHistory, customerDeposits, handleDepositUnmatch, handleMultiAddOpen, toggleNoShow, toggleWaitlist, noShowStatus, waitlistStatus, customerPassword, handleSetCustomerPassword, waitlistRankMap, trackingNumber, handleSetTrackingNumber }) => {
             let borderClass = 'border-transparent', headerBgClass = 'bg-white dark:bg-slate-800';
             
             if (isSelected) { 
                 headerBgClass = 'bg-slate-100 dark:bg-slate-700'; borderClass = 'border-slate-500 ring-2 ring-slate-500 shadow-lg relative z-10'; 
             } else if (isCard) { 
-                borderClass = 'border-slate-300 ring-1 ring-slate-300'; headerBgClass = 'bg-slate-50 dark:bg-slate-800/80'; 
+                borderClass = isCardCompleted ? 'border-purple-300 ring-1 ring-purple-300' : 'border-amber-300 ring-1 ring-amber-300';
+                headerBgClass = isCardCompleted ? 'bg-purple-50/60 dark:bg-purple-900/20' : 'bg-amber-50/60 dark:bg-amber-900/20'; 
             } else if (!isPaidState && balance > 0) { 
                 borderClass = 'border-red-500 ring-2 ring-red-500 shadow-md'; headerBgClass = 'bg-red-50 dark:bg-red-900/20';
             } else if (balance < 0 && !isCard) { 
@@ -1268,8 +1384,9 @@ useEffect(() => {
                                 <button onClick={(e) => { e.stopPropagation(); handleMultiAddOpen(nick); }} className="bg-blue-100 text-blue-600 rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-blue-200 shrink-0 ml-1 shadow-sm transition-colors" title="장바구니에서 일괄 추가"><Icon name="shopping-cart" weight="fill" size={12}/></button>
                                 <button onClick={(e) => { e.stopPropagation(); addOrderLogic(nick, '', 1); }} className="bg-slate-200 text-slate-700 rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold hover:bg-slate-300 shrink-0 ml-1 transition-colors" title="빈 상품줄 추가">+</button>
                                 
+                                {}
                                 <button onClick={(e)=>{e.stopPropagation(); handleNicknameEdit(nick);}} className="text-slate-400 hover:text-slate-700 shrink-0" title="닉네임 수정"><Icon name="pencil-simple" weight="bold" size={12}/></button>
-                                <button onClick={(e) => { e.stopPropagation(); toggleCardPayment(nick); }} className={`ml-1 text-[10px] px-1.5 py-0.5 rounded border transition-colors shrink-0 ${isCard ? 'bg-slate-700 border-slate-800 text-white font-bold' : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-100'}`}>카드</button>
+                                <button onClick={(e) => { e.stopPropagation(); toggleCardPayment(nick); }} className={`ml-1 text-[10px] px-1.5 py-0.5 rounded border transition-colors shrink-0 ${isCardCompleted ? 'bg-purple-600 border-purple-700 text-white font-bold' : isCard ? 'bg-amber-500 border-amber-600 text-white font-bold' : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-100'}`} title="클릭: 카드요청 ➔ 카드완료 ➔ 해제">{isCardCompleted ? '카드완료' : isCard ? '카드요청' : '카드'}</button>
                                 <button onClick={(e) => { e.stopPropagation(); toggleCashReceipt(nick); }} className={`ml-1 text-[10px] px-1.5 py-0.5 rounded border transition-colors shrink-0 ${cashReceiptStatus ? 'bg-indigo-600 border-indigo-700 text-white font-bold shadow-inner' : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-100'}`} title="현금영수증">현영</button>
                                 
                                 <button onClick={(e) => { e.stopPropagation(); toggleWaitlist(nick); }} className={`ml-1 text-[10px] px-1.5 py-0.5 rounded border transition-colors shrink-0 ${waitlistStatus ? 'bg-orange-500 border-orange-600 text-white font-bold shadow-inner' : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-100'}`} title="거래파기 대기">대기</button>
@@ -1312,7 +1429,7 @@ useEffect(() => {
                         <div className="flex flex-col items-end justify-start gap-0.5 text-xs shrink-0 whitespace-nowrap ml-2 mt-0.5">
                             <div className={`font-black text-right ${isPaidState && balance === 0 ? 'text-green-600 text-sm' : (balance < 0 ? 'text-blue-600 text-[15px]' : (balance > 0 ? 'text-red-600 text-[15px]' : 'text-slate-800 text-sm'))}`}>{grandTotal.toLocaleString()}원</div>
                             {isCard ? (
-                                <div className="flex flex-col items-end"><div className="text-[10px] text-slate-600 font-bold text-right leading-tight mt-0.5">입금: {depositTotal.toLocaleString()}<br/>카드: {Math.max(0, balance).toLocaleString()}</div></div>
+                                <div className="flex flex-col items-end"><div className={`text-[10px] font-bold text-right leading-tight mt-0.5 ${isCardCompleted ? 'text-purple-600' : 'text-amber-600'}`}>입금: {depositTotal.toLocaleString()}<br/>{isCardCompleted ? '카드완료' : '카드요청'}: {Math.max(0, balance).toLocaleString()}</div></div>
                             ) : (
                                 <>
                                     {balance !== 0 && depositTotal > 0 && (<div className={`text-[11px] font-black text-right mt-0.5 ${balance > 0 ? 'text-red-500' : 'text-blue-500'}`}>입금: {depositTotal.toLocaleString()}</div>)}
@@ -1369,7 +1486,7 @@ useEffect(() => {
                 </div>
             );
         }, (prev, next) => {
-            if (prev.nick !== next.nick || prev.isSelected !== next.isSelected || prev.currentShipping !== next.currentShipping || prev.isCard !== next.isCard || prev.isPaidState !== next.isPaidState || prev.grandTotal !== next.grandTotal || prev.depositTotal !== next.depositTotal || prev.balance !== next.balance || prev.isOrderConfirmed !== next.isOrderConfirmed || prev.isEditingShipping !== next.isEditingShipping || prev.displayDepositorName !== next.displayDepositorName || prev.addr?.address !== next.addr?.address || prev.addr?.realname !== next.addr?.realname || prev.addr?.phone !== next.addr?.phone || prev.copyStatus[prev.nick] !== next.copyStatus[next.nick]) return false;
+            if (prev.nick !== next.nick || prev.isSelected !== next.isSelected || prev.currentShipping !== next.currentShipping || prev.isCard !== next.isCard || prev.isCardCompleted !== next.isCardCompleted || prev.isPaidState !== next.isPaidState || prev.grandTotal !== next.grandTotal || prev.depositTotal !== next.depositTotal || prev.balance !== next.balance || prev.isOrderConfirmed !== next.isOrderConfirmed || prev.isEditingShipping !== next.isEditingShipping || prev.displayDepositorName !== next.displayDepositorName || prev.addr?.address !== next.addr?.address || prev.addr?.realname !== next.addr?.realname || prev.addr?.phone !== next.addr?.phone || prev.copyStatus[prev.nick] !== next.copyStatus[next.nick]) return false;
             if (prev.cashReceiptStatus !== next.cashReceiptStatus) return false;
             if (prev.noShowStatus !== next.noShowStatus) return false;
             if (prev.waitlistStatus !== next.waitlistStatus) return false;
@@ -1613,6 +1730,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             const [multiAddNick, setMultiAddNick] = useState(null);
             
             const [chats, setChats] = useLocalStorage('savedChats', []);
+            const [clearedBeforeIndex, setClearedBeforeIndex] = useLocalStorage('clearedChatIndex', 0);
             
             // ✨ 엑셀 채팅 임포트 이벤트 리스너 추가
             useEffect(() => {
@@ -1627,6 +1745,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                 };
                 const handleClearChats = () => {
                     setChats([]);
+                    setClearedBeforeIndex(0);
                     setSortOrderReset();
                 };
                 const setSortOrderReset = () => {
@@ -1638,7 +1757,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     window.removeEventListener('import-chats', handleImportChats);
                     window.removeEventListener('clear-chats', handleClearChats);
                 };
-            }, [setChats]);
+            }, [setChats, setClearedBeforeIndex]);
             
             const [hiddenChatIds, setHiddenChatIds] = useState(() => { try { const s = localStorage.getItem(getLsKey('hiddenChatIds')); const p = JSON.parse(s); return Array.isArray(p) ? p : []; } catch(e){ return []; } });
             const [showKeywordOnly, setShowKeywordOnly] = useState(false);
@@ -1729,11 +1848,23 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             const isGasFetchingRef = useRef(false);
 
             const saveInventoryToServer = useCallback(async (newInvList) => {
+                // 1) Firebase 실시간 DB로 0.1초 만에 직통 푸시 (고객용 상품목록 웹앱에 딜레이 없이 즉시 반영!)
+                if (window.pushInventoryToLiveCatalog) {
+                    window.pushInventoryToLiveCatalog(newInvList);
+                }
+                // 2) 구글 시트 백업 및 보관함 저장
                 if (googleScriptUrl && masterSheetId) {
                     inventorySyncLock.current = Date.now();
-                    try { await fetchGas(googleScriptUrl, { action: 'save_inventory', masterId: getCleanSheetId(masterSheetId), data: newInvList.map(i => ({ name: i.name, price: i.price, status: i.isSoldOut ? '품절' : '' })) }); } catch (e) {}
+                    try { 
+                        await fetchGas(googleScriptUrl, { 
+                            action: 'save_inventory', 
+                            masterId: getCleanSheetId(masterSheetId), 
+                            broadcastName: broadcastName,
+                            data: newInvList.map(i => ({ name: i.name, price: i.price, stock: i.stock !== undefined ? i.stock : '', status: i.isSoldOut ? '품절' : '', isLocked: Boolean(i.isLocked) })) 
+                        }); 
+                    } catch (e) {}
                 }
-            }, [googleScriptUrl, masterSheetId]);
+            }, [googleScriptUrl, masterSheetId, broadcastName]);
 
           const inventoryStats = useMemo(() => {
                 const stats = {};
@@ -1958,7 +2089,6 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         ...masterData, 
                         '닉네임': masterData.nickname, name: masterData.nickname, nick: masterData.nickname, '주문자': masterData.nickname, '아이디': masterData.nickname, '고객명': masterData.nickname,
                         phone: masterData.phone ? "'" + masterData.phone : '', 
-                        zipcode: masterData.zipcode ? "'" + masterData.zipcode : '',
                         broadcastName: broadcastName || ''
                     };
                     try { 
@@ -2181,8 +2311,15 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         if (depRows.length > 0 && Array.isArray(depRows[0]) && depRows[0].some(c => typeof c === 'string' && (c.includes('이름') || c.includes('금액') || c.includes('닉네임') || c.includes('입금자')))) {
                             depRows = depRows.slice(1);
                         }
-                        const newDeps = depRows.map((row, idx) => {
-                            if (!Array.isArray(row)) return null;
+                        const contentKeyCountMap = {};
+                        const newDeps = depRows.map((rawRow, idx) => {
+                            if (!Array.isArray(rawRow)) return null;
+                            const row = [...rawRow];
+                            let sheetRowTag = '';
+                            if (row.length > 0 && /^__ROW_\d+__$/.test(String(row[row.length - 1] || ''))) {
+                                sheetRowTag = String(row.pop()).replace(/[^0-9]/g, '');
+                            }
+                            const stableIdx = sheetRowTag || String(idx);
                             // 행 전체에서 날짜/시간으로 보이는 셀을 보조로 탐색하는 헬퍼
                             const findAnyTimeInRow = (r, skipIdx) => {
                                 for (let k = r.length - 1; k >= 0; k--) {
@@ -2202,9 +2339,13 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                     const rawTimeG = String(row[6] || findAnyTimeInRow(row, 5) || row[row.length - 1] || row[0] || '').trim();
                                     const time = formatTimeOnly(rawTimeG);
                                     const cleanName = colE.replace(/^[:"'\-\s]+/, '').replace(/^입\s+/, '').trim();
+                                    const baseSig = `${rawTimeG}_${cleanName}_${amtF}`;
+                                    contentKeyCountMap[baseSig] = (contentKeyCountMap[baseSig] || 0) + 1;
+                                    const contentId = `c_${baseSig}_${contentKeyCountMap[baseSig]}`;
                                     return { 
-                                        id: `d_${idx}_${rawTimeG}_${cleanName}_${amtF}`, 
-                                        legacyId: `d_${idx}__${cleanName}_${amtF}`,
+                                        id: sheetRowTag ? `r_${stableIdx}_${rawTimeG}_${cleanName}_${amtF}` : contentId,
+                                        contentId,
+                                        legacyId: `d_${idx}_${rawTimeG}_${cleanName}_${amtF}`,
                                         time, 
                                         rawTime: rawTimeG, 
                                         name: cleanName, 
@@ -2262,7 +2403,18 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                             let name = rawName.replace(/^[:"'\-\s]+/, '').replace(/^입\s+/, '').trim();
                             let rawTime = timeIdx !== -1 ? String(validCells[timeIdx]).trim() : String(validCells[validCells.length - 1] || '').trim();
                             let time = formatTimeOnly(rawTime);
-                            return { id: `d_${idx}_${rawTime}_${name}_${parsedAmount}`, legacyId: `d_${idx}__${name}_${parsedAmount}`, time, rawTime, name, amount: parsedAmount };
+                            const baseSig = `${rawTime}_${name}_${parsedAmount}`;
+                            contentKeyCountMap[baseSig] = (contentKeyCountMap[baseSig] || 0) + 1;
+                            const contentId = `c_${baseSig}_${contentKeyCountMap[baseSig]}`;
+                            return {
+                                id: sheetRowTag ? `r_${stableIdx}_${rawTime}_${name}_${parsedAmount}` : contentId,
+                                contentId,
+                                legacyId: `d_${idx}_${rawTime}_${name}_${parsedAmount}`,
+                                time,
+                                rawTime,
+                                name,
+                                amount: parsedAmount
+                            };
                         }).filter(d => d !== null && d.name && d.amount > 0).reverse();
                         
                         const depIds = newDeps.map(d => d.id + '_' + d.time).join(',');
@@ -2284,7 +2436,6 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                             realname: String(a.realname || a['수령인명'] || a['수령인'] || a['이름'] || a['성명'] || '').trim(),
                             phone: fixPhoneNumber(String(a.phone || a['연락처'] || a['핸드폰번호'] || a['전화번호'] || '').trim()),
                             address: String(a.address || a['주소'] || a['배송지'] || '').trim(),
-                            zipcode: String(a.zipcode || a['우편번호'] || '').trim(),
                             memo: String(a.memo || a['배송메모'] || a['요청사항'] || a['메모'] || '').trim(),
                             timestamp: a.timestamp || a['저장시간'] || a['일시'] || '',
                             _parsedTime: parseSafeDate(a.timestamp || a['저장시간'] || '').getTime(),
@@ -2343,7 +2494,8 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         res.customerDb.forEach(row => {
                             const nick = String(row['닉네임'] || '').trim();
                             const status = String(row['고객상태'] || '').trim().toLowerCase();
-                            const pin = String(row['비밀번호'] || '').replace(/[^0-9]/g, '').slice(-4);
+                            const rawPinDigits = String(row['비밀번호'] || '').replace(/[^0-9]/g, '');
+                            const pin = rawPinDigits ? (rawPinDigits.length < 4 ? rawPinDigits.padStart(4, '0') : rawPinDigits.slice(-4)) : '';
                             const confirmed = String(row['주문확인'] || '').trim();
                             const ts = row['저장시간'] || '';
                             if (nick) {
@@ -2376,9 +2528,9 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                             const merged = { ...prev, ...parsedWaitlist };
                             return JSON.stringify(prev) !== JSON.stringify(merged) ? merged : prev;
                         });
-                        if (Object.keys(parsedPins).length > 0) {
+                        if (Object.keys(parsedPins).length > 0 || (res.orderPinMap && Object.keys(res.orderPinMap).length > 0)) {
                             setCustomerPasswords(prev => {
-                                const merged = { ...prev, ...parsedPins };
+                                const merged = { ...prev, ...(res.orderPinMap || {}), ...parsedPins };
                                 return JSON.stringify(prev) !== JSON.stringify(merged) ? merged : prev;
                             });
                         }
@@ -2724,7 +2876,11 @@ const dashboardStats = useMemo(() => {
             }, [deferredManualNick, orders, addresses, depositorNames, addressLookup]);
 
             const filteredChats = useMemo(() => { 
-                let res = chats.filter(c => !hiddenChatIds.includes(c.id)); const keywordsArray = keywords || []; 
+                const isSearching = Boolean(deferredChatSearch.trim() || showKeywordOnly);
+                // 검색 중이 아닐 때는 [비우기] 이후의 채팅만 대상, 검색 중일 때는 오늘 방송 전체 채팅(3,000~5,000개 전부)을 대상으로 검색!
+                const baseChats = isSearching ? chats : chats.slice(clearedBeforeIndex);
+                let res = baseChats.filter(c => !hiddenChatIds.includes(c.id)); 
+                const keywordsArray = keywords || []; 
                 if (showKeywordOnly) res = res.filter(c => keywordsArray.some(k => String(c.content || '').includes(k))); 
                 if (deferredChatSearch) {
                     const term = deferredChatSearch.toLowerCase().replace(/\s/g, ''); const isChosung = /^[ㄱ-ㅎa-zA-Z0-9]+$/.test(term);
@@ -2734,11 +2890,19 @@ const dashboardStats = useMemo(() => {
                     });
                 }
                 return res; 
-            }, [chats, hiddenChatIds, deferredChatSearch, showKeywordOnly, keywords]);
+            }, [chats, clearedBeforeIndex, hiddenChatIds, deferredChatSearch, showKeywordOnly, keywords]);
 
             // ✨ 키보드 네비게이션을 위한 상태 및 로직 추가 시작
             const reversedChats = useMemo(() => [...filteredChats].reverse(), [filteredChats]);
             const [focusedChatId, setFocusedChatId] = useState(null); // ✨ 인덱스가 아닌 고유 ID로 추적하도록 변경
+
+            // 평소에는 화면에 최신 500개만 유지하고, 검색이나 키워드 필터 중일 때는 당일 방송 전체에서 일치하는 채팅을 모두 표시!
+            const visibleReversedChats = useMemo(() => {
+                if (deferredChatSearch.trim() || showKeywordOnly) {
+                    return reversedChats;
+                }
+                return reversedChats.slice(0, 500);
+            }, [reversedChats, deferredChatSearch, showKeywordOnly]);
 
             const stateRef = useRef({ reversedChats, isFixedProductMode, focusedChatId, manualProduct, manualPrice });
             useEffect(() => { 
@@ -2915,17 +3079,22 @@ const dashboardStats = useMemo(() => {
 
                     // ✨ 이미 연결되어 있는 입금건이라도 영구 기록(customerDepositLogs)에 누락되어 있다면 즉시 스냅샷으로 박제!
                     allDeposits.forEach(dep => {
-                        const isMatched = newMatchedIds.has(dep.id) || (dep.legacyId && newMatchedIds.has(dep.legacyId));
-                        const linkedCust = newDepositLinks[dep.id] || (dep.legacyId && newDepositLinks[dep.legacyId]);
+                        const isMatched = newMatchedIds.has(dep.id) || (dep.contentId && newMatchedIds.has(dep.contentId)) || (dep.legacyId && newMatchedIds.has(dep.legacyId));
+                        const linkedCust = newDepositLinks[dep.id] || (dep.contentId && newDepositLinks[dep.contentId]) || (dep.legacyId && newDepositLinks[dep.legacyId]);
                         if (isMatched && linkedCust) {
+                            newMatchedIds.add(dep.id);
+                            if (dep.contentId) newMatchedIds.add(dep.contentId);
+                            newDepositLinks[dep.id] = linkedCust;
+                            if (dep.contentId) newDepositLinks[dep.contentId] = linkedCust;
                             const existingList = Array.isArray(newDepositLogs[linkedCust]) ? newDepositLogs[linkedCust] : [];
-                            const alreadyInLog = existingList.some(item => item.id === dep.id || (dep.legacyId && item.legacyId === dep.legacyId));
+                            const alreadyInLog = existingList.some(item => item.id === dep.id || (dep.contentId && item.contentId === dep.contentId) || (dep.legacyId && item.legacyId === dep.legacyId));
                             if (!alreadyInLog) {
                                 const fullTimeStr = formatDepositFullDateTime(dep.rawTime || dep.time || dep.date || '') || dep.time || '';
                                 newDepositLogs[linkedCust] = [
                                     ...existingList,
                                     {
                                         id: dep.id,
+                                        contentId: dep.contentId || '',
                                         legacyId: dep.legacyId || '',
                                         name: dep.name,
                                         amount: Number(dep.amount),
@@ -3000,10 +3169,10 @@ const dashboardStats = useMemo(() => {
                     });
 
                     allDeposits.forEach(deposit => {
-                        const alreadyMatched = newMatchedIds.has(deposit.id) || (deposit.legacyId && newMatchedIds.has(deposit.legacyId));
-                        const alreadyDeleted = deletedDepositIds.has(deposit.id) || (deposit.legacyId && deletedDepositIds.has(deposit.legacyId));
-                        const alreadyIgnored = ignoredAutoMatch.has(deposit.id) || (deposit.legacyId && ignoredAutoMatch.has(deposit.legacyId));
-                        const alreadyArchived = archivedDepositIds.has(deposit.id) || (deposit.legacyId && archivedDepositIds.has(deposit.legacyId));
+                        const alreadyMatched = newMatchedIds.has(deposit.id) || (deposit.contentId && newMatchedIds.has(deposit.contentId)) || (deposit.legacyId && newMatchedIds.has(deposit.legacyId));
+                        const alreadyDeleted = deletedDepositIds.has(deposit.id) || (deposit.contentId && deletedDepositIds.has(deposit.contentId)) || (deposit.legacyId && deletedDepositIds.has(deposit.legacyId));
+                        const alreadyIgnored = ignoredAutoMatch.has(deposit.id) || (deposit.contentId && ignoredAutoMatch.has(deposit.contentId)) || (deposit.legacyId && ignoredAutoMatch.has(deposit.legacyId));
+                        const alreadyArchived = archivedDepositIds.has(deposit.id) || (deposit.contentId && archivedDepositIds.has(deposit.contentId)) || (deposit.legacyId && archivedDepositIds.has(deposit.legacyId));
                         if (alreadyMatched || alreadyDeleted || alreadyIgnored || alreadyArchived) return;
 
                         const depositNameClean = cleanForMatch(deposit.name); if (depositNameClean.length < 1) return; 
@@ -3026,17 +3195,20 @@ const dashboardStats = useMemo(() => {
                             });
                             cb.depositTotal += depositAmount; cb.balance -= depositAmount; cb.isCloud = false; 
                             newMatchedIds.add(deposit.id);
+                            if (deposit.contentId) newMatchedIds.add(deposit.contentId);
                             if (deposit.legacyId) newMatchedIds.add(deposit.legacyId);
                             newDepositLinks[deposit.id] = matchedCustomer;
+                            if (deposit.contentId) newDepositLinks[deposit.contentId] = matchedCustomer;
 
                             // ✨ 자동 매칭되는 순간 고객의 영구 입금기록 장부(customerDepositLogs)에 입금자명·날짜시간·금액을 즉시 박제! (나중에 입금 시트에서 지워도 절대 안 날아감)
                             const fullTimeStr = formatDepositFullDateTime(deposit.rawTime || deposit.time || deposit.date || '') || deposit.time || '';
                             const prevCustLogs = Array.isArray(newDepositLogs[matchedCustomer]) ? newDepositLogs[matchedCustomer] : [];
-                            if (!prevCustLogs.some(item => item.id === deposit.id || (deposit.legacyId && item.legacyId === deposit.legacyId))) {
+                            if (!prevCustLogs.some(item => item.id === deposit.id || (deposit.contentId && item.contentId === deposit.contentId) || (deposit.legacyId && item.legacyId === deposit.legacyId))) {
                                 newDepositLogs[matchedCustomer] = [
                                     ...prevCustLogs,
                                     {
                                         id: deposit.id,
+                                        contentId: deposit.contentId || '',
                                         legacyId: deposit.legacyId || '',
                                         name: deposit.name,
                                         amount: depositAmount,
@@ -3107,14 +3279,14 @@ const dashboardStats = useMemo(() => {
                             const waitStr = String(row['대기여부'] || '').trim();
                             const isWait = waitStr === 'O' || waitStr.includes('대기');
                             const cardStr = String(row['카드결제'] || '').trim();
-                            if (cardStr.startsWith('O') || cardStr.includes('카드')) {
-                                loadedCards[nick] = true;
+                            if (cardStr.startsWith('O') || cardStr.includes('카드') || cardStr.includes('완료')) {
+                                loadedCards[nick] = cardStr.includes('완료') ? 'completed' : true;
                             }
                             if (row['배송비'] !== undefined && row['배송비'] !== '') {
                                 loadedShips[nick] = Number(row['배송비']);
                             }
-                            const trk = String(row['송장번호'] || '').replace(/^'+/, '').trim();
-                            if (trk) loadedTrks[nick] = trk;
+                            const trk = String(row['송장번호'] || row['운송장번호'] || row['송장'] || row['운송장'] || '').replace(/^'+/, '').trim();
+                            if (trk && trk !== '__CLEAR__') loadedTrks[nick] = trk;
                             if (String(row['주문확인'] || '').trim() === 'O') {
                                 loadedConfirmed.push(nick);
                             }
@@ -3154,7 +3326,50 @@ const dashboardStats = useMemo(() => {
                             setShippingOverrides(loadedShips);
                             setTrackingNumbers(loadedTrks);
                             setCheckedOrders(new Set(loadedConfirmed));
-                            if (!isSilent) openModal(`[${targetTabName}] 시트에서 주문 ${loadedOrders.length}건을 안전하게 불러왔습니다!`, 'alert');
+
+                            // ✨ 해당 방송 날짜에 저장되어 있던 상품리스트(실시간 재고)도 함께 복원! (보관함에 없으면 주문 품목에서 자동 추출)
+                            let restoredInv = [];
+                            if (Array.isArray(res.broadcastInventory) && res.broadcastInventory.length > 0) {
+                                restoredInv = res.broadcastInventory.map((item, iIdx) => ({
+                                    id: `inv_${Date.now()}_${iIdx}_${Math.random()}`,
+                                    name: item.name,
+                                    price: Number(item.price) || 0,
+                                    stock: item.stock !== undefined && item.stock !== null ? item.stock : '',
+                                    isSoldOut: item.status === '품절',
+                                    isLocked: Boolean(item.isLocked)
+                                }));
+                            } else {
+                                const prodMap = new Map();
+                                loadedOrders.forEach(o => {
+                                    const pName = String(o.product || '').trim();
+                                    if (!pName) return;
+                                    const uPrice = o.quantity > 0 ? Math.round(Number(o.price) / Number(o.quantity)) : Number(o.price);
+                                    if (!prodMap.has(pName)) {
+                                        prodMap.set(pName, {
+                                            id: `inv_${Date.now()}_${Math.random()}`,
+                                            name: pName,
+                                            price: uPrice || 0,
+                                            stock: '',
+                                            isSoldOut: false,
+                                            isLocked: false
+                                        });
+                                    }
+                                });
+                                restoredInv = Array.from(prodMap.values());
+                            }
+
+                            if (restoredInv.length > 0) {
+                                inventorySyncLock.current = Date.now();
+                                setInventory(restoredInv);
+                                if (window.pushInventoryToLiveCatalog) {
+                                    window.pushInventoryToLiveCatalog(restoredInv);
+                                }
+                                const nextHist = {};
+                                restoredInv.forEach(ri => { if (ri.price > 0) nextHist[ri.name] = ri.price; });
+                                setProductHistory(prev => ({ ...prev, ...nextHist }));
+                            }
+
+                            if (!isSilent) openModal(`[${targetTabName}] 시트에서 주문 ${loadedOrders.length}건과 상품리스트(${restoredInv.length}종)를 안전하게 불러왔습니다!`, 'alert');
                         } else if (!isSilent) {
                             openModal(`[${targetTabName}] 시트에 저장된 주문 내역이 없습니다.`, 'alert');
                         }
@@ -3164,7 +3379,7 @@ const dashboardStats = useMemo(() => {
                 } catch (e) {
                     if (!isSilent) openModal('시트 불러오기 중 통신 오류가 발생했습니다.', 'alert');
                 }
-            }, [googleScriptUrl, masterSheetId, setOrders, setCardPayments, setShippingOverrides, setTrackingNumbers, setCheckedOrders, setBroadcastName, setCustomerDepositLogs, openModal]);
+            }, [googleScriptUrl, masterSheetId, setOrders, setCardPayments, setShippingOverrides, setTrackingNumbers, setCheckedOrders, setBroadcastName, setCustomerDepositLogs, setInventory, setProductHistory, openModal]);
 
             // 최초 실행 시 로컬 주문서가 비어있다면 마스터 시트(메인주문)에서 자동으로 주문내역을 복구합니다.
             const initialCloudLoadRef = useRef(false);
@@ -3264,6 +3479,8 @@ const dashboardStats = useMemo(() => {
                     const isConfirmedOrder = checkedOrders && checkedOrders.has(customerVal);
                     const rawTrkVal = (trackingNumbers && trackingNumbers[customerVal]) || '';
                     const trkToSave = rawTrkVal === '__CLEAR__' ? '__CLEAR__' : (rawTrkVal ? "'" + rawTrkVal : '');
+                    const cardModeVal = cardPayments[o.customer];
+                    const cardCellStr = cardModeVal === 'completed' ? `카드완료(${feeRateNum}%)` : (cardModeVal ? `O(${feeRateNum}%)` : '');
                     
                     return { 
                         '닉네임': customerVal,
@@ -3272,10 +3489,9 @@ const dashboardStats = useMemo(() => {
                         '단가(제품금액)': o.price,
                         '배송비': currentShipping,
                         '입금액': depositToSave,
-                        '카드결제': isCard ? `O(${feeRateNum}%)` : '',
+                        '카드결제': cardCellStr,
                         '수령인명': addr.realname || '',
                         '연락처': addr.phone ? "'" + addr.phone : '',
-                        '우편번호': addr.zipcode ? "'" + addr.zipcode : '',
                         '주소': addr.address || '',
                         '요청사항': addr.memo || '',
                         'VIP여부': isVip ? 'O' : '',
@@ -3307,7 +3523,6 @@ const dashboardStats = useMemo(() => {
                         '카드결제': '',
                         '수령인명': '',
                         '연락처': '',
-                        '우편번호': '',
                         '주소': '',
                         '요청사항': '',
                         'VIP여부': '',
@@ -3323,9 +3538,12 @@ const dashboardStats = useMemo(() => {
                     const actualSheetId = getCleanSheetId(masterSheetId); 
                     if(actualSheetId) { 
                         const confirmedNicknames = uniqueNicknames.filter(n => checkedOrders && checkedOrders.has(n));
-                        await fetchGas(googleScriptUrl, { action: 'save_orders', masterId: actualSheetId, broadcastName: broadcastName, data: saveList, nicknames: uniqueNicknames, confirmedNicknames: confirmedNicknames }); 
-                        if (isManual && Array.isArray(inventoryRef.current)) {
-                            await fetchGas(googleScriptUrl, { action: 'save_inventory', masterId: actualSheetId, data: inventoryRef.current.map(i => ({ name: i.name, price: i.price, status: i.isSoldOut ? '품절' : '' })) });
+                        const invArchivePayload = Array.isArray(inventoryRef.current)
+                            ? inventoryRef.current.map(i => ({ name: i.name, price: i.price, stock: i.stock !== undefined ? i.stock : '', status: i.isSoldOut ? '품절' : '', isLocked: Boolean(i.isLocked) }))
+                            : [];
+                        await fetchGas(googleScriptUrl, { action: 'save_orders', masterId: actualSheetId, broadcastName: broadcastName, data: saveList, inventoryData: invArchivePayload, nicknames: uniqueNicknames, confirmedNicknames: confirmedNicknames }); 
+                        if (isManual && invArchivePayload.length > 0) {
+                            await fetchGas(googleScriptUrl, { action: 'save_inventory', masterId: actualSheetId, broadcastName: broadcastName, data: invArchivePayload });
                         }
                         lastSavedDataStr.current = currentDataStr;
                     } 
@@ -3334,6 +3552,23 @@ const dashboardStats = useMemo(() => {
 
             const autoSaveRef = useRef(); useEffect(() => { autoSaveRef.current = autoSaveToGoogleSheet; }, [autoSaveToGoogleSheet]);
             useEffect(() => { const saveInterval = setInterval(() => { if (autoSaveRef.current) autoSaveRef.current(); }, 10000); return () => clearInterval(saveInterval); }, []); 
+
+            useEffect(() => {
+                const handleSaveShortcut = (e) => {
+                    if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S' || e.key === 'ㄴ')) {
+                        e.preventDefault();
+                        if (document.activeElement && document.activeElement.blur) {
+                            document.activeElement.blur();
+                        }
+                        setTimeout(() => {
+                            if (autoSaveRef.current) autoSaveRef.current(true);
+                        }, 30);
+                    }
+                };
+                window.addEventListener('keydown', handleSaveShortcut);
+                return () => window.removeEventListener('keydown', handleSaveShortcut);
+            }, []);
+
             useEffect(() => { if (lastAddedOrderId) { const input = document.getElementById(`prod-input-${lastAddedOrderId}`); if (input) input.focus(); setLastAddedOrderId(null); } }, [lastAddedOrderId, orders]);
 
             const handleNicknameEdit = useCallback((old) => {
@@ -3347,7 +3582,11 @@ const dashboardStats = useMemo(() => {
                 }, null, old);
             }, [openModal, setOrders, shippingOverrides, setShippingOverrides, selectedNick, setSelectedNick, cashReceipts, setCashReceipts]);
 
-            const toggleCardPayment = useCallback((nick) => setCardPayments(prev => ({ ...prev, [nick]: !prev[nick] })), [setCardPayments]);
+            const toggleCardPayment = useCallback((nick) => setCardPayments(prev => {
+                const cur = prev[nick];
+                const nextState = !cur ? true : (cur === true ? 'completed' : false);
+                return { ...prev, [nick]: nextState };
+            }), [setCardPayments]);
             const toggleCashReceipt = useCallback((nick) => setCashReceipts(prev => ({ ...prev, [nick]: !prev[nick] })), [setCashReceipts]);
             
             // [수정 5] 노쇼 및 대기 버튼 클릭 시 로컬뿐만 아니라 구글 시트(앱스 스크립트)로도 즉시 전송
@@ -4026,8 +4265,8 @@ const dashboardStats = useMemo(() => {
                                      <button onClick={() => setShowKeywordOnly(!showKeywordOnly)} className={`flex items-center justify-center w-6 h-6 rounded-full transition-all ${showKeywordOnly ? 'bg-slate-700 text-white shadow-sm' : 'bg-white dark:bg-slate-700 text-slate-400 dark:text-slate-300 border border-slate-300 dark:border-slate-600 hover:text-slate-600 dark:hover:text-slate-100'}`}><Icon name="target" weight={showKeywordOnly ? "fill" : "bold"} size={14} /></button>
                                  </div>
                                  <div className="flex items-center gap-1.5">
-                                     <span className="text-xs text-slate-500 dark:text-slate-400">{filteredChats.length}건</span>
-                                     <button onClick={() => { setChats([]); window.localStorage.removeItem(getLsKey('savedChats')); }} className="bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded text-[9px] shadow-sm transition-colors flex items-center gap-0.5" title="구글 시트 기록은 남기고 화면에서만 채팅 삭제"><Icon name="trash" weight="bold"/> 비우기</button>
+                                     <span className="text-xs text-slate-500 dark:text-slate-400">{visibleReversedChats.length}건</span>
+                                     <button onClick={() => setClearedBeforeIndex(chats.length)} className="bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded text-[9px] shadow-sm transition-colors flex items-center gap-0.5" title="화면에서만 채팅을 비웁니다 (당일 방송 검색 및 구글 시트 기록은 그대로 유지됨)"><Icon name="trash" weight="bold"/> 비우기</button>
                                  </div>
                              </div>
                              <div className={`text-[10px] p-1.5 rounded flex justify-between items-center ${gasStatus.includes('에러') || gasStatus.includes('실패') || gasStatus.includes('입력하세요') || gasStatus.includes('차단') ? 'bg-red-100 text-red-600 font-bold' : 'text-slate-700 dark:text-slate-300 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 shadow-sm'}`}>
@@ -4044,7 +4283,7 @@ const dashboardStats = useMemo(() => {
                              {(keywords || []).length > 0 && (<div className="flex gap-1 overflow-x-auto scrollbar-hide py-0.5">{(keywords || []).map(k => (<span key={k} onClick={() => handleRemoveKeyword(k)} className="bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 px-1.5 py-0.5 rounded-full text-[10px] cursor-pointer whitespace-nowrap hover:bg-red-100 hover:text-red-600 transition-colors flex items-center gap-0.5">{k} <Icon name="x" weight="bold" size={8}/></span>))}</div>)}
                         </div>
                         <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-1.5 space-y-0.5 bg-slate-50 dark:bg-slate-900">
-                            {reversedChats.map((c, idx) => {
+                            {visibleReversedChats.map((c, idx) => {
                                 const safeContent = String(c.content || ''); const isMatched = (keywords || []).some(k => safeContent.includes(k)); const isProcessed = clickedChats?.has(c.id);
                                 const isFocused = isFixedProductMode && focusedChatId === c.id;
                                 
@@ -4108,8 +4347,8 @@ const dashboardStats = useMemo(() => {
                                     <button onClick={openSheetSelectorModal} className="px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 shadow-sm transition-colors bg-blue-600 hover:bg-blue-700 text-white" title="날짜별 마감된 방송 주문서 불러오기">
                                         <Icon name="folder-open" weight="fill" /> 이전방송 불러오기
                                     </button>
-                                    <button onClick={() => autoSaveToGoogleSheet(true)} disabled={isSaving} className={`px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 shadow-sm transition-colors ${isSaving ? 'bg-slate-400 text-slate-200 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 text-white'}`} title="현재 방송 시트에 즉시 마감/저장">
-                                        <Icon name="floppy-disk" weight="fill" /> 수동 저장
+                                    <button onClick={() => autoSaveToGoogleSheet(true)} disabled={isSaving} className={`px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 shadow-sm transition-colors ${isSaving ? 'bg-slate-400 text-slate-200 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 text-white'}`} title="현재 방송 시트에 즉시 마감/저장 (단축키: Ctrl + S)">
+                                        <Icon name="floppy-disk" weight="fill" /> 수동 저장 (Ctrl+S)
                                     </button>
                                     <button onClick={handleResetAllData} className="bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 shadow-sm transition-colors" title="현재 방송을 마감 보관하고 새 방송 시작하기"><Icon name="sparkle" weight="fill"/> 새방송 초기화</button>
                                 </div>
@@ -4177,7 +4416,7 @@ const dashboardStats = useMemo(() => {
                                 const ship = getCalculatedShipping(nick, prodSumForShipping); 
                                 const depSum = items.reduce((s, i) => s + (i.deposit || 0), 0);
                                 const baseGrand = prodSum + (activeItems.length > 0 ? ship : 0); const baseBal = baseGrand - depSum;
-                                const isCard = Boolean(cardPayments[nick]); const cardFee = (isCard && baseBal > 0) ? Math.round(baseBal * feeMultiplier) : 0;
+                                const isCard = Boolean(cardPayments[nick]); const isCardCompleted = cardPayments[nick] === 'completed'; const cardFee = (isCard && baseBal > 0) ? Math.round(baseBal * feeMultiplier) : 0;
                                 const grand = baseGrand + cardFee; const bal = baseBal + cardFee;
                                 const { data: addrData, type: addrType } = addressLookup.get(nick);
                                 
@@ -4192,7 +4431,7 @@ const dashboardStats = useMemo(() => {
                                 liveDepsForNick.forEach(item => { if (!combinedDepsMap.has(item.id)) combinedDepsMap.set(item.id, item); });
                                 const customerDeps = Array.from(combinedDepsMap.values());
                                 
-                                return (<CustomerBlock key={nick} nick={nick} items={items} isSelected={selectedNick === nick} currentShipping={ship} isCard={isCard} isPaidState={bal <= 0 && activeItems.length > 0} grandTotal={grand} depositTotal={depSum} balance={bal} baseGrandTotal={baseGrand} baseBalance={baseBal} addr={addrData} addrType={addrType} addressMapping={addressMapping} autoDepositorName={addrData?.realname || ''} displayDepositorName={depositorNames[nick] || addrData?.realname || '입금자'} isAutoDepositor={!depositorNames[nick] && addrData?.realname} depositorNames={depositorNames} copyStatus={copyStatus} isOrderConfirmed={checkedOrders.has(nick)} isEditingShipping={editingShippingNick === nick} setSelectedNick={setSelectedNick} addOrderLogic={addOrderLogic} handleNicknameEdit={handleNicknameEdit} toggleCardPayment={toggleCardPayment} handleShippingChange={handleShippingChange} setEditingShippingNick={setEditingShippingNick} openModal={openModal} setDepositorNames={setDepositorNames} handleFullDepositToggle={handleFullDepositToggle} copyOrderSheet={copyOrderSheet} handleOrderCheckToggle={handleOrderCheckToggle} handleAddressUnmapping={handleAddressUnmapping} handleAddressMapping={handleAddressMapping} handleProductChange={handleProductChange} handleQuantityUpdate={handleQuantityUpdate} handleOrderCancel={handleOrderCancel} handleOrderDelete={handleOrderDelete} toggleVIP={specialCustomers} specialCustomers={specialCustomers} handleOpenQuickAddress={handleOpenQuickAddress} findAddressSuggestions={findAddressSuggestions} cashReceiptStatus={cashReceipts[nick]} toggleCashReceipt={toggleCashReceipt} inventory={inventory} productHistory={productHistory} customerDeposits={customerDeps} handleDepositUnmatch={handleDepositUnmatch} handleMultiAddOpen={setMultiAddNick} toggleNoShow={toggleNoShow} toggleWaitlist={toggleWaitlist} noShowStatus={noShowCustomers[nick]} waitlistStatus={waitlistCustomers[nick]} customerPassword={customerPasswords && customerPasswords[nick]} handleSetCustomerPassword={handleSetCustomerPassword} trackingNumber={trackingNumbers && trackingNumbers[nick]} handleSetTrackingNumber={handleSetTrackingNumber} waitlistRankMap={waitlistRankMap} />);
+                                return (<CustomerBlock key={nick} nick={nick} items={items} isSelected={selectedNick === nick} currentShipping={ship} isCard={isCard} isCardCompleted={isCardCompleted} isPaidState={bal <= 0 && activeItems.length > 0} grandTotal={grand} depositTotal={depSum} balance={bal} baseGrandTotal={baseGrand} baseBalance={baseBal} addr={addrData} addrType={addrType} addressMapping={addressMapping} autoDepositorName={addrData?.realname || ''} displayDepositorName={depositorNames[nick] || addrData?.realname || '입금자'} isAutoDepositor={!depositorNames[nick] && addrData?.realname} depositorNames={depositorNames} copyStatus={copyStatus} isOrderConfirmed={checkedOrders.has(nick)} isEditingShipping={editingShippingNick === nick} setSelectedNick={setSelectedNick} addOrderLogic={addOrderLogic} handleNicknameEdit={handleNicknameEdit} toggleCardPayment={toggleCardPayment} handleShippingChange={handleShippingChange} setEditingShippingNick={setEditingShippingNick} openModal={openModal} setDepositorNames={setDepositorNames} handleFullDepositToggle={handleFullDepositToggle} copyOrderSheet={copyOrderSheet} handleOrderCheckToggle={handleOrderCheckToggle} handleAddressUnmapping={handleAddressUnmapping} handleAddressMapping={handleAddressMapping} handleProductChange={handleProductChange} handleQuantityUpdate={handleQuantityUpdate} handleOrderCancel={handleOrderCancel} handleOrderDelete={handleOrderDelete} toggleVIP={specialCustomers} specialCustomers={specialCustomers} handleOpenQuickAddress={handleOpenQuickAddress} findAddressSuggestions={findAddressSuggestions} cashReceiptStatus={cashReceipts[nick]} toggleCashReceipt={toggleCashReceipt} inventory={inventory} productHistory={productHistory} customerDeposits={customerDeps} handleDepositUnmatch={handleDepositUnmatch} handleMultiAddOpen={setMultiAddNick} toggleNoShow={toggleNoShow} toggleWaitlist={toggleWaitlist} noShowStatus={noShowCustomers[nick]} waitlistStatus={waitlistCustomers[nick]} customerPassword={customerPasswords && customerPasswords[nick]} handleSetCustomerPassword={handleSetCustomerPassword} trackingNumber={trackingNumbers && trackingNumbers[nick]} handleSetTrackingNumber={handleSetTrackingNumber} waitlistRankMap={waitlistRankMap} />);
                             })}
                         </div>
                     </div>
@@ -4752,29 +4991,51 @@ const dashboardStats = useMemo(() => {
                         const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
                         const rows = window.XLSX.utils.sheet_to_json(firstSheet, { defval: '' });
 
-                        // 현재 열려있는 주문서의 고객 목록 (닉네임 & 수령인명)
+                        // 현재 열려있는 주문서의 고객 목록 (닉네임 & 수령인명/수하인명)
                         const activeCustomerNicks = Array.from(new Set(orders.filter(o => !o.isCancelled).map(o => o.customer)));
-                        const resolveNickInOpenOrders = (inputNick, inputRealname, inputPhone) => {
+
+                        // 수하인명(실명) 또는 닉네임 기준으로 일치하는 모든 고객 닉네임 배열을 반환 (동명이인 감지용)
+                        const findMatchingNicksInOpenOrders = (inputNick, inputRealname, inputPhone) => {
                             const cleanInNick = normalizeString(inputNick);
                             const cleanInName = normalizeString(inputRealname);
                             const cleanInPhone = String(inputPhone || '').replace(/[^0-9]/g, '');
 
-                            for (const cNick of activeCustomerNicks) {
-                                const cNorm = normalizeString(cNick);
-                                const addrInfo = findAddress(cNick);
-                                const cRealNorm = normalizeString(addrInfo?.realname || '');
-                                const cPhone = String(addrInfo?.phone || '').replace(/[^0-9]/g, '');
-
-                                if (cleanInNick && (cNorm === cleanInNick || cleanForMatch(cNick) === cleanForMatch(inputNick))) return cNick;
-                                if (cleanInName && (cRealNorm === cleanInName || cNorm === cleanInName)) return cNick;
-                                if (cleanInNick && cRealNorm && cRealNorm === cleanInNick) return cNick;
-                                if (cleanInPhone && cleanInPhone.length >= 8 && cPhone === cleanInPhone) return cNick;
+                            // 1순위: 연락처가 함께 있고 정확히 일치하는 경우
+                            if (cleanInPhone && cleanInPhone.length >= 8) {
+                                const phoneMatches = activeCustomerNicks.filter(cNick => {
+                                    const addrInfo = findAddress(cNick);
+                                    const cPhone = String(addrInfo?.phone || '').replace(/[^0-9]/g, '');
+                                    return cPhone === cleanInPhone;
+                                });
+                                if (phoneMatches.length === 1) return phoneMatches;
                             }
-                            return inputNick || inputRealname || '';
+
+                            // 2순위: 닉네임과 정확히 일치하는 경우
+                            if (cleanInNick) {
+                                const nickMatches = activeCustomerNicks.filter(cNick => 
+                                    normalizeString(cNick) === cleanInNick || cleanForMatch(cNick) === cleanForMatch(inputNick)
+                                );
+                                if (nickMatches.length > 0) return nickMatches;
+                            }
+
+                            // 3순위: 수하인명(수령인 실명)으로 매칭 (동명이인이 여러 명일 수 있음)
+                            const targetName = cleanInName || cleanInNick;
+                            if (targetName) {
+                                const nameMatches = activeCustomerNicks.filter(cNick => {
+                                    const cNorm = normalizeString(cNick);
+                                    const addrInfo = findAddress(cNick);
+                                    const cRealNorm = normalizeString(addrInfo?.realname || '');
+                                    return cRealNorm === targetName || cNorm === targetName;
+                                });
+                                if (nameMatches.length > 0) return nameMatches;
+                            }
+
+                            return [];
                         };
 
                         const parsedList = [];
                         const localTrkMap = {};
+                        const duplicateWarnings = [];
 
                         rows.forEach(r => {
                             const keys = Object.keys(r);
@@ -4783,20 +5044,36 @@ const dashboardStats = useMemo(() => {
                                 const cleanK = k.replace(/\s+/g, '');
                                 const val = String(r[k] || '').trim();
                                 if (!val) return;
-                                if (cleanK.includes('닉네임') || cleanK.includes('주문자')) nick = val.replace(/^\[.*?\]\s*/, '').trim();
-                                else if (cleanK.includes('수령인') || cleanK.includes('받는분') || cleanK === '이름' || cleanK === '성명') realname = val;
-                                else if (cleanK.includes('전화') || cleanK.includes('연락처') || cleanK.includes('핸드폰') || cleanK.includes('휴대폰')) phone = val.replace(/[^0-9]/g, '');
-                                else if (cleanK.includes('송장') || cleanK.includes('운송장') || cleanK.includes('등기')) trk = val.replace(/[^0-9,-]/g, '');
+                                if (cleanK.includes('닉네임') || cleanK.includes('주문자')) {
+                                    nick = val.replace(/^\[.*?\]\s*/, '').trim();
+                                } else if (cleanK.includes('수하인') || cleanK.includes('수령인') || cleanK.includes('받는분') || cleanK.includes('받는사람') || cleanK === '이름' || cleanK === '성명' || cleanK === '고객명') {
+                                    realname = val.replace(/^\[.*?\]\s*/, '').trim();
+                                } else if (cleanK.includes('전화') || cleanK.includes('연락처') || cleanK.includes('핸드폰') || cleanK.includes('휴대폰') || cleanK.includes('수하인전화')) {
+                                    phone = val.replace(/[^0-9]/g, '');
+                                } else if (cleanK.includes('운송장') || cleanK.includes('송장') || cleanK.includes('등기') || cleanK.includes('화물번호')) {
+                                    trk = val.replace(/[^0-9,-]/g, '');
+                                }
                             });
+
                             if (trk && (nick || realname || phone)) {
-                                const matchedOpenNick = resolveNickInOpenOrders(nick, realname, phone);
-                                parsedList.push({ nickname: matchedOpenNick || nick, realname: realname || nick, phone, trackingNumber: trk });
-                                if (matchedOpenNick) localTrkMap[matchedOpenNick] = trk;
+                                const matchedNicks = findMatchingNicksInOpenOrders(nick, realname, phone);
+                                if (matchedNicks.length > 1) {
+                                    // 🚨 동명이인(또는 동일 닉네임) 2명 이상 발견 시 자동 매칭 보류 및 알림 목록에 추가
+                                    const displayName = realname || nick;
+                                    duplicateWarnings.push(`• 수하인명 '${displayName}' (운송장: ${trk}) ➔ 동명이인 닉네임: [${matchedNicks.join(', ')}]`);
+                                } else if (matchedNicks.length === 1) {
+                                    const matchedOpenNick = matchedNicks[0];
+                                    parsedList.push({ nickname: matchedOpenNick, realname: realname || nick, phone, trackingNumber: trk });
+                                    localTrkMap[matchedOpenNick] = trk;
+                                } else {
+                                    // 현재 열려있는 주문서에 없더라도 시트에 직접 있을 수 있으므로 전달
+                                    parsedList.push({ nickname: nick || '', realname: realname || nick, phone, trackingNumber: trk });
+                                }
                             }
                         });
 
-                        if (parsedList.length === 0) {
-                            openModal('엑셀에서 송장번호 데이터를 찾지 못했습니다.\n열 제목에 [닉네임(또는 이름/연락처)]와 [송장번호(또는 운송장번호)]가 포함되어 있는지 확인해 주세요.', 'alert');
+                        if (parsedList.length === 0 && duplicateWarnings.length === 0) {
+                            openModal('엑셀에서 데이터를 찾지 못했습니다.\n열 제목에 [수하인명(또는 수령인명/닉네임)]과 [운송장번호(또는 송장번호)]가 포함되어 있는지 확인해 주세요.', 'alert');
                             return;
                         }
 
@@ -4804,20 +5081,36 @@ const dashboardStats = useMemo(() => {
                             setTrackingNumbers(prev => ({ ...prev, ...localTrkMap }));
                         }
 
-                        if (googleScriptUrl && masterSheetId) {
+                        if (googleScriptUrl && masterSheetId && parsedList.length > 0) {
                             const res = await fetchGas(googleScriptUrl, {
                                 action: 'save_tracking_numbers',
                                 masterId: getCleanSheetId(masterSheetId),
                                 broadcastName: targetTrackingBroadcast || broadcastName,
                                 data: parsedList
                             });
+
+                            const serverDupes = (res && Array.isArray(res.duplicates)) ? res.duplicates : [];
+                            const allDupes = [...duplicateWarnings];
+                            serverDupes.forEach(sd => {
+                                const msg = `• 수하인명 '${sd.realname}' (운송장: ${sd.trackingNumber}) ➔ 시트 내 동명이인: [${sd.nicknames.join(', ')}]`;
+                                if (!allDupes.some(d => d.includes(sd.trackingNumber))) allDupes.push(msg);
+                            });
+
                             if (res && res.success) {
-                                openModal(`[${targetTrackingBroadcast || broadcastName}] 시트에 총 ${parsedList.length}건의 롯데택배 송장번호가 일괄 등록되었습니다!`, 'alert');
+                                let resultMsg = `[${targetTrackingBroadcast || broadcastName}] 시트에 총 ${parsedList.length}건의 운송장번호가 등록되었습니다!`;
+                                if (allDupes.length > 0) {
+                                    resultMsg += `\n\n⚠️ [동명이인 감지 - ${allDupes.length}건 자동등록 보류]\n닉네임이 다른데 수하인명이 똑같은 고객이 있어 아래 건은 보류했습니다. 주문서에서 직접 [송장입력] 버튼을 눌러 넣어주세요!\n\n` + allDupes.join('\n');
+                                }
+                                openModal(resultMsg, 'alert');
                             } else {
                                 openModal(`로컬에는 반영되었으나 시트 저장 중 오류가 발생했습니다: ${res?.error || res?.message || ''}`, 'alert');
                             }
                         } else {
-                            openModal(`총 ${parsedList.length}건의 송장번호가 등록되었습니다.`, 'alert');
+                            let resultMsg = `총 ${parsedList.length}건의 운송장번호가 등록되었습니다.`;
+                            if (duplicateWarnings.length > 0) {
+                                resultMsg += `\n\n⚠️ [동명이인 감지 - ${duplicateWarnings.length}건 자동등록 보류]\n닉네임이 다른데 수하인명이 똑같은 고객이 있어 아래 건은 보류했습니다. 주문서에서 직접 [송장입력] 버튼을 눌러 넣어주세요!\n\n` + duplicateWarnings.join('\n');
+                            }
+                            openModal(resultMsg, 'alert');
                         }
                     } catch (err) {
                         openModal('송장 엑셀 파일을 읽는 중 오류가 발생했습니다.', 'alert');
@@ -4902,7 +5195,7 @@ const dashboardStats = useMemo(() => {
             const [orders, setOrders] = useLocalStorage('youtubeOrders', []);
             const [activeTab, setActiveTab] = useState('live');
             
-            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzqWEe8-gAiy4O1nHNukhlE1FN1J4KqKD4y7iq90qhHhhmL1WQFcSRxduCV6NgxWw2t/exec';
+            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwRdlzvE-FN9R7mMXGiVSoHXDx1dmbi-XEtviDDsCAAlFr1K1pj2lp_jTkd_pQ4tZ8v/exec';
             const [googleScriptUrl, setGoogleScriptUrl] = useLocalStorage('googleScriptUrl', NEW_SCRIPT_URL);
         
         const [youtubeApiKey, setYoutubeApiKey] = useLocalStorage('youtubeApiKey', '');
@@ -4921,7 +5214,7 @@ const dashboardStats = useMemo(() => {
 
             useEffect(() => {
                 const currentUrl = window.localStorage.getItem(getLsKey('googleScriptUrl'));
-                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbzqWEe8-gAiy4O1nHNukhlE1FN1J4KqKD4y7iq90qhHhhmL1WQFcSRxduCV6NgxWw2t')) {
+                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbwRdlzvE-FN9R7mMXGiVSoHXDx1dmbi-XEtviDDsCAAlFr1K1pj2lp_jTkd_pQ4tZ8v')) {
                     setGoogleScriptUrl(NEW_SCRIPT_URL);
                 }
             }, [setGoogleScriptUrl]);
@@ -5015,9 +5308,13 @@ const dashboardStats = useMemo(() => {
             const openModal = useCallback((msg, type = 'alert', onConfirm = null, onCancel = null, initVal = '') => { setModalConfig({ isOpen: true, type, message: msg, onConfirm: (val) => { setModalConfig(p => ({...p, isOpen: false})); if(onConfirm) onConfirm(val); }, onCancel: () => { setModalConfig(p => ({...p, isOpen: false})); if(onCancel) onCancel(); }, initialValue: initVal }); }, []);
 
             const handleResetAllData = () => {
-                openModal(`현재 [${broadcastName}] 주문서는 구글 시트(주문_${broadcastName})에 그대로 안전하게 영구 보관됩니다!\n\n새로운 방송을 시작하기 위해 화면을 초기화하시겠습니까?\n(※ 이전 방송에서 이미 매칭된 입금내역은 새 방송과 섞이지 않도록 자동으로 사용완료 처리됩니다)`, 'confirm', () => {
+                openModal(`현재 [${broadcastName}] 주문서와 상품리스트는 구글 시트(주문_${broadcastName} 및 방송별상품보관함)에 그대로 안전하게 영구 보관됩니다!\n\n새로운 방송을 시작하기 위해 화면을 초기화하시겠습니까?\n(※ 이전 방송에서 이미 매칭된 입금내역은 새 방송과 섞이지 않도록 자동으로 사용완료 처리됩니다)`, 'confirm', () => {
                     setTimeout(() => {
                         openModal('새로 시작할 방송명을 입력해 주세요.\n(예: 10/19 여성복)', 'prompt', async (newBroadcastTitle) => {
+                            const prevBroadcastTitle = broadcastName;
+                            const prevInventorySnapshot = Array.isArray(inventory)
+                                ? inventory.map(i => ({ name: i.name, price: i.price, stock: i.stock !== undefined ? i.stock : '', status: i.isSoldOut ? '품절' : '', isLocked: Boolean(i.isLocked) }))
+                                : [];
                             const nextTitle = (newBroadcastTitle && newBroadcastTitle.trim()) ? newBroadcastTitle.trim() : broadcastName;
                             setBroadcastName(nextTitle);
 
@@ -5066,6 +5363,11 @@ const dashboardStats = useMemo(() => {
                             setManualDeposits([]); setNoShowCustomers({}); setWaitlistCustomers({}); setTrackingNumbers({});
                             window.dispatchEvent(new CustomEvent('clear-chats'));
 
+                            // 새 방송 초기화 시 고객용 실시간 상품목록(Firebase)도 잠금 상품만 남기고 즉시 초기화!
+                            if (window.pushInventoryToLiveCatalog) {
+                                window.pushInventoryToLiveCatalog(lockedItems);
+                            }
+
                             if (googleScriptUrl && masterSheetId) {
                                 const cleanMaster = getCleanSheetId(masterSheetId);
                                 const invPayload = lockedItems.map(i => ({ name: i.name, price: i.price, status: i.isSoldOut ? '품절' : '' }));
@@ -5080,7 +5382,6 @@ const dashboardStats = useMemo(() => {
                                     '카드결제': '',
                                     '수령인명': '',
                                     '연락처': '',
-                                    '우편번호': '',
                                     '주소': '',
                                     '요청사항': '',
                                     'VIP여부': '',
@@ -5092,8 +5393,11 @@ const dashboardStats = useMemo(() => {
                                     '송장번호': ''
                                 }];
                                 try {
+                                    if (prevBroadcastTitle && prevInventorySnapshot.length > 0) {
+                                        await fetchGas(googleScriptUrl, { action: 'save_inventory', masterId: cleanMaster, broadcastName: prevBroadcastTitle, data: prevInventorySnapshot });
+                                    }
                                     await Promise.all([
-                                        fetchGas(googleScriptUrl, { action: 'save_inventory', masterId: cleanMaster, data: invPayload }),
+                                        fetchGas(googleScriptUrl, { action: 'save_inventory', masterId: cleanMaster, broadcastName: nextTitle, data: invPayload }),
                                         fetchGas(googleScriptUrl, { action: 'save_orders', masterId: cleanMaster, broadcastName: nextTitle, data: emptyOrderList, nicknames: [], confirmedNicknames: [] })
                                     ]);
                                 } catch (e) {}
