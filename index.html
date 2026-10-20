@@ -3278,7 +3278,15 @@ const dashboardStats = useMemo(() => {
                     const actualSheetId = getCleanSheetId(masterSheetId);
                     const res = await fetchGas(`${googleScriptUrl}?action=get_order_tabs&masterId=${actualSheetId}&t=${Date.now()}`);
                     if (res && res.success && Array.isArray(res.tabs)) {
-                        setSheetListModal({ isOpen: true, tabs: res.tabs, loading: false });
+                        const extractDateScore = (tName) => {
+                            const s = String(tName || '').replace(/^주문_/, '').trim();
+                            if (s === '메인주문') return 99999999;
+                            const md = s.match(/(?:^|[^\d])(1[0-2]|0?[1-9])[./\-\s월]+([0-2]?\d|3[01])(?:일|\b|\s|[^0-9])/);
+                            if (md) return 20260000 + parseInt(md[1], 10) * 100 + parseInt(md[2], 10);
+                            return 0;
+                        };
+                        const sortedTabs = [...res.tabs].sort((a, b) => extractDateScore(b) - extractDateScore(a));
+                        setSheetListModal({ isOpen: true, tabs: sortedTabs, loading: false });
                     } else {
                         setSheetListModal({ isOpen: false, tabs: [], loading: false });
                         loadOrdersFromGoogleSheet(false, '메인주문');
@@ -3579,6 +3587,66 @@ const dashboardStats = useMemo(() => {
                         const invArchivePayload = Array.isArray(inventoryRef.current)
                             ? inventoryRef.current.map(i => ({ name: i.name, price: i.price, stock: i.stock !== undefined ? i.stock : '', status: i.isSoldOut ? '품절' : '', isLocked: Boolean(i.isLocked) }))
                             : [];
+
+                        // ✨ 고객용 포털(customer_portal.html)이 동시 접속 폭주 시에도 0.1초 만에 열릴 수 있도록 Firebase에도 현재 방송 주문서 미러링!
+                        if (window.emberRealtimeDb && broadcastName) {
+                            try {
+                                const cleanBName = String(broadcastName).replace(/^주문_/, '').trim();
+                                const safeBKey = cleanBName.replace(/[.#$\[\]\/]/g, '_');
+                                const portalCustomers = uniqueNicknames.map(nick => {
+                                    const custOrders = orders.filter(o => !o.isCancelled && o.customer === nick);
+                                    let addrRes = addressLookup.get(nick);
+                                    let addr = addrRes.data || {};
+                                    const cleanPh = addr.phone ? fixPhoneNumber(addr.phone) : '';
+                                    const pin4 = (customerPasswords && customerPasswords[nick]) || (cleanPh.length >= 4 ? cleanPh.slice(-4) : '');
+                                    const custType = specialCustomers && specialCustomers[normalizeString(nick)]?.type;
+                                    const isVip = custType === 'vip' || custType === 'manager';
+                                    const currentShipping = getCalculatedShipping(nick, customerTotalsForShipping[nick] || 0);
+                                    const cardModeVal = cardPayments[nick];
+                                    const cardStr = cardModeVal === 'completed' ? `카드완료(${feeRateNum}%)` : (cardModeVal ? `O(${feeRateNum}%)` : '');
+                                    const rawTrk = (trackingNumbers && trackingNumbers[nick] && trackingNumbers[nick] !== '__CLEAR__') ? trackingNumbers[nick] : '';
+                                    const zipM = String(addr.address || '').match(/^\((\d{5})\)\s*(.*)$/);
+                                    return {
+                                        sheetTabName: '주문_' + cleanBName,
+                                        nickname: nick,
+                                        phoneLast4: pin4,
+                                        broadcastName: cleanBName,
+                                        isVip: isVip,
+                                        freeShippingThreshold: Number(freeShippingThreshold) || 70000,
+                                        cardFeeRate: feeRateNum,
+                                        isCard: cardStr,
+                                        shipping: currentShipping,
+                                        depositTotal: customerTotalDeposits[nick] || 0,
+                                        deposits: savedDepositsHistoryMapRef.current[nick] || [],
+                                        items: custOrders.map((co, cIdx) => ({
+                                            id: cIdx + 1,
+                                            product: co.product || '',
+                                            qty: Number(co.quantity) || 1,
+                                            price: Number(co.price) || 0,
+                                            isWaitlist: Boolean(co.isWaitlist),
+                                            waitlistOrder: co.isWaitlist ? (waitlistRankMap[`${String(co.product || '').trim()}___${nick}`] || 1) : 0
+                                        })),
+                                        address: (addr.address || addr.realname) ? {
+                                            realname: addr.realname || '',
+                                            phone: cleanPh,
+                                            zipcode: zipM ? zipM[1] : (addr.zipcode || ''),
+                                            baseAddress: zipM ? zipM[2] : (addr.address || ''),
+                                            detailAddress: '',
+                                            memo: addr.memo || '',
+                                            updatedAt: addr.timestamp || ''
+                                        } : null,
+                                        trackingNumbers: rawTrk ? [rawTrk] : [],
+                                        isConfirmed: Boolean(checkedOrders && checkedOrders.has(nick))
+                                    };
+                                });
+                                window.emberRealtimeDb.ref(`ember_live_data/_portal_orders/${safeBKey}`).set({
+                                    broadcastName: cleanBName,
+                                    updatedAt: Date.now(),
+                                    customers: portalCustomers
+                                }).catch(() => {});
+                            } catch (fbErr) {}
+                        }
+
                         await fetchGas(googleScriptUrl, { action: 'save_orders', masterId: actualSheetId, broadcastName: broadcastName, data: saveList, inventoryData: invArchivePayload, nicknames: uniqueNicknames, confirmedNicknames: confirmedNicknames }); 
                         if (isManual && invArchivePayload.length > 0) {
                             await fetchGas(googleScriptUrl, { action: 'save_inventory', masterId: actualSheetId, broadcastName: broadcastName, data: invArchivePayload });
@@ -5233,7 +5301,7 @@ const dashboardStats = useMemo(() => {
             const [orders, setOrders] = useLocalStorage('youtubeOrders', []);
             const [activeTab, setActiveTab] = useState('live');
             
-            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwC6u5ZjrKYmhiIOMuSxSaNRvTaiphDMIM6w2puihCkkapCpuePrKa4cj8yRfyQMKv1/exec';
+            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx1rWCPnPf23AFtsCgPrHwP1mpFXO_5cW6bRdRkj_pfdLmODk3z19gMXg-GLQw7ET9D/exec';
             const [googleScriptUrl, setGoogleScriptUrl] = useLocalStorage('googleScriptUrl', NEW_SCRIPT_URL);
         
         const [youtubeApiKey, setYoutubeApiKey] = useLocalStorage('youtubeApiKey', '');
@@ -5252,7 +5320,7 @@ const dashboardStats = useMemo(() => {
 
             useEffect(() => {
                 const currentUrl = window.localStorage.getItem(getLsKey('googleScriptUrl'));
-                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbwC6u5ZjrKYmhiIOMuSxSaNRvTaiphDMIM6w2puihCkkapCpuePrKa4cj8yRfyQMKv1')) {
+                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbx1rWCPnPf23AFtsCgPrHwP1mpFXO_5cW6bRdRkj_pfdLmODk3z19gMXg-GLQw7ET9D')) {
                     setGoogleScriptUrl(NEW_SCRIPT_URL);
                 }
             }, [setGoogleScriptUrl]);
