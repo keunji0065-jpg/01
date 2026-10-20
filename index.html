@@ -361,6 +361,14 @@
             return String(str).replace(/[^가-힣]/g, '');
         };
 
+        // 유튜브 자동생성 핸들 꼬리표(@ 및 -영문숫자 3~6자)만 깔끔하게 제거하여 동일 고객 여부를 판별하는 함수 (부분일치 아님!)
+        const normalizeHandleNick = (str) => {
+            if (!str) return '';
+            let s = String(str).trim().replace(/^@+/, '');
+            s = s.replace(/-[a-zA-Z0-9]{3,6}$/, '');
+            return normalizeString(s);
+        };
+
         const fixPhoneNumber = (numStr) => {
             if (!numStr) return '';
             let cleaned = String(numStr).replace(/[^0-9]/g, '');
@@ -449,7 +457,7 @@
             return strVal; 
         };
 
-        const fetchGas = async (url, payload = null, timeoutMs = 9000) => {
+        const fetchGas = async (url, payload = null, timeoutMs = 25000) => {
             const controller = new AbortController();
             const timer = setTimeout(() => controller.abort(), timeoutMs);
             const options = { method: payload ? 'POST' : 'GET', redirect: "follow", signal: controller.signal };
@@ -1841,28 +1849,39 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
 
             const handleRegisterBatch = () => {
                 if (previewItems.length === 0) return;
-                setInventory(prev => {
-                    const newInv = [...(Array.isArray(prev) ? prev : [])];
-                    let addedCount = 0;
-                    previewItems.forEach(item => {
-                        const cleanName = item.name.trim();
-                        if (cleanName && !newInv.some(i => i.name === cleanName)) {
-                            newInv.unshift({ id: `inv_${Date.now()}_${Math.random()}`, name: cleanName, price: item.price, stock: item.stock === '' ? '' : Number(item.stock), isSoldOut: false, isLocked: false });
-                            addedCount++;
-                            if (item.price > 0) setProductHistory(h => ({...h, [cleanName]: item.price}));
-                        }
-                    });
-                    
-                    if (addedCount > 0) {
-                        saveInventoryToServer(newInv);
-                        openModal(`${addedCount}개 상품이 등록되었습니다.`, "alert");
-                        // 등록 후 폼 초기화
-                        setPreviewItems([]); setBatchBaseName(''); setBatchOpt1(''); setBatchOpt2(''); setBatchBasePrice('');
-                    } else {
-                        openModal("등록할 상품이 없거나 모두 이미 존재하는 이름입니다.", "alert");
+                const currentInv = Array.isArray(inventory) ? [...inventory] : [];
+                let addedCount = 0;
+                const nextHist = {};
+
+                previewItems.forEach(item => {
+                    const cleanName = String(item.name || '').trim();
+                    if (cleanName && !currentInv.some(i => i.name === cleanName)) {
+                        currentInv.unshift({
+                            id: `inv_${Date.now()}_${Math.random()}`,
+                            name: cleanName,
+                            price: Number(item.price) || 0,
+                            stock: item.stock === '' ? '' : Number(item.stock),
+                            isSoldOut: false,
+                            isLocked: false
+                        });
+                        addedCount++;
+                        if (Number(item.price) > 0) nextHist[cleanName] = Number(item.price);
                     }
-                    return newInv;
                 });
+
+                if (addedCount > 0) {
+                    inventorySyncLock.current = Date.now();
+                    setInventory(currentInv);
+                    try { window.localStorage.setItem(getLsKey('inventory'), JSON.stringify(currentInv)); } catch (e) {}
+                    if (Object.keys(nextHist).length > 0) {
+                        setProductHistory(h => ({ ...h, ...nextHist }));
+                    }
+                    saveInventoryToServer(currentInv);
+                    openModal(`${addedCount}개 옵션 상품이 실시간 재고 및 메인 시트에 등록되었습니다.`, "alert");
+                    setPreviewItems([]); setBatchBaseName(''); setBatchOpt1(''); setBatchOpt2(''); setBatchBasePrice('');
+                } else {
+                    openModal("등록할 상품이 없거나 모두 이미 존재하는 이름입니다.", "alert");
+                }
             };
             
                     const [ isMenuModalOpen, setIsMenuModalOpen ] = useState(false);
@@ -2136,54 +2155,66 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             };
 
             const addressLookup = useMemo(() => {
-                const masterMap = {}; const rawMap = {}; const exactNickMap = {}; const koBaseMap = {}; const realNameMap = {};
-                addresses.forEach(a => {
+                const exactNickMap = {};
+                const handleNickMap = {};
+
+                addresses.forEach((a, idx) => {
                     const cleanNick = normalizeString(a.nickname);
-                    const ts = parseSafeDate(a.timestamp).getTime();
-                    
-                    if (a._source === 'master') { 
-                        if (!masterMap[cleanNick] || ts > parseSafeDate(masterMap[cleanNick].timestamp).getTime()) masterMap[cleanNick] = a; 
-                    } else { 
-                        if (!rawMap[cleanNick] || ts > parseSafeDate(rawMap[cleanNick].timestamp).getTime()) rawMap[cleanNick] = a; 
-                    }
-                    
-                    const targetAddr = a;
+                    const handleNick = normalizeHandleNick(a.nickname);
+                    if (!cleanNick) return;
+
+                    const enriched = { ...a, _rowOrder: idx };
                     if (!exactNickMap[cleanNick]) exactNickMap[cleanNick] = [];
-                    exactNickMap[cleanNick].push(targetAddr);
-                    
-                    const cleanReal = normalizeString(a.realname);
-                    if (cleanReal) { 
-                        if (!realNameMap[cleanReal]) realNameMap[cleanReal] = []; 
-                        realNameMap[cleanReal].push(targetAddr); 
+                    exactNickMap[cleanNick].push(enriched);
+
+                    if (handleNick) {
+                        if (!handleNickMap[handleNick]) handleNickMap[handleNick] = [];
+                        handleNickMap[handleNick].push(enriched);
                     }
                 });
+
+                const pickLatestAddr = (list) => {
+                    if (!list || list.length === 0) return null;
+                    const sorted = [...list].sort((a, b) => {
+                        const tsA = parseSafeDate(a.timestamp).getTime();
+                        const tsB = parseSafeDate(b.timestamp).getTime();
+                        if (tsA !== tsB && tsA > 0 && tsB > 0) return tsB - tsA;
+                        // 시트 아래쪽(나중에 추가된 행) 또는 방금 업데이트된 항목을 최우선으로 선택!
+                        return (b._rowOrder || 0) - (a._rowOrder || 0);
+                    });
+                    return sorted[0];
+                };
+
                 return {
                     get: (nick) => {
                         if (!nick) return { data: null, conflict: null, type: 'none' };
-                        const cleanNick = normalizeString(nick); 
+                        const cleanNick = normalizeString(nick);
+                        const handleNick = normalizeHandleNick(nick);
                         const mappedTarget = addressMapping[nick] || addressMapping[cleanNick];
                         if (mappedTarget === '__UNMAPPED__') return { data: null, conflict: null, type: 'none' };
-                        
-                        if (mappedTarget) { 
-                            const mNick = normalizeString(mappedTarget); 
-                            const mAddr = masterMap[mNick] || rawMap[mNick]; 
-                            if (mAddr) return { data: mAddr, conflict: null, type: mAddr._source || 'mapped' }; 
+
+                        // 1순위: 수동으로 연결(매칭)해 둔 닉네임
+                        if (mappedTarget) {
+                            const mClean = normalizeString(mappedTarget);
+                            const mHandle = normalizeHandleNick(mappedTarget);
+                            const mAddr = pickLatestAddr(exactNickMap[mClean]) || pickLatestAddr(handleNickMap[mHandle]);
+                            if (mAddr) return { data: mAddr, conflict: null, type: mAddr._source || 'mapped' };
                         }
-                        
-                        let matches = exactNickMap[cleanNick] || [];
-                        if (matches.length === 0) matches = realNameMap[cleanNick] || [];
-                        
-                        if (matches.length > 0) {
-                            matches.sort((a, b) => parseSafeDate(b.timestamp).getTime() - parseSafeDate(a.timestamp).getTime());
-                            const addr = matches[0];
-                            const mAddrNick = normalizeString(addr.nickname);
-                            const master = masterMap[mAddrNick]; 
-                            const raw = rawMap[mAddrNick];
-                            let conflict = null;
-                            if (master && raw && parseSafeDate(raw.timestamp).getTime() > parseSafeDate(master.timestamp).getTime()) { 
-                                if (raw.address !== master.address || raw.phone !== master.phone || raw.realname !== master.realname) conflict = raw; 
+
+                        // 2순위: 닉네임 100% 완전 일치
+                        let matched = pickLatestAddr(exactNickMap[cleanNick]);
+
+                        // 3순위: 유튜브 핸들 꼬리표(-e4g 등)만 뗀 고유 닉네임이 100% 일치하는 경우 (단, 부분 포함은 절대 허용하지 않음!)
+                        if (!matched && handleNick && handleNick.length >= 2) {
+                            const candidates = handleNickMap[handleNick] || [];
+                            const uniqueNicks = new Set(candidates.map(c => normalizeHandleNick(c.nickname)));
+                            if (uniqueNicks.size === 1) {
+                                matched = pickLatestAddr(candidates);
                             }
-                            return { data: master || raw || addr, conflict: conflict, type: master ? 'master' : 'raw' };
+                        }
+
+                        if (matched) {
+                            return { data: matched, conflict: null, type: matched._source || 'master' };
                         }
                         return { data: null, conflict: null, type: 'none' };
                     }
@@ -2463,17 +2494,27 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
 
                     let mergedAddr = [];
                     if (res.masterAddresses && Array.isArray(res.masterAddresses)) {
-                        const masterAddrs = res.masterAddresses.map(a => ({
-                            ...a,
-                            nickname: String(a.nickname || a['닉네임'] || a['주문자'] || a.col_0 || '').trim(),
-                            realname: String(a.realname || a['수령인명'] || a['수령인'] || a['이름'] || a['성명'] || a.col_1 || '').trim(),
-                            phone: fixPhoneNumber(String(a.phone || a['연락처'] || a['핸드폰번호'] || a['전화번호'] || a.col_2 || '').trim()),
-                            address: String(a.address || a['주소'] || a['배송지'] || a.col_3 || '').trim(),
-                            memo: String(a.memo || a['배송메모'] || a['요청사항'] || a['메모'] || a.col_5 || '').trim(),
-                            timestamp: a.timestamp || a['저장시간'] || a['일시'] || a.col_6 || '',
-                            _parsedTime: parseSafeDate(a.timestamp || a['저장시간'] || a.col_6 || '').getTime(),
-                            _source: 'master'
-                        })).filter(a => (a.nickname || a.realname) && String(a.nickname).toLowerCase() !== 'nickname');
+                        const masterAddrs = res.masterAddresses.map((a, idx) => {
+                            const rawAddr = String(a.address || a['주소'] || a['배송지'] || a.col_3 || '').trim();
+                            const zipCol = String(a.zipcode || a['우편번호'] || a.col_4 || '').trim();
+                            const finalAddr = (zipCol && /^\d{5}$/.test(zipCol) && rawAddr && !rawAddr.startsWith('('))
+                                ? `(${zipCol}) ${rawAddr}`
+                                : rawAddr;
+                            const rawMemo = String(a.memo || a['배송메모'] || a['요청사항'] || a['메모'] || a.col_5 || '').trim();
+                            const cleanMemo = (rawMemo === finalAddr || rawMemo === rawAddr || /^\d{5}$/.test(rawMemo)) ? '' : rawMemo;
+                            return {
+                                ...a,
+                                nickname: String(a.nickname || a['닉네임'] || a['주문자'] || a.col_0 || '').trim(),
+                                realname: String(a.realname || a['수령인명'] || a['수령인'] || a['이름'] || a['성명'] || a.col_1 || '').trim(),
+                                phone: fixPhoneNumber(String(a.phone || a['연락처'] || a['핸드폰번호'] || a['전화번호'] || a.col_2 || '').trim()),
+                                address: finalAddr,
+                                memo: cleanMemo,
+                                timestamp: a.timestamp || a['저장시간'] || a['일시'] || a.col_6 || '',
+                                _parsedTime: parseSafeDate(a.timestamp || a['저장시간'] || a.col_6 || '').getTime(),
+                                _rowOrder: idx,
+                                _source: 'master'
+                            };
+                        }).filter(a => (a.nickname || a.realname) && String(a.nickname).toLowerCase() !== 'nickname' && a.address);
                         mergedAddr = [...masterAddrs];
                         gasMsg += `주소(${masterAddrs.length}) `;
                     }
@@ -2484,7 +2525,19 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         if (addrKeys !== prevAddrsStr.current) {
                             if (mergedAddr.length > prevAddrCount.current && prevAddrCount.current !== 0) playBellSound();
                             if (mergedAddr.length > 0) {
-                                setAddresses(mergedAddr);
+                                // 로컬에서 방금 입력했거나 포털에서 실시간 수신된 주소가 누락되지 않도록 병합!
+                                setAddresses(prev => {
+                                    const map = new Map();
+                                    prev.forEach((item, i) => {
+                                        const k = normalizeString(item.nickname);
+                                        if (k && item.address) map.set(k, { ...item, _rowOrder: i });
+                                    });
+                                    mergedAddr.forEach((item, i) => {
+                                        const k = normalizeString(item.nickname);
+                                        if (k && item.address) map.set(k, { ...item, _rowOrder: 1000 + i });
+                                    });
+                                    return Array.from(map.values());
+                                });
                                 // ✨ 고객용 포털(customer_portal.html)이 0.1초 만에 열리도록 찐고객사전 주소록도 Firebase에 자동 백업
                                 if (window.emberRealtimeDb) {
                                     try {
@@ -2496,7 +2549,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                                     nickname: a.nickname,
                                                     realname: a.realname || '',
                                                     phone: a.phone || '',
-                                                    address: a.address || '',
+                                                    address: a.address,
                                                     memo: a.memo || ''
                                                 };
                                             }
@@ -2645,1037 +2698,814 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         });
                     }
 
-                    setGasStatus(prev => prev === gasMsg ? prev : gasMsg);
-                    setGlobalError(prev => prev === '' ? prev : '');
-                } else { 
-                    const errMsg = res ? (res.message || res.error || "서버 응답 오류") : "서버 응답 없음";
-                    const failStr = `통신 실패: ${errMsg}`;
-                    setGasStatus(prev => prev === failStr ? prev : failStr); 
+                    setGasStatus(prev => prev === gasMsg.trim() ? prev : gasMsg.trim());
+                } else {
+                    setGasStatus("시트 응답오류");
                 }
-            } catch(e) { 
+            } catch (e) {
                 clearTimeout(slowWarningTimer);
-                setGasStatus(prev => prev === "네트워크 에러 발생" ? prev : "네트워크 에러 발생"); 
+                setGasStatus("통신 재시도중");
             } finally {
                 isGasFetchingRef.current = false;
             }
-        }, [googleScriptUrl, depSheetId, masterSheetId, setAddresses, setInventory, setSpecialCustomers, setNoShowCustomers, setWaitlistCustomers, setCustomerPasswords, setCheckedOrders, setGlobalError, playCoinSound, playBellSound]);
-
-        const fetchYoutubeDataRef = useRef(fetchYoutubeData);
-        const fetchGasDataRef = useRef(fetchGasData);
-        useEffect(() => { fetchYoutubeDataRef.current = fetchYoutubeData; }, [fetchYoutubeData]);
-        useEffect(() => { fetchGasDataRef.current = fetchGasData; }, [fetchGasData]);
-
-        // ✨ 1. YOUTUBE POLLING (유튜브 규칙에 맞춘 유동적 딜레이)
-        useEffect(() => { 
-            let isMounted = true;
-            let timerId = null;
-            
-            const pollYoutube = async () => {
-                if (!isMounted) return;
-                await fetchYoutubeDataRef.current();
-                if (isMounted) {
-                    timerId = setTimeout(pollYoutube, chatPollingIntervalRef.current); 
-                }
-            };
-            pollYoutube();
-            return () => {
-                isMounted = false;
-                if (timerId) clearTimeout(timerId);
-            };
-        }, []); 
-
-        // ✨ 2. GAS POLLING (무조건 3초 고정 초고속 동기화)
-        useEffect(() => { 
-            let isMounted = true;
-            let timerId = null;
-            
-            const pollGas = async () => {
-                if (!isMounted) return;
-                await fetchGasDataRef.current();
-                if (isMounted) {
-                    timerId = setTimeout(pollGas, 3000); // 3초마다 고정 갱신!
-                }
-            };
-            pollGas();
-            return () => {
-                isMounted = false;
-                if (timerId) clearTimeout(timerId);
-            };
-        }, []); 
+        }, [googleScriptUrl, depSheetId, masterSheetId, broadcastName, playCoinSound, playBellSound, setAddresses, setInventory, saveInventoryToServer, setSpecialCustomers, setNoShowCustomers, setWaitlistCustomers, setCustomerPasswords, setCheckedOrders, setTrackingNumbers, orders, addressLookup, depositorNames]);
 
         useEffect(() => {
-            const handleForceSync = () => { fetchYoutubeDataRef.current(); fetchGasDataRef.current(true); };
+            fetchGasData(true);
+            const gasInterval = setInterval(() => {
+                if (!document.hidden) fetchGasData(false);
+            }, 3000);
+            const handleForceSync = () => fetchGasData(true);
             window.addEventListener('force-sync', handleForceSync);
-            return () => window.removeEventListener('force-sync', handleForceSync);
+            return () => {
+                clearInterval(gasInterval);
+                window.removeEventListener('force-sync', handleForceSync);
+            };
+        }, [fetchGasData]);
+
+        // ✨ 고객이 포털(customer_portal.html)에서 배송지를 입력하거나 [주문 확인]을 누르는 즉시 0.1초 만에 사장님 주문서에도 직통 반영!
+        useEffect(() => {
+            if (!window.emberRealtimeDb) return;
+            const portalAddrRef = window.emberRealtimeDb.ref('ember_live_data/_portal_addresses');
+            const portalConfRef = window.emberRealtimeDb.ref('ember_live_data/_portal_confirmed');
+
+            const handlePortalAddr = (snap) => {
+                const val = snap.val();
+                if (!val || typeof val !== 'object') return;
+                const incoming = Object.values(val).filter(a => a && a.nickname && a.address);
+                if (incoming.length === 0) return;
+
+                setAddresses(prev => {
+                    let changed = false;
+                    const map = new Map();
+                    prev.forEach((item, idx) => {
+                        map.set(normalizeString(item.nickname), { ...item, _rowOrder: item._rowOrder ?? idx });
+                    });
+                    incoming.forEach((item, idx) => {
+                        const k = normalizeString(item.nickname);
+                        const existing = map.get(k);
+                        const fixedPh = fixPhoneNumber(item.phone || '');
+                        if (!existing || existing.address !== item.address || existing.realname !== item.realname || existing.phone !== fixedPh || existing.memo !== (item.memo || '')) {
+                            changed = true;
+                            map.set(k, {
+                                nickname: item.nickname,
+                                realname: item.realname || '',
+                                phone: fixedPh,
+                                address: item.address,
+                                memo: item.memo || '',
+                                timestamp: item.updatedAt || new Date().toISOString(),
+                                _rowOrder: 50000 + idx,
+                                _source: 'master'
+                            });
+                        }
+                    });
+                    return changed ? Array.from(map.values()) : prev;
+                });
+
+                // 만약 이전에 실수로 주소 연결 해제(__UNMAPPED__)가 되어 있던 고객이 직접 포털에서 새 주소를 입력했다면 자동으로 해제 상태를 풀어줌!
+                setAddressMapping(prevMap => {
+                    let mapChanged = false;
+                    const nextMap = { ...prevMap };
+                    incoming.forEach(item => {
+                        const rawN = item.nickname;
+                        const cleanN = normalizeString(rawN);
+                        if (nextMap[rawN] === '__UNMAPPED__') { delete nextMap[rawN]; mapChanged = true; }
+                        if (nextMap[cleanN] === '__UNMAPPED__') { delete nextMap[cleanN]; mapChanged = true; }
+                    });
+                    return mapChanged ? nextMap : prevMap;
+                });
+            };
+
+            const handlePortalConf = (snap) => {
+                const val = snap.val();
+                if (!val || typeof val !== 'object') return;
+                const confList = Object.values(val).filter(c => c && c.nickname);
+                if (confList.length === 0) return;
+                setCheckedOrders(prev => {
+                    let changed = false;
+                    const next = new Set(prev);
+                    const now = Date.now();
+                    confList.forEach(c => {
+                        const n = c.nickname;
+                        if (recentlyUncheckedRef.current[n] && (now - recentlyUncheckedRef.current[n] < 45000)) return;
+                        if (!next.has(n)) {
+                            next.add(n);
+                            changed = true;
+                        }
+                    });
+                    return changed ? next : prev;
+                });
+            };
+
+            portalAddrRef.on('value', handlePortalAddr);
+            portalConfRef.on('value', handlePortalConf);
+            return () => {
+                portalAddrRef.off('value', handlePortalAddr);
+                portalConfRef.off('value', handlePortalConf);
+            };
+        }, [setAddresses, setAddressMapping, setCheckedOrders]);
+
+        useEffect(() => {
+            let ytTimer = null;
+            let isCancelled = false;
+            const loopYoutube = async () => {
+                if (isCancelled) return;
+                await fetchYoutubeData();
+                if (!isCancelled) {
+                    ytTimer = setTimeout(loopYoutube, chatPollingIntervalRef.current || 4000);
+                }
+            };
+            loopYoutube();
+            return () => {
+                isCancelled = true;
+                if (ytTimer) clearTimeout(ytTimer);
+            };
+        }, [fetchYoutubeData]);
+
+        useEffect(() => {
+            const chatSaveInterval = setInterval(() => {
+                if (unsavedChatsRef.current.length > 0 && googleScriptUrl && masterSheetId && broadcastName) {
+                    const batch = [...unsavedChatsRef.current];
+                    unsavedChatsRef.current = [];
+                    fetchGas(googleScriptUrl, {
+                        action: 'save_chats',
+                        masterId: getCleanSheetId(masterSheetId),
+                        broadcastName: broadcastName,
+                        data: batch.map(c => [c.time, c.nickname, c.content])
+                    }).catch(() => {});
+                }
+            }, 15000);
+            return () => clearInterval(chatSaveInterval);
+        }, [googleScriptUrl, masterSheetId, broadcastName]);
+
+        const allDeposits = useMemo(() => {
+            const combined = [...manualDeposits, ...serverDeposits];
+            return combined.filter(d => !deletedDepositIds.has(d.id));
+        }, [manualDeposits, serverDeposits, deletedDepositIds]);
+
+        // 자동 입금 매칭 로직
+        useEffect(() => {
+            if (!allDeposits || allDeposits.length === 0 || !orders || orders.length === 0) return;
+
+            const activeCustomerGroups = {};
+            orders.forEach(o => {
+                if (o.isCancelled) return;
+                if (!activeCustomerGroups[o.customer]) activeCustomerGroups[o.customer] = [];
+                activeCustomerGroups[o.customer].push(o);
+            });
+
+            let matchedAny = false;
+            const newMatchedSet = new Set(matchedDeposits);
+            const newLinks = { ...depositLinks };
+            const newLogs = { ...customerDepositLogs };
+            const depositAdditions = {};
+
+            allDeposits.forEach(dep => {
+                if (String(dep.name).trim() === '시재') return;
+                if (newMatchedSet.has(dep.id) || (dep.legacyId && newMatchedSet.has(dep.legacyId))) return;
+                if (ignoredAutoMatch.has(dep.id) || (dep.legacyId && ignoredAutoMatch.has(dep.legacyId))) return;
+                if (archivedDepositIds.has(dep.id) || (dep.legacyId && archivedDepositIds.has(dep.legacyId))) return;
+
+                const depClean = cleanForMatch(dep.name);
+                if (!depClean) return;
+
+                let matchedNick = null;
+                for (const nick of Object.keys(activeCustomerGroups)) {
+                    const nickClean = cleanForMatch(nick);
+                    const customDepName = depositorNames[nick] ? cleanForMatch(depositorNames[nick]) : '';
+                    const addrRealName = addressLookup.get(nick)?.data?.realname ? cleanForMatch(addressLookup.get(nick).data.realname) : '';
+
+                    if (depClean === nickClean || (customDepName && depClean === customDepName) || (addrRealName && depClean === addrRealName)) {
+                        matchedNick = nick;
+                        break;
+                    }
+                }
+
+                if (matchedNick) {
+                    matchedAny = true;
+                    newMatchedSet.add(dep.id);
+                    if (dep.legacyId) newMatchedSet.add(dep.legacyId);
+                    newLinks[dep.id] = matchedNick;
+                    depositAdditions[matchedNick] = (depositAdditions[matchedNick] || 0) + Number(dep.amount);
+
+                    const fullTimeStr = formatDepositFullDateTime(dep.rawTime || dep.time || dep.date || '') || dep.time || '';
+                    const existingLogs = Array.isArray(newLogs[matchedNick]) ? [...newLogs[matchedNick]] : [];
+                    if (!existingLogs.some(item => item.id === dep.id || (dep.legacyId && item.legacyId === dep.legacyId))) {
+                        existingLogs.push({
+                            id: dep.id,
+                            legacyId: dep.legacyId || '',
+                            name: dep.name,
+                            amount: Number(dep.amount),
+                            time: fullTimeStr,
+                            fullTime: fullTimeStr
+                        });
+                        newLogs[matchedNick] = existingLogs;
+                    }
+                }
+            });
+
+            if (matchedAny) {
+                setMatchedDeposits(newMatchedSet);
+                setDepositLinks(newLinks);
+                setCustomerDepositLogs(newLogs);
+                setOrders(prev => {
+                    const applied = {};
+                    return prev.map(o => {
+                        if (!applied[o.customer] && depositAdditions[o.customer] && !o.isCancelled) {
+                            applied[o.customer] = true;
+                            return { ...o, deposit: (o.deposit || 0) + depositAdditions[o.customer] };
+                        }
+                        return o;
+                    });
+                });
+            }
+        }, [allDeposits, orders, matchedDeposits, depositLinks, customerDepositLogs, ignoredAutoMatch, archivedDepositIds, depositorNames, addressLookup, setMatchedDeposits, setDepositLinks, setCustomerDepositLogs, setOrders]);
+
+        const filteredDeposits = useMemo(() => {
+            if (!deferredDepositSearch) return allDeposits;
+            const term = deferredDepositSearch.toLowerCase();
+            return allDeposits.filter(d =>
+                String(d.name).toLowerCase().includes(term) ||
+                String(d.amount).includes(term) ||
+                (depositLinks[d.id] && String(depositLinks[d.id]).toLowerCase().includes(term))
+            );
+        }, [allDeposits, deferredDepositSearch, depositLinks]);
+
+        const totalDepositAmount = useMemo(() => {
+            return filteredDeposits.reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
+        }, [filteredDeposits]);
+
+        const groupedOrders = useMemo(() => {
+            const map = {};
+            orders.forEach(o => {
+                if (!map[o.customer]) map[o.customer] = [];
+                map[o.customer].push(o);
+            });
+            const currentNicks = Object.keys(map);
+            const cachedOrder = sortOrderCache.current || [];
+            const newNicks = currentNicks.filter(n => !cachedOrder.includes(n));
+            const validCached = cachedOrder.filter(n => map[n]);
+            const finalOrder = [...newNicks, ...validCached];
+            sortOrderCache.current = finalOrder;
+            return finalOrder.map(nick => [nick, map[nick]]);
+        }, [orders]);
+
+        const customerPaidStatus = useMemo(() => {
+            const status = {};
+            groupedOrders.forEach(([nick, items]) => {
+                const activeItems = items.filter(i => !i.isCancelled && !i.isWaitlist);
+                if (activeItems.length === 0) {
+                    status[nick] = false;
+                    return;
+                }
+                const prodSum = activeItems.reduce((s, i) => s + Number(i.price), 0);
+                const prodSumForShip = activeItems.reduce((s, i) => s + (Number(i.price) > 0 ? Number(i.price) : 0), 0);
+                const ship = getCalculatedShipping(nick, prodSumForShip);
+                const depSum = items.reduce((s, i) => s + (i.deposit || 0), 0);
+                status[nick] = depSum >= (prodSum + ship);
+            });
+            return status;
+        }, [groupedOrders, getCalculatedShipping]);
+
+        const dashboardStats = useMemo(() => {
+            let totalSales = 0, totalDeposit = 0, totalUnpaid = 0, totalOverpaid = 0, totalCardExpected = 0, missingAddressCount = 0, waitlistCount = 0;
+            groupedOrders.forEach(([nick, items]) => {
+                if (noShowCustomers[nick]) return;
+                const activeItems = items.filter(i => !i.isCancelled && !i.isWaitlist);
+                const waitItems = items.filter(i => !i.isCancelled && i.isWaitlist);
+                if (waitItems.length > 0 || waitlistCustomers[nick]) waitlistCount++;
+                if (activeItems.length === 0) return;
+
+                const prodSum = activeItems.reduce((s, i) => s + Number(i.price), 0);
+                const prodSumForShip = activeItems.reduce((s, i) => s + (Number(i.price) > 0 ? Number(i.price) : 0), 0);
+                const ship = getCalculatedShipping(nick, prodSumForShip);
+                const depSum = items.reduce((s, i) => s + (i.deposit || 0), 0);
+                const baseGrand = prodSum + ship;
+                const baseBal = baseGrand - depSum;
+                const isCard = Boolean(cardPayments[nick]);
+                const cardFee = (isCard && baseBal > 0) ? Math.round(baseBal * feeMultiplier) : 0;
+                const grand = baseGrand + cardFee;
+                const bal = baseBal + cardFee;
+
+                totalSales += grand;
+                totalDeposit += depSum;
+
+                if (isCard) {
+                    if (bal > 0) totalCardExpected += bal;
+                } else {
+                    if (bal > 0) totalUnpaid += bal;
+                    else if (bal < 0) totalOverpaid += Math.abs(bal);
+                }
+
+                const addrInfo = addressLookup.get(nick)?.data;
+                if (!addrInfo || !addrInfo.address) missingAddressCount++;
+            });
+            return { totalSales, totalDeposit, totalUnpaid, totalOverpaid, totalCardExpected, missingAddressCount, waitlistCount };
+        }, [groupedOrders, noShowCustomers, waitlistCustomers, getCalculatedShipping, cardPayments, feeMultiplier, addressLookup]);
+
+        const noKakaoCount = useMemo(() => {
+            return groupedOrders.filter(([nick, items]) => {
+                const active = items.filter(i => !i.isCancelled);
+                return active.length > 0 && !checkedOrders.has(nick) && !noShowCustomers[nick];
+            }).length;
+        }, [groupedOrders, checkedOrders, noShowCustomers]);
+
+        const filteredGroupedOrders = useMemo(() => {
+            const search = deferredOrderSearch.trim().toLowerCase();
+            return groupedOrders.filter(([nick, items]) => {
+                const activeItems = items.filter(i => !i.isCancelled && !i.isWaitlist);
+                const waitItems = items.filter(i => !i.isCancelled && i.isWaitlist);
+                const prodSum = activeItems.reduce((s, i) => s + Number(i.price), 0);
+                const prodSumForShip = activeItems.reduce((s, i) => s + (Number(i.price) > 0 ? Number(i.price) : 0), 0);
+                const ship = getCalculatedShipping(nick, prodSumForShip);
+                const depSum = items.reduce((s, i) => s + (i.deposit || 0), 0);
+                const baseGrand = prodSum + (activeItems.length > 0 ? ship : 0);
+                const baseBal = baseGrand - depSum;
+                const isCard = Boolean(cardPayments[nick]);
+                const addrInfo = addressLookup.get(nick)?.data;
+
+                if (filterStatus === 'paid' && !(baseBal <= 0 && activeItems.length > 0 && !isCard)) return false;
+                if (filterStatus === 'unpaid' && !(baseBal > 0 && !isCard && activeItems.length > 0)) return false;
+                if (filterStatus === 'overpaid' && !(baseBal < 0 && !isCard)) return false;
+                if (filterStatus === 'card' && !isCard) return false;
+                if (filterStatus === 'no-address' && (addrInfo && addrInfo.address)) return false;
+                if (filterStatus === 'no-kakao' && checkedOrders.has(nick)) return false;
+                if (filterStatus === 'noshow' && !noShowCustomers[nick]) return false;
+                if (filterStatus === 'waitlist' && waitItems.length === 0 && !waitlistCustomers[nick]) return false;
+
+                if (!search) return true;
+                const chosungNick = getChosung(nick).toLowerCase();
+                const realName = String(addrInfo?.realname || depositorNames[nick] || '').toLowerCase();
+                const phone = String(addrInfo?.phone || '');
+                const prodMatch = items.some(i => String(i.product || '').toLowerCase().includes(search) || getChosung(i.product || '').toLowerCase().includes(search));
+                return nick.toLowerCase().includes(search) || chosungNick.includes(search) || realName.includes(search) || phone.includes(search) || prodMatch;
+            });
+        }, [groupedOrders, deferredOrderSearch, filterStatus, getCalculatedShipping, cardPayments, addressLookup, checkedOrders, noShowCustomers, waitlistCustomers, depositorNames]);
+
+        const totalItemsCount = useMemo(() => {
+            return filteredGroupedOrders.reduce((acc, [_, items]) => acc + items.filter(i => !i.isCancelled && !i.isWaitlist).reduce((s, i) => s + (Number(i.quantity) || 0), 0), 0);
+        }, [filteredGroupedOrders]);
+
+        const displayedOrders = useMemo(() => {
+            return filteredGroupedOrders.slice(0, displayLimit);
+        }, [filteredGroupedOrders, displayLimit]);
+
+        const handleOrderScroll = useCallback((e) => {
+            const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+            if (scrollHeight - scrollTop - clientHeight < 200) {
+                setDisplayLimit(prev => Math.min(prev + 30, filteredGroupedOrders.length + 30));
+            }
+        }, [filteredGroupedOrders.length]);
+
+        const handleNoAddressClick = useCallback(() => {
+            setFilterStatus(prev => prev === 'no-address' ? 'all' : 'no-address');
         }, []);
 
-            // 🔥 구글 시트 쓰기 한도 초과(차단) 방지를 위한 10초 단위 일괄(Batch) 저장 로직
-            useEffect(() => {
-                const chatSaveInterval = setInterval(() => {
-                    if (unsavedChatsRef.current.length > 0 && googleScriptUrl && masterSheetId && broadcastName) {
-                        const chatsToSave = [...unsavedChatsRef.current];
-                        unsavedChatsRef.current = []; // 보내기 전에 임시보관함 비우기
-                        
-                        const chatRows = chatsToSave.map(c => [c.time, c.nickname, c.content]);
-                        
-                        fetchGas(googleScriptUrl, { 
-                            action: 'save_chats', 
-                            masterId: getCleanSheetId(masterSheetId),
-                            broadcastName: broadcastName,
-                            sheetName: broadcastName, // 앱스스크립트 호환성을 위해 추가
-                            data: chatRows 
-                        }).catch(()=>{
-                            // 통신 실패 시 다시 임시보관함에 복구
-                            unsavedChatsRef.current = [...chatsToSave, ...unsavedChatsRef.current];
+        const handleOpenQuickAddress = useCallback((nick, editData = null) => {
+            setQuickAddrModal({ isOpen: true, nick, editData });
+        }, []);
+
+        const handleSetCustomerPassword = useCallback((nick, currentPin) => {
+            openModal(`'${nick}' 고객님의 주문서 조회 비밀번호(숫자 4자리)를 설정하세요.`, 'prompt', (val) => {
+                if (val === null) return;
+                const cleanPin = String(val).replace(/[^0-9]/g, '').slice(-4);
+                setCustomerPasswords(prev => ({ ...prev, [nick]: cleanPin }));
+                if (googleScriptUrl && masterSheetId) {
+                    fetchGas(googleScriptUrl, {
+                        action: 'save_customer_password',
+                        masterId: getCleanSheetId(masterSheetId),
+                        data: { nickname: nick, password: cleanPin }
+                    }).catch(() => {});
+                }
+            }, null, currentPin || '');
+        }, [openModal, setCustomerPasswords, googleScriptUrl, masterSheetId]);
+
+        const handleSetTrackingNumber = useCallback((nick, currentTrk) => {
+            openModal(`'${nick}' 고객님의 롯데택배 송장번호를 입력하세요.\n(비우려면 빈칸으로 확인)`, 'prompt', (val) => {
+                if (val === null) return;
+                const cleanTrk = String(val).replace(/[^0-9,-]/g, '').trim();
+                trackingSyncLock.current = Date.now();
+                setTrackingNumbers(prev => ({ ...prev, [nick]: cleanTrk === '' ? '__CLEAR__' : cleanTrk }));
+                if (googleScriptUrl && masterSheetId) {
+                    fetchGas(googleScriptUrl, {
+                        action: 'save_tracking_numbers',
+                        masterId: getCleanSheetId(masterSheetId),
+                        broadcastName: broadcastName,
+                        data: [{ nickname: nick, trackingNumber: cleanTrk === '' ? '__CLEAR__' : cleanTrk }]
+                    }).catch(() => {});
+                }
+            }, null, currentTrk || '');
+        }, [openModal, setTrackingNumbers, googleScriptUrl, masterSheetId, broadcastName]);
+
+        const [focusedChatId, setFocusedChatId] = useState(null);
+
+        const visibleReversedChats = useMemo(() => {
+            const sliced = chats.slice(clearedBeforeIndex);
+            const term = deferredChatSearch.trim().toLowerCase();
+            return sliced.filter(c => {
+                if (hiddenChatIds.includes(c.id)) return false;
+                if (showKeywordOnly && (keywords || []).length > 0) {
+                    if (!(keywords || []).some(k => String(c.content || '').includes(k))) return false;
+                }
+                if (!term) return true;
+                return String(c.nickname || '').toLowerCase().includes(term) || String(c.content || '').toLowerCase().includes(term);
+            }).slice().reverse();
+        }, [chats, clearedBeforeIndex, deferredChatSearch, hiddenChatIds, showKeywordOnly, keywords]);
+
+        const handleAddKeyword = (e) => {
+            e.preventDefault();
+            const kw = keywordInput.trim();
+            if (kw && !(keywords || []).includes(kw)) {
+                setKeywords(prev => [...(prev || []), kw]);
+            }
+            setKeywordInput('');
+        };
+
+        const handleRemoveKeyword = (kw) => {
+            setKeywords(prev => (prev || []).filter(k => k !== kw));
+        };
+
+        const renderChatContent = (text, kwList) => {
+            if (!kwList || kwList.length === 0) return text;
+            const found = kwList.find(k => text.includes(k));
+            if (!found) return text;
+            const parts = text.split(found);
+            return parts.map((part, i) => (
+                <React.Fragment key={i}>
+                    {part}
+                    {i < parts.length - 1 && <span className="bg-yellow-200 dark:bg-yellow-700 text-slate-900 dark:text-white font-extrabold px-0.5 rounded">{found}</span>}
+                </React.Fragment>
+            ));
+        };
+
+        const handleChatClick = useCallback((chat) => {
+            setClickedChats(prev => new Set(prev).add(chat.id));
+            bringToTopAndScroll(chat.nickname);
+            if (isFixedProductMode && manualProduct) {
+                addOrderLogic(chat.nickname, manualProduct, 1, false, null, manualPrice, true);
+            } else {
+                addOrderLogic(chat.nickname, chat.content, 1, false, null, null, false);
+            }
+        }, [setClickedChats, bringToTopAndScroll, isFixedProductMode, manualProduct, manualPrice, addOrderLogic]);
+
+        const nicknameSuggestions = useMemo(() => {
+            const term = deferredManualNick.trim().toLowerCase();
+            if (!term) return [];
+            const map = new Map();
+            orders.forEach(o => {
+                if (o.customer && (o.customer.toLowerCase().includes(term) || getChosung(o.customer).toLowerCase().includes(term))) {
+                    const addr = addressLookup.get(o.customer)?.data;
+                    map.set(o.customer, { nick: o.customer, realName: addr?.realname || depositorNames[o.customer] || '' });
+                }
+            });
+            addresses.forEach(a => {
+                if (a.nickname && (a.nickname.toLowerCase().includes(term) || getChosung(a.nickname).toLowerCase().includes(term) || (a.realname && a.realname.toLowerCase().includes(term)))) {
+                    if (!map.has(a.nickname)) map.set(a.nickname, { nick: a.nickname, realName: a.realname || '' });
+                }
+            });
+            return Array.from(map.values()).slice(0, 6);
+        }, [deferredManualNick, orders, addresses, addressLookup, depositorNames]);
+
+        const [sheetListModal, setSheetListModal] = useState({ isOpen: false, tabs: [], loading: false });
+
+        const openSheetSelectorModal = useCallback(async () => {
+            if (!googleScriptUrl || !masterSheetId) return openModal("환경설정에서 스크립트 URL과 마스터 시트 ID를 확인해주세요.", "alert");
+            setSheetListModal({ isOpen: true, tabs: [], loading: true });
+            try {
+                const res = await fetchGas(`${googleScriptUrl}?action=get_order_tabs&masterId=${getCleanSheetId(masterSheetId)}&t=${Date.now()}`);
+                const tabs = (res && Array.isArray(res.tabs)) ? res.tabs : [];
+                setSheetListModal({ isOpen: true, tabs: ['메인주문', ...tabs.filter(t => t !== '메인주문')], loading: false });
+            } catch (e) {
+                setSheetListModal({ isOpen: true, tabs: ['메인주문'], loading: false });
+            }
+        }, [googleScriptUrl, masterSheetId, openModal]);
+
+        const loadOrdersFromGoogleSheet = useCallback(async (isSilent = false, targetTabName = '메인주문') => {
+            if (!googleScriptUrl || !masterSheetId) return;
+            try {
+                const res = await fetchGas(`${googleScriptUrl}?action=get_orders&masterId=${getCleanSheetId(masterSheetId)}&tabName=${encodeURIComponent(targetTabName)}&t=${Date.now()}`);
+                const rows = (res && Array.isArray(res.data)) ? res.data : [];
+                if (rows.length === 0) {
+                    if (!isSilent) openModal(`'${targetTabName}' 시트에 저장된 주문 내역이 없습니다.`, "alert");
+                    return;
+                }
+
+                const loadedOrders = [];
+                const loadedShip = {};
+                const loadedCards = {};
+                const loadedNoShow = {};
+                const loadedWait = {};
+                const loadedPins = {};
+                const loadedChecked = new Set();
+                const loadedLogs = {};
+                const loadedTrk = {};
+                let loadedBName = targetTabName !== '메인주문' ? targetTabName.replace(/^주문_/, '') : broadcastName;
+
+                rows.forEach((r, idx) => {
+                    const nick = String(r['닉네임'] || r['주문자'] || '').trim();
+                    if (!nick || nick === '닉네임') return;
+                    if (nick === '___WORKSPACE_META___') {
+                        if (r['상품명']) loadedBName = String(r['상품명']).trim();
+                        return;
+                    }
+                    const prod = String(r['상품명'] || '').trim();
+                    const qty = Number(String(r['수량'] || '1').replace(/[^0-9.-]/g, '')) || 1;
+                    const price = Number(String(r['단가(제품금액)'] || '0').replace(/[^0-9.-]/g, '')) || 0;
+                    const dep = Number(String(r['입금액'] || '0').replace(/[^0-9.-]/g, '')) || 0;
+                    const shipVal = r['배송비'];
+                    if (shipVal !== undefined && shipVal !== '') {
+                        loadedShip[nick] = Number(String(shipVal).replace(/[^0-9.-]/g, '')) || 0;
+                    }
+                    const cardStr = String(r['카드결제'] || '').trim();
+                    if (cardStr.includes('완료')) loadedCards[nick] = 'completed';
+                    else if (cardStr.startsWith('O') || cardStr.includes('카드')) loadedCards[nick] = true;
+
+                    if (String(r['노쇼여부'] || '').trim() === 'O') loadedNoShow[nick] = true;
+                    const waitStr = String(r['대기여부'] || '').trim();
+                    const isWait = waitStr === 'O' || waitStr.includes('대기');
+                    if (isWait) loadedWait[nick] = true;
+
+                    const pinRaw = String(r['비밀번호'] || '').replace(/[^0-9]/g, '');
+                    if (pinRaw) loadedPins[nick] = pinRaw.length < 4 ? pinRaw.padStart(4, '0') : pinRaw.slice(-4);
+                    if (String(r['주문확인'] || '').trim() === 'O') loadedChecked.add(nick);
+
+                    if (r['입금내역JSON']) {
+                        try {
+                            const parsed = JSON.parse(String(r['입금내역JSON']));
+                            if (Array.isArray(parsed) && parsed.length > 0) loadedLogs[nick] = parsed;
+                        } catch (err) {}
+                    }
+                    const trk = String(r['송장번호'] || '').replace(/^'+/, '').trim();
+                    if (trk) loadedTrk[nick] = trk;
+
+                    if (prod || dep > 0) {
+                        loadedOrders.push({
+                            id: Date.now() + idx + Math.random(),
+                            customer: nick,
+                            product: prod,
+                            quantity: qty,
+                            price: price,
+                            deposit: dep,
+                            isCancelled: false,
+                            isUnmodified: false,
+                            isWaitlist: isWait
                         });
                     }
-                }, 10000); // 10초마다 묶어서 전송
-                return () => clearInterval(chatSaveInterval);
-            }, [googleScriptUrl, masterSheetId, broadcastName]);
+                });
 
-            const allDeposits = useMemo(() => [...manualDeposits, ...serverDeposits], [manualDeposits, serverDeposits]);
-            const allDepositsRef = useRef(allDeposits);
-            useEffect(() => { allDepositsRef.current = allDeposits; }, [allDeposits]);
-            
-            const totalDepositAmount = useMemo(() => {
-                const filtered = allDeposits.filter(d => !deletedDepositIds.has(d.id));
-                const searchFiltered = !deferredDepositSearch ? filtered : filtered.filter(d => String(d.name||'').includes(deferredDepositSearch) || String(d.amount).includes(deferredDepositSearch));
-                return searchFiltered.reduce((sum, d) => sum + Number(d.amount), 0);
-            }, [allDeposits, deletedDepositIds, deferredDepositSearch]);
+                if (loadedBName) setBroadcastName(loadedBName);
+                setOrders(loadedOrders);
+                setShippingOverrides(loadedShip);
+                setCardPayments(loadedCards);
+                setNoShowCustomers(loadedNoShow);
+                setWaitlistCustomers(loadedWait);
+                setCustomerPasswords(prev => ({ ...prev, ...loadedPins }));
+                setCheckedOrders(loadedChecked);
+                setCustomerDepositLogs(loadedLogs);
+                setTrackingNumbers(loadedTrk);
 
-            const filteredDeposits = useMemo(() => { 
-                let result = [...allDeposits]; 
-                // ✨ 삭제된 입금 또는 이전 마감 방송(예: 10/16)에서 이미 사용 완료되어 박제된 입금 내역은 새 방송 목록에서 깔끔하게 숨김! (검색 시에만 노출)
-                result = result.filter(d => {
-                    if (deletedDepositIds.has(d.id) || (d.legacyId && deletedDepositIds.has(d.legacyId))) return false;
-                    if (!deferredDepositSearch && (archivedDepositIds.has(d.id) || (d.legacyId && archivedDepositIds.has(d.legacyId)))) return false;
-                    return true;
-                }); 
-                if (deferredDepositSearch) result = result.filter(d => String(d.name||'').includes(deferredDepositSearch) || String(d.amount).includes(deferredDepositSearch)); 
-                
-                let targetNickClean = '', targetNickKo = '', targetRealClean = '', targetRealKo = '', addrRealClean = '', addrRealKo = '';
-                if (selectedNick) { 
-                    targetNickClean = cleanForMatch(selectedNick); 
-                    targetNickKo = extractKo(selectedNick);
-                    const tReal = depositorNames[selectedNick];
-                    targetRealClean = tReal ? cleanForMatch(tReal) : ''; 
-                    targetRealKo = tReal ? extractKo(tReal) : ''; 
-                    const addrRes = addressLookup.get(selectedNick); 
-                    const aReal = addrRes && addrRes.data ? addrRes.data.realname : '';
-                    addrRealClean = aReal ? cleanForMatch(aReal) : '';
-                    addrRealKo = aReal ? extractKo(aReal) : '';
+                if (res.broadcastInventory && Array.isArray(res.broadcastInventory) && res.broadcastInventory.length > 0) {
+                    const restoredInv = res.broadcastInventory.map((item, iIdx) => ({
+                        id: `inv_${Date.now()}_${iIdx}`,
+                        name: item.name,
+                        price: Number(item.price) || 0,
+                        stock: item.stock !== undefined ? item.stock : '',
+                        isSoldOut: item.status === '품절',
+                        isLocked: Boolean(item.isLocked)
+                    }));
+                    setInventory(restoredInv);
+                    saveInventoryToServer(restoredInv);
                 }
 
-                const checkMatch = (tClean, tKo, vClean, vKo) => {
-                    if (!tClean && !tKo) return 10;
-                    if (tClean && vClean && tClean === vClean) return 0;
-                    if (tKo && vKo && tKo === vKo && tKo.length >= 2) return 0;
-                    if (tClean && vClean && (tClean.includes(vClean) || vClean.includes(tClean)) && Math.min(tClean.length, vClean.length) >= 2) return 1;
-                    if (tKo && vKo && (tKo.includes(vKo) || vKo.includes(tKo)) && Math.min(tKo.length, vKo.length) >= 2) return 1;
-                    if (tClean && vClean && (getChosung(tClean).includes(getChosung(vClean)) || getChosung(vClean).includes(getChosung(tClean))) && Math.min(tClean.length, vClean.length) >= 2) return 2;
-                    return 10;
-                };
+                if (!isSilent) openModal(`[${loadedBName}] 주문서(${loadedOrders.length}건)를 성공적으로 불러왔습니다!`, "alert");
+            } catch (e) {
+                if (!isSilent) openModal("시트 불러오기 중 오류가 발생했습니다.", "alert");
+            }
+        }, [googleScriptUrl, masterSheetId, broadcastName, openModal, setBroadcastName, setOrders, setShippingOverrides, setCardPayments, setNoShowCustomers, setWaitlistCustomers, setCustomerPasswords, setCheckedOrders, setCustomerDepositLogs, setTrackingNumbers, setInventory, saveInventoryToServer]);
 
-                const decorated = result.map(d => {
-                    let isUsed = matchedDeposits?.has(d.id) ? 1 : 0; 
-                    let score = 10;
-                    if (selectedNick) {
-                        const valClean = cleanForMatch(d.name);
-                        const valKo = extractKo(d.name);
-                        score = Math.min(
-                            checkMatch(targetNickClean, targetNickKo, valClean, valKo),
-                            checkMatch(targetRealClean, targetRealKo, valClean, valKo),
-                            checkMatch(addrRealClean, addrRealKo, valClean, valKo)
-                        );
-                    }
-                    return { item: d, isUsed, score };
-                });
+        const lastSavedDataStr = useRef('');
+        const savedDepositsHistoryMapRef = useRef({});
 
-                decorated.sort((a, b) => { 
-                    const aIsSimilar = a.score < 10;
-                    const bIsSimilar = b.score < 10;
-                    
-                    if (aIsSimilar && !bIsSimilar) return -1;
-                    if (!aIsSimilar && bIsSimilar) return 1;
-                    
-                    if (aIsSimilar && bIsSimilar) {
-                        if (a.score !== b.score) return a.score - b.score;
-                        if (a.isUsed !== b.isUsed) return a.isUsed - b.isUsed;
-                        return 0;
-                    }
-                    
-                    if (a.isUsed !== b.isUsed) return a.isUsed - b.isUsed;
-                    return 0; 
-                });
-                return decorated.map(d => d.item); 
-            }, [allDeposits, deferredDepositSearch, selectedNick, deletedDepositIds, archivedDepositIds, matchedDeposits, depositorNames, addressLookup]);
-            
+        const autoSaveToGoogleSheet = useCallback(async (isManual = false) => {
+            if (!googleScriptUrl || !masterSheetId) return;
+            const activeOrders = orders.filter(o => !o.isCancelled);
+            if (activeOrders.length === 0 && !isManual) return;
 
-const dashboardStats = useMemo(() => {
-                let totalSales = 0, totalDeposit = 0, totalUnpaid = 0, totalOverpaid = 0, totalCardExpected = 0, missingAddressCount = 0, waitlistCount = 0;
-                const groups = {}; orders.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); });
-                Object.entries(groups).forEach(([nick, items]) => {
-                    const activeItems = items.filter(i => !i.isCancelled && !i.isWaitlist); 
-                    const waitlistItems = items.filter(i => !i.isCancelled && i.isWaitlist);
-                    const depositTotal = items.reduce((sum, i) => sum + (i.deposit || 0), 0); totalDeposit += depositTotal;
-                    
-                    // ✨ 핵심: 개별 품목 대기(isWaitlist)가 하나라도 있거나, 닉네임 전체 대기를 걸었을 경우 모두 '대기' 카운트에 포함
-                    if (waitlistCustomers[nick] || waitlistItems.length > 0) waitlistCount++;
-                    
-                    if (activeItems.length === 0 && waitlistItems.length === 0) return; 
-                    if (activeItems.length > 0) {
-                        const addr = addressLookup.get(nick); if (!addr || !addr.data || !addr.data.address) missingAddressCount++;
-                    }
-                    const isCard = cardPayments[nick]; 
-                    const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0);
-                    const productTotalForShipping = activeItems.reduce((sum, i) => sum + (Number(i.price) > 0 ? Number(i.price) : 0), 0);
-                    const shipping = getCalculatedShipping(nick, productTotalForShipping); 
-                    const baseGrandTotal = productTotal + shipping; const baseBalance = baseGrandTotal - depositTotal;
-                    const cardFee = (isCard && baseBalance > 0) ? Math.round(baseBalance * feeMultiplier) : 0; const finalGrandTotal = baseGrandTotal + cardFee; const finalBalance = baseBalance + cardFee;
+            const uniqueNicknames = Array.from(new Set(activeOrders.map(o => o.customer)));
+            const customerTotalsForShipping = {};
+            const customerTotalDeposits = {};
 
-                    totalSales += finalGrandTotal; 
-                    if (finalBalance > 0) { if (isCard) totalCardExpected += finalBalance; else totalUnpaid += finalBalance; } else if (finalBalance < 0 && !isCard) { totalOverpaid += Math.abs(finalBalance); }
-                });
-                return { totalSales, totalDeposit, totalUnpaid, totalOverpaid, totalCardExpected, missingAddressCount, waitlistCount };
-            }, [orders, cardPayments, getCalculatedShipping, addressLookup, waitlistCustomers, feeMultiplier]);
+            uniqueNicknames.forEach(nick => {
+                const custOrders = activeOrders.filter(o => o.customer === nick);
+                customerTotalsForShipping[nick] = custOrders
+                    .filter(o => !o.isWaitlist && Number(o.price) > 0)
+                    .reduce((s, o) => s + Number(o.price), 0);
+                customerTotalDeposits[nick] = custOrders.reduce((s, o) => s + (Number(o.deposit) || 0), 0);
+            });
 
-            const noKakaoCount = useMemo(() => {
-                const activeCustomers = new Set();
-                orders.forEach(o => { if (!o.isCancelled) activeCustomers.add(o.customer); });
-                let count = 0;
-                activeCustomers.forEach(c => { if (!checkedOrders.has(c)) count++; });
-                return count;
-            }, [orders, checkedOrders]);
-
-            const customerPaidStatus = useMemo(() => {
-                const status = {}; const groups = {};
-                orders.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); });
-                Object.entries(groups).forEach(([nick, items]) => {
-                    const activeItems = items.filter(i => !i.isCancelled && !i.isWaitlist);
-                    if (activeItems.length === 0) { status[nick] = true; return; }
-                    const isCard = cardPayments[nick]; 
-                    const productTotal = activeItems.reduce((sum, i) => sum + Number(i.price), 0);
-                    const productTotalForShipping = activeItems.reduce((sum, i) => sum + (Number(i.price) > 0 ? Number(i.price) : 0), 0);
-                    const shipping = getCalculatedShipping(nick, productTotalForShipping); 
-                    const baseGrandTotal = productTotal + shipping;
-                    const depositTotal = items.reduce((sum, i) => sum + (i.deposit || 0), 0); const baseBalance = baseGrandTotal - depositTotal;
-                    status[nick] = isCard || (baseBalance <= 0);
-                });
-                return status;
-            }, [orders, cardPayments, getCalculatedShipping]);
-
-            const filteredGroupedOrders = useMemo(() => {
-                const groups = {}; orders.forEach(o => { if (!groups[o.customer]) groups[o.customer] = []; groups[o.customer].push(o); });
-                Object.entries(groups).forEach(([nick, items]) => { if (selectedNick === nick) { items.sort((a, b) => a.id - b.id); } else { items.sort((a, b) => String(a.product || '').localeCompare(String(b.product || ''), 'ko', { numeric: true })); } });
-
-                let entries = Object.entries(groups).filter(([nick, items]) => {
-                    if (filterStatus === 'no-address') { return !(addressLookup.get(nick)?.data?.address); }
-                    if (filterStatus === 'no-kakao') { return !checkedOrders.has(nick); }
-                    if (filterStatus === 'noshow') { return noShowCustomers[nick]; }
-                    // ✨ 핵심: 대기 탭을 눌렀을 때, 개별 품목 대기가 있는 사람도 표시
-                    if (filterStatus === 'waitlist') { return waitlistCustomers[nick] || items.some(i => !i.isCancelled && i.isWaitlist); }
-
-                    if (deferredOrderSearch) {
-                        const term = String(deferredOrderSearch).toLowerCase().replace(/\s/g, ''); const isChosung = /^[ㄱ-ㅎa-zA-Z0-9]+$/.test(term);
-                        const addrInfo = addressLookup.get(nick)?.data; const realName = addrInfo ? addrInfo.realname : (depositorNames[nick] || ''); const phone = addrInfo ? addrInfo.phone : '';
-                        const nickClean = String(nick).toLowerCase().replace(/\s/g, ''); const realNameClean = realName ? String(realName).toLowerCase().replace(/\s/g, '') : ''; const phoneClean = phone ? String(phone).replace(/-/g, '') : '';
-                        if (nickClean.includes(term) || (isChosung && getChosung(nickClean).includes(term)) || (realNameClean && (realNameClean.includes(term) || (isChosung && getChosung(realNameClean).includes(term)))) || (phoneClean && phoneClean.includes(term))) return true;
-                        return items.some(i => i.product && (String(i.product).toLowerCase().replace(/\s/g, '').includes(term) || (isChosung && getChosung(String(i.product).toLowerCase().replace(/\s/g, '')).includes(term))));
-                    }
-                    if (filterStatus === 'card') return cardPayments[nick];
-                    
-                    const activeItems = items.filter(i => !i.isCancelled && !i.isWaitlist); 
-                    const activeProd = activeItems.reduce((s,i) => s + Number(i.price), 0);
-                    const activeProdForShipping = activeItems.reduce((s,i) => s + (Number(i.price) > 0 ? Number(i.price) : 0), 0);
-                    const currentDep = items.reduce((s,i) => s + (i.deposit || 0), 0); 
-                    const currentShip = getCalculatedShipping(nick, activeProdForShipping);
-                    const baseBal = activeProd + (activeItems.length > 0 ? currentShip : 0) - currentDep; const isCard = cardPayments[nick];
-                    const finalBal = baseBal + (isCard && baseBal > 0 ? Math.round(baseBal * feeMultiplier) : 0);
-                    
-                    if (filterStatus === 'unpaid') return !isCard && finalBal > 0 && activeProd > 0;
-                    if (filterStatus === 'overpaid') return !isCard && finalBal < 0;
-                    if (filterStatus === 'paid') return !isCard && finalBal <= 0 && activeProd > 0;
-                    return true;
-                });
-
-                entries.sort((a, b) => {
-                    if (deferredOrderSearch) {
-                        const term = String(deferredOrderSearch).toLowerCase().replace(/\s/g, '');
-                        const aN = String(a[0]).toLowerCase().replace(/\s/g, ''); const bN = String(b[0]).toLowerCase().replace(/\s/g, '');
-                        if (aN === term && bN !== term) return -1; if (aN !== term && bN === term) return 1;
-                        if (aN.startsWith(term) && !bN.startsWith(term)) return -1; if (!aN.startsWith(term) && bN.startsWith(term)) return 1;
-                    }
-                    const aIdx = sortOrderCache.current.indexOf(a[0]); const bIdx = sortOrderCache.current.indexOf(b[0]);
-                    if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx; if (aIdx === -1 && bIdx !== -1) return -1; if (aIdx !== -1 && bIdx === -1) return 1;
-                    return Math.max(...b[1].map(o=>o.id)) - Math.max(...a[1].map(o=>o.id));
-                });
-                
-                const newNicks = entries.map(e => e[0]).filter(n => !sortOrderCache.current.includes(n));
-                if (newNicks.length > 0) { sortOrderCache.current = [...newNicks, ...sortOrderCache.current]; }
-                return entries;
-            }, [orders, deferredOrderSearch, filterStatus, cardPayments, getCalculatedShipping, addressLookup, depositorNames, checkedOrders, noShowCustomers, waitlistCustomers]);
-            const totalItemsCount = useMemo(() => { let count = 0; filteredGroupedOrders.forEach(([_, items]) => { count += items.filter(i => !i.isCancelled && !i.isWaitlist).length; }); return count; }, [filteredGroupedOrders]);
-            useEffect(() => { setDisplayLimit(30); }, [deferredOrderSearch, filterStatus, selectedNick]);
-            const handleOrderScroll = useCallback((e) => { const { scrollTop, clientHeight, scrollHeight } = e.target; if (scrollHeight - scrollTop <= clientHeight + 300) setDisplayLimit(prev => Math.min(prev + 30, filteredGroupedOrders.length)); }, [filteredGroupedOrders.length]);
-            const displayedOrders = useMemo(() => filteredGroupedOrders.slice(0, displayLimit), [filteredGroupedOrders, displayLimit]);
-            
-            const nicknameSuggestions = useMemo(() => {
-                if (!deferredManualNick.trim()) return [];
-                const term = String(deferredManualNick).toLowerCase().replace(/\s/g, ''); const isC = /^[ㄱ-ㅎa-zA-Z0-9]+$/.test(term);
-                const allN = new Set(); orders.forEach(o => allN.add(o.customer)); addresses.forEach(a => allN.add(a.nickname));
-                const res = []; 
-                for (const n of allN) {
-                    const a = addressLookup.get(n)?.data; const rN = a ? a.realname : (depositorNames[n] || '');
-                    const nCl = String(n).toLowerCase().replace(/\s/g, ''); const rCl = rN ? String(rN).toLowerCase().replace(/\s/g, '') : '';
-                    if (nCl.includes(term) || (isC && getChosung(nCl).includes(term)) || (rCl && (rCl.includes(term) || (isC && getChosung(rCl).includes(term))))) {
-                        res.push({ nick: n, realName: rN }); if (res.length >= 5) break; 
-                    }
-                }
-                return res;
-            }, [deferredManualNick, orders, addresses, depositorNames, addressLookup]);
-
-            const filteredChats = useMemo(() => { 
-                const isSearching = Boolean(deferredChatSearch.trim() || showKeywordOnly);
-                // 검색 중이 아닐 때는 [비우기] 이후의 채팅만 대상, 검색 중일 때는 오늘 방송 전체 채팅(3,000~5,000개 전부)을 대상으로 검색!
-                const baseChats = isSearching ? chats : chats.slice(clearedBeforeIndex);
-                let res = baseChats.filter(c => !hiddenChatIds.includes(c.id)); 
-                const keywordsArray = keywords || []; 
-                if (showKeywordOnly) res = res.filter(c => keywordsArray.some(k => String(c.content || '').includes(k))); 
-                if (deferredChatSearch) {
-                    const term = deferredChatSearch.toLowerCase().replace(/\s/g, ''); const isChosung = /^[ㄱ-ㅎa-zA-Z0-9]+$/.test(term);
-                    res = res.filter(c => {
-                        const nClean = String(c.nickname || '').toLowerCase().replace(/\s/g, ''); const cClean = String(c.content || '').toLowerCase().replace(/\s/g, '');
-                        return nClean.includes(term) || (isChosung && getChosung(nClean).includes(term)) || cClean.includes(term) || (isChosung && getChosung(cClean).includes(term));
+            const depositsHistoryMap = {};
+            uniqueNicknames.forEach(nick => {
+                const permLogs = (customerDepositLogs && Array.isArray(customerDepositLogs[nick])) ? customerDepositLogs[nick] : [];
+                const liveLogs = allDeposits
+                    .filter(d => ((depositLinks[d.id] === nick) || (d.legacyId && depositLinks[d.legacyId] === nick)) && (matchedDeposits.has(d.id) || (d.legacyId && matchedDeposits.has(d.legacyId))))
+                    .map(d => {
+                        const ft = formatDepositFullDateTime(d.rawTime || d.time || d.date || '') || d.time || '';
+                        return { id: d.id, name: d.name, amount: Number(d.amount), time: ft };
                     });
-                }
-                return res; 
-            }, [chats, clearedBeforeIndex, hiddenChatIds, deferredChatSearch, showKeywordOnly, keywords]);
+                const map = new Map();
+                permLogs.forEach(x => map.set(x.id, { id: x.id, name: x.name, amount: Number(x.amount), time: x.fullTime || x.time || '' }));
+                liveLogs.forEach(x => { if (!map.has(x.id)) map.set(x.id, x); });
+                depositsHistoryMap[nick] = Array.from(map.values());
+            });
+            savedDepositsHistoryMapRef.current = depositsHistoryMap;
 
-            // ✨ 키보드 네비게이션을 위한 상태 및 로직 추가 시작
-            const reversedChats = useMemo(() => [...filteredChats].reverse(), [filteredChats]);
-            const [focusedChatId, setFocusedChatId] = useState(null); // ✨ 인덱스가 아닌 고유 ID로 추적하도록 변경
+            const saveList = [];
+            uniqueNicknames.forEach(nick => {
+                const custOrders = activeOrders.filter(o => o.customer === nick);
+                const addrInfo = addressLookup.get(nick)?.data || {};
+                const cleanPh = addrInfo.phone ? fixPhoneNumber(addrInfo.phone) : '';
+                const pin4 = (customerPasswords && customerPasswords[nick]) || (cleanPh.length >= 4 ? cleanPh.slice(-4) : '');
+                const custType = specialCustomers && specialCustomers[normalizeString(nick)]?.type;
+                const isVip = custType === 'vip' || custType === 'manager';
+                const currentShipping = getCalculatedShipping(nick, customerTotalsForShipping[nick] || 0);
+                const cardModeVal = cardPayments[nick];
+                const cardStr = cardModeVal === 'completed' ? `카드완료(${feeRateNum}%)` : (cardModeVal ? `O(${feeRateNum}%)` : '');
+                const depJson = (depositsHistoryMap[nick] && depositsHistoryMap[nick].length > 0) ? JSON.stringify(depositsHistoryMap[nick]) : '';
+                const rawTrk = (trackingNumbers && trackingNumbers[nick] && trackingNumbers[nick] !== '__CLEAR__') ? trackingNumbers[nick] : '';
 
-            // 평소에는 화면에 최신 500개만 유지하고, 검색이나 키워드 필터 중일 때는 당일 방송 전체에서 일치하는 채팅을 모두 표시!
-            const visibleReversedChats = useMemo(() => {
-                if (deferredChatSearch.trim() || showKeywordOnly) {
-                    return reversedChats;
-                }
-                return reversedChats.slice(0, 500);
-            }, [reversedChats, deferredChatSearch, showKeywordOnly]);
+                custOrders.forEach((o, idx) => {
+                    const wRank = o.isWaitlist ? (waitlistRankMap[`${String(o.product || '').trim()}___${nick}`] || 1) : 0;
+                    saveList.push({
+                        '닉네임': nick,
+                        '상품명': o.product || '',
+                        '수량': Number(o.quantity) || 1,
+                        '단가(제품금액)': Number(o.price) || 0,
+                        '배송비': currentShipping,
+                        '입금액': idx === 0 ? (customerTotalDeposits[nick] || 0) : 0,
+                        '카드결제': cardStr,
+                        '수령인명': addrInfo.realname || depositorNames[nick] || '',
+                        '연락처': cleanPh ? "'" + cleanPh : '',
+                        '주소': addrInfo.address || '',
+                        '요청사항': addrInfo.memo || '',
+                        'VIP여부': isVip ? 'O' : '',
+                        '노쇼여부': noShowCustomers[nick] ? 'O' : '',
+                        '대기여부': o.isWaitlist ? `대기${wRank}번` : (waitlistCustomers[nick] ? 'O' : ''),
+                        '비밀번호': pin4 ? "'" + pin4 : '',
+                        '주문확인': (checkedOrders && checkedOrders.has(nick)) ? 'O' : '',
+                        '입금내역JSON': idx === 0 ? depJson : '',
+                        '송장번호': rawTrk ? "'" + rawTrk : ''
+                    });
+                });
+            });
 
-            const stateRef = useRef({ reversedChats, isFixedProductMode, focusedChatId, manualProduct, manualPrice });
-            useEffect(() => { 
-                stateRef.current = { reversedChats, isFixedProductMode, focusedChatId, manualProduct, manualPrice }; 
-            }, [reversedChats, isFixedProductMode, focusedChatId, manualProduct, manualPrice]);
+                    const currentDataStr = JSON.stringify(saveList);
+                    if (!isManual && currentDataStr === lastSavedDataStr.current) return;
 
-            useEffect(() => {
-                const handleKeyDown = (e) => {
-                    const { reversedChats, isFixedProductMode, focusedChatId, manualProduct, manualPrice } = stateRef.current;
-                    
-                    // 고정 모드가 아닐 때는 화살표 기능 작동 안 함
-                    if (!isFixedProductMode) return;
+                    // ✨ 수동 저장 버튼을 직접 눌렀을 때만 스피너(isSaving)를 표시하여 백그라운드 자동저장 시 리렌더링 끊김 방지
+                    if (isManual) setIsSaving(true); 
 
-                    const isInputActive = document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA');
-
-                    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-                        // ✨ 입력창에서 타이핑하거나 자동완성 목록을 고르는 중일 때는 방향키가 포커스를 뺏지 않도록 보호
-                        if (isInputActive) return;
-                        e.preventDefault(); // 스크롤 이동 방지
-                        
-                        const currentIndex = reversedChats.findIndex(c => c.id === focusedChatId);
-                        let nextIndex = currentIndex;
-                        
-                        if (e.key === 'ArrowDown') {
-                            nextIndex = currentIndex < 0 ? 0 : Math.min(currentIndex + 1, reversedChats.length - 1);
-                        } else if (e.key === 'ArrowUp') {
-                            nextIndex = currentIndex <= 0 ? reversedChats.length - 1 : Math.max(currentIndex - 1, 0);
-                        }
+                    if (broadcastName) { 
+                        const bn = broadcastName;
+                        const metaCustomer = '___WORKSPACE_META___';
+                        saveList.unshift({ 
+                            '닉네임': metaCustomer,
+                            '상품명': bn,
+                            '수량': Number(freeShippingThreshold) || 200000,
+                            '단가(제품금액)': Number(quickShipping) || 4000,
+                            '배송비': feeRateNum,
+                            '입금액': 0,
+                            '카드결제': '',
+                            '수령인명': '',
+                            '연락처': '',
+                            '주소': '',
+                            '요청사항': '',
+                            'VIP여부': '',
+                            '노쇼여부': '',
+                            '대기여부': '',
+                            '비밀번호': '',
+                            '주문확인': '',
+                            '입금내역JSON': '',
+                            '송장번호': ''
+                        }); 
+                    }
+                    try { 
+                        const actualSheetId = getCleanSheetId(masterSheetId); 
+                        if(actualSheetId) { 
+                            const confirmedNicknames = uniqueNicknames.filter(n => checkedOrders && checkedOrders.has(n));
                             
-                        const nextChat = reversedChats[nextIndex];
-                        if (nextChat) {
-                            setFocusedChatId(nextChat.id);
-                            document.getElementById(`chat-item-${nextChat.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                        }
-                    } 
-                    else if ((e.key === 'Enter' || e.key === ' ' || e.code === 'Space') && focusedChatId) {
-                        // 타이핑 중일 때(검색창, 상품명 창 등)는 단축키 작동 방지 (글씨 써지도록)
-                        if (isInputActive) return;
-
-                        e.preventDefault();
-                        const chat = reversedChats.find(c => c.id === focusedChatId);
-                        if (chat) {
-                            // 마우스 클릭과 완벽하게 동일한 로직 실행
-                            bringToTopAndScroll(chat.nickname);
-                            setClickedChats(prev => new Set(prev).add(chat.id));
-                            const finalProduct = manualProduct.trim() !== '' ? manualProduct.trim() : String(chat.content || '');
-                            addOrderLogic(chat.nickname, finalProduct, 1, true, null, manualPrice, true, true);
-                            
-                            // ✨ 추가 후 자동으로 넘어가지 않음 (제자리 유지)
-                        }
-                    }
-                };
-                
-                window.addEventListener('keydown', handleKeyDown);
-                return () => window.removeEventListener('keydown', handleKeyDown);
-            }, [addOrderLogic, bringToTopAndScroll, setClickedChats]);
-
-            // 고정 모드가 풀리면 포커스 초기화
-            useEffect(() => { 
-                if (!isFixedProductMode) setFocusedChatId(null); 
-            }, [isFixedProductMode]);
-
-            // ✨ 고정 모드를 켜는 순간에만 첫 번째 채팅을 선택하고, 이후 새 채팅이 들어올 때는 절대 입력창 커서(focus)를 건드리지 않도록 수정!
-            const prevFixedModeRef = useRef(false);
-            useEffect(() => {
-                if (isFixedProductMode && !prevFixedModeRef.current) {
-                    if (!focusedChatId && reversedChats.length > 0) {
-                        setFocusedChatId(reversedChats[0].id);
-                    }
-                }
-                prevFixedModeRef.current = isFixedProductMode;
-            }, [isFixedProductMode, reversedChats, focusedChatId]);
-            // ✨ 키보드 네비게이션 로직 종료
-
-            const renderChatContent = useCallback((content, keywordsArr) => {
-                const safeContent = String(content || ''); 
-                const kwArray = (keywordsArr || []).filter(k => k.trim()); 
-                
-                // 💡 자주 쓰이는 색상/사이즈 자동 형광펜 처리용 단어 목록
-                const autoWords = ['블랙', '화이트', '아이보리', '베이지', '그레이', '차콜', '네이비', '레드', '핑크', '블루', '소라', '옐로우', '그린', '카키', '브라운', '퍼플', '프리', 'FREE', '스몰', '미듐', '라지'];
-                
-                if (!kwArray.length && !autoWords.some(w => safeContent.includes(w)) && !safeContent.match(/(55|66|77|88|225|230|235|240|245|250)/)) {
-                    return safeContent;
-                }
-
-                // 수동 키워드 + 자동 단어 정규식 병합
-                let patterns = [...kwArray, ...autoWords].map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-                patterns.push('55', '66', '77', '88', '225', '230', '235', '240', '245', '250');
-                
-                const regex = new RegExp(`(${patterns.join('|')})`, 'gi');
-
-                return safeContent.split(regex).map((part, i) => {
-                    if (!part) return part;
-                    
-                    // 1. 수동 등록 키워드 (진한 노란색 형광펜)
-                    if (kwArray.includes(part)) {
-                        return <span key={i} className="text-yellow-900 dark:text-yellow-100 font-black bg-yellow-300 dark:bg-yellow-600/60 px-1 py-0.5 rounded shadow-sm">{part}</span>;
-                    } 
-                    // 2. 자동 인식 단어 (은은한 민트색 형광펜)
-                    else if (autoWords.includes(part) || /^(55|66|77|88|225|230|235|240|245|250)$/.test(part)) {
-                        return <span key={i} className="text-emerald-900 dark:text-emerald-100 font-bold bg-emerald-200 dark:bg-emerald-700/50 px-1 rounded">{part}</span>;
-                    }
-                    return part;
-                });
-            }, []);
-
-            const handleChatClick = (chat) => { bringToTopAndScroll(chat.nickname); setClickedChats(prev => new Set(prev).add(chat.id)); const finalProduct = (isFixedProductMode && manualProduct.trim() !== '') ? manualProduct.trim() : String(chat.content || ''); const finalPrice = isFixedProductMode ? manualPrice : null; addOrderLogic(chat.nickname, finalProduct, 1, true, null, finalPrice, isFixedProductMode, true); };
-            const handleAddKeyword = (e) => { e.preventDefault(); const kw = keywordInput.trim(); if(!kw) return; setKeywords(prev => { const next = [...(prev || [])]; if(!next.includes(kw)) next.push(kw); return next; }); setKeywordInput(''); };
-            const handleRemoveKeyword = (keyword) => { setKeywords(prev => (prev || []).filter(k => k !== keyword)); };
-
-            const handleNoAddressClick = useCallback((e) => {
-                setFilterStatus('no-address');
-                const missing = Array.from(new Set(orders.filter(o => !o.isCancelled && !addressLookup.get(o.customer)?.data?.address).map(o => o.customer)));
-                if (missing.length > 0) {
-                    const text = "⚠️ 채널톡 안주신분 ⚠️\n" + missing.join('\n') + "\n\n👉 카톡채널 연락주세요!";
-                    const t = document.createElement("textarea"); t.value = text; document.body.appendChild(t); t.select(); document.execCommand('copy'); document.body.removeChild(t);
-                    
-                    const el = e.currentTarget; const originalClass = el.className;
-                    el.className = 'bg-green-500 p-1 rounded border-2 cursor-pointer shadow-sm transition-colors flex flex-col justify-center overflow-hidden text-white font-bold';
-                    setTimeout(() => { el.className = originalClass; }, 1000);
-                }
-            }, [orders, addressLookup]);
-
-            const handleOpenQuickAddress = useCallback((nick, editAddr = null) => setQuickAddrModal({ isOpen: true, nick, editData: editAddr }), []);
-
-            const handleSetCustomerPassword = useCallback((nick, currentPin = '') => {
-                openModal(`'${nick}' 님의 주문서 열람 비밀번호(핸드폰 뒤 4자리)를 설정하세요.`, 'prompt', (newPin) => {
-                    if (newPin !== null) {
-                        const cleanPin = String(newPin).replace(/[^0-9]/g, '').slice(-4);
-                        setCustomerPasswords(prev => Object.assign({}, prev, { [nick]: cleanPin }));
-                        if (googleScriptUrl && masterSheetId) {
-                            fetchGas(googleScriptUrl, {
-                                action: 'save_customer_password',
-                                masterId: getCleanSheetId(masterSheetId),
-                                data: { nickname: nick, password: cleanPin }
-                            }).catch(() => {});
-                        }
-                    }
-                }, null, currentPin || '');
-            }, [openModal, setCustomerPasswords, googleScriptUrl, masterSheetId]);
-
-            const handleSetTrackingNumber = useCallback((nick, currentTrk = '') => {
-                const initVal = currentTrk === '__CLEAR__' ? '' : (currentTrk || '');
-                openModal(`'${nick}' 님의 롯데택배 송장번호를 입력하세요.\n(비우고 확인을 누르면 삭제됩니다)`, 'prompt', (newTrk) => {
-                    if (newTrk !== null) {
-                        trackingSyncLock.current = Date.now();
-                        const cleanTrk = String(newTrk).replace(/[^0-9,-]/g, '').trim();
-                        setTrackingNumbers(prev => {
-                            const next = Object.assign({}, prev);
-                            if (cleanTrk) next[nick] = cleanTrk;
-                            else next[nick] = '__CLEAR__';
-                            try { window.localStorage.setItem(getLsKey('trackingNumbers'), JSON.stringify(next)); } catch (e) {}
-                            return next;
-                        });
-                        if (googleScriptUrl && masterSheetId) {
-                            fetchGas(googleScriptUrl, {
-                                action: 'save_tracking_numbers',
-                                masterId: getCleanSheetId(masterSheetId),
-                                broadcastName: broadcastName,
-                                data: [{ nickname: nick, trackingNumber: cleanTrk ? cleanTrk : '__CLEAR__' }]
-                            }).catch(() => {});
-                        }
-                    }
-                }, null, initVal);
-            }, [openModal, setTrackingNumbers, googleScriptUrl, masterSheetId, broadcastName]);
-
-            useEffect(() => {
-                const timer = setTimeout(() => {
-                    if (allDeposits.length === 0 || orders.length === 0) return;
-                    let updatedOrders = [...orders]; let newMatchedIds = new Set(matchedDeposits); let hasChanges = false; const customerBalances = {};
-                    let newDepositLinks = { ...depositLinks };
-                    let newDepositLogs = { ...(customerDepositLogs || {}) };
-                    let logsChanged = false;
-
-                    // ✨ 이미 연결되어 있는 입금건이라도 영구 기록(customerDepositLogs)에 누락되어 있다면 즉시 스냅샷으로 박제!
-                    allDeposits.forEach(dep => {
-                        const isMatched = newMatchedIds.has(dep.id) || (dep.contentId && newMatchedIds.has(dep.contentId)) || (dep.legacyId && newMatchedIds.has(dep.legacyId));
-                        const linkedCust = newDepositLinks[dep.id] || (dep.contentId && newDepositLinks[dep.contentId]) || (dep.legacyId && newDepositLinks[dep.legacyId]);
-                        if (isMatched && linkedCust) {
-                            newMatchedIds.add(dep.id);
-                            if (dep.contentId) newMatchedIds.add(dep.contentId);
-                            newDepositLinks[dep.id] = linkedCust;
-                            if (dep.contentId) newDepositLinks[dep.contentId] = linkedCust;
-                            const existingList = Array.isArray(newDepositLogs[linkedCust]) ? newDepositLogs[linkedCust] : [];
-                            const alreadyInLog = existingList.some(item => item.id === dep.id || (dep.contentId && item.contentId === dep.contentId) || (dep.legacyId && item.legacyId === dep.legacyId));
-                            if (!alreadyInLog) {
-                                const fullTimeStr = formatDepositFullDateTime(dep.rawTime || dep.time || dep.date || '') || dep.time || '';
-                                newDepositLogs[linkedCust] = [
-                                    ...existingList,
-                                    {
-                                        id: dep.id,
-                                        contentId: dep.contentId || '',
-                                        legacyId: dep.legacyId || '',
-                                        name: dep.name,
-                                        amount: Number(dep.amount),
-                                        time: fullTimeStr,
-                                        fullTime: fullTimeStr
-                                    }
-                                ];
-                                logsChanged = true;
-                            }
-                        }
-                    });
-
-                    // ✨ [자동 복구 로직] ID 변경(legacyId -> id)으로 인해 동일 입금건이 2번 중복 합산된 경우 실제 연결된 고유 입금건 합계로 즉시 정상화!
-                    const linkedSumByCustomer = {};
-                    const seenDepRow = new Set();
-                    allDeposits.forEach(dep => {
-                        const isMatched = newMatchedIds.has(dep.id) || (dep.legacyId && newMatchedIds.has(dep.legacyId));
-                        const linkedCust = newDepositLinks[dep.id] || (dep.legacyId && newDepositLinks[dep.legacyId]);
-                        if (isMatched && linkedCust) {
-                            const uniqueKey = dep.legacyId || dep.id;
-                            if (!seenDepRow.has(uniqueKey)) {
-                                seenDepRow.add(uniqueKey);
-                                linkedSumByCustomer[linkedCust] = (linkedSumByCustomer[linkedCust] || 0) + Number(dep.amount);
-                            }
-                        }
-                    });
-
-                    // 고객의 현재 주문서 입금 총액이 실제 연결된 입금내역 합계의 정확히 2배(중복 매칭)로 잘못 들어가 있다면 즉시 정상 금액으로 복구
-                    const currentOrderDepSum = {};
-                    updatedOrders.forEach(o => {
-                        currentOrderDepSum[o.customer] = (currentOrderDepSum[o.customer] || 0) + (o.deposit || 0);
-                    });
-                    Object.keys(linkedSumByCustomer).forEach(cust => {
-                        const trueSum = linkedSumByCustomer[cust];
-                        const curSum = currentOrderDepSum[cust] || 0;
-                        if (curSum === trueSum * 2 && trueSum > 0) {
-                            let fixed = false;
-                            updatedOrders = updatedOrders.map(o => {
-                                if (o.customer === cust) {
-                                    if (!fixed) { fixed = true; return { ...o, deposit: trueSum }; }
-                                    return { ...o, deposit: 0 };
-                                }
-                                return o;
-                            });
-                            hasChanges = true;
-                        }
-                    });
-                    
-                    updatedOrders.forEach(o => {
-                        if (!customerBalances[o.customer]) { customerBalances[o.customer] = { productTotal: 0, productTotalForShipping: 0, depositTotal: 0, activeItemsCount: 0, isCloud: false }; }
-                        
-                        customerBalances[o.customer].depositTotal += (o.deposit || 0); 
-                        
-                        if (!o.isCancelled) {
-                            customerBalances[o.customer].productTotal += Number(o.price); 
-                            if (!o.isWaitlist && Number(o.price) > 0) customerBalances[o.customer].productTotalForShipping += Number(o.price);
-                            if (!o.isWaitlist) customerBalances[o.customer].activeItemsCount += 1;
-                            if (o.loadedFromCloud) customerBalances[o.customer].isCloud = true;
-                        }
-                    });
-
-                    const matchLookup = {};
-                    Object.keys(customerBalances).forEach(nick => {
-                        const cb = customerBalances[nick];
-                        const currentShipping = getCalculatedShipping(nick, cb.productTotalForShipping);
-                        cb.grandTotal = cb.productTotal + (cb.activeItemsCount > 0 ? currentShipping : 0); cb.balance = cb.grandTotal - cb.depositTotal;
-                        const savedRealName = depositorNames[nick] ? cleanForMatch(depositorNames[nick]) : '';
-                        const addrRes = addressLookup.get(nick); const addressRealName = addrRes && addrRes.data ? cleanForMatch(addrRes.data.realname) : '';
-                        const nickClean = cleanForMatch(nick);
-                        const possibleNames = new Set([savedRealName, addressRealName, nickClean, nickClean && savedRealName ? nickClean + savedRealName : null, nickClean && savedRealName ? savedRealName + nickClean : null, nickClean && addressRealName ? nickClean + addressRealName : null, nickClean && addressRealName ? addressRealName + nickClean : null].filter(Boolean));
-                        possibleNames.forEach(pName => { if (!matchLookup[pName]) matchLookup[pName] = []; matchLookup[pName].push(nick); });
-                    });
-
-                    allDeposits.forEach(deposit => {
-                        const alreadyMatched = newMatchedIds.has(deposit.id) || (deposit.contentId && newMatchedIds.has(deposit.contentId)) || (deposit.legacyId && newMatchedIds.has(deposit.legacyId));
-                        const alreadyDeleted = deletedDepositIds.has(deposit.id) || (deposit.contentId && deletedDepositIds.has(deposit.contentId)) || (deposit.legacyId && deletedDepositIds.has(deposit.legacyId));
-                        const alreadyIgnored = ignoredAutoMatch.has(deposit.id) || (deposit.contentId && ignoredAutoMatch.has(deposit.contentId)) || (deposit.legacyId && ignoredAutoMatch.has(deposit.legacyId));
-                        const alreadyArchived = archivedDepositIds.has(deposit.id) || (deposit.contentId && archivedDepositIds.has(deposit.contentId)) || (deposit.legacyId && archivedDepositIds.has(deposit.legacyId));
-                        if (alreadyMatched || alreadyDeleted || alreadyIgnored || alreadyArchived) return;
-
-                        const depositNameClean = cleanForMatch(deposit.name); if (depositNameClean.length < 1) return; 
-                        let exactMatches = matchLookup[depositNameClean] || []; exactMatches = [...new Set(exactMatches)];
-                        let matchedCustomer = null; const depositAmount = Number(deposit.amount);
-                        
-                        if (exactMatches.length === 1) { matchedCustomer = exactMatches[0]; } 
-                        else if (exactMatches.length > 1) {
-                            const amountMatches = exactMatches.filter(nick => customerBalances[nick].balance === depositAmount);
-                            if (amountMatches.length === 1) matchedCustomer = amountMatches[0];
-                        }
-                        
-                        if (matchedCustomer) {
-                            const cb = customerBalances[matchedCustomer];
-                            // 금액이 초과(과납)되더라도 무조건 주문서에 입금액을 누적시켜 과납을 기록하도록 수정
-                            let applied = false;
-                            updatedOrders = updatedOrders.map(o => { 
-                                if (o.customer === matchedCustomer && !applied) { applied = true; return { ...o, deposit: (o.deposit || 0) + depositAmount, loadedFromCloud: false }; } 
-                                return o; 
-                            });
-                            cb.depositTotal += depositAmount; cb.balance -= depositAmount; cb.isCloud = false; 
-                            newMatchedIds.add(deposit.id);
-                            if (deposit.contentId) newMatchedIds.add(deposit.contentId);
-                            if (deposit.legacyId) newMatchedIds.add(deposit.legacyId);
-                            newDepositLinks[deposit.id] = matchedCustomer;
-                            if (deposit.contentId) newDepositLinks[deposit.contentId] = matchedCustomer;
-
-                            // ✨ 자동 매칭되는 순간 고객의 영구 입금기록 장부(customerDepositLogs)에 입금자명·날짜시간·금액을 즉시 박제! (나중에 입금 시트에서 지워도 절대 안 날아감)
-                            const fullTimeStr = formatDepositFullDateTime(deposit.rawTime || deposit.time || deposit.date || '') || deposit.time || '';
-                            const prevCustLogs = Array.isArray(newDepositLogs[matchedCustomer]) ? newDepositLogs[matchedCustomer] : [];
-                            if (!prevCustLogs.some(item => item.id === deposit.id || (deposit.contentId && item.contentId === deposit.contentId) || (deposit.legacyId && item.legacyId === deposit.legacyId))) {
-                                newDepositLogs[matchedCustomer] = [
-                                    ...prevCustLogs,
-                                    {
-                                        id: deposit.id,
-                                        contentId: deposit.contentId || '',
-                                        legacyId: deposit.legacyId || '',
-                                        name: deposit.name,
-                                        amount: depositAmount,
-                                        time: fullTimeStr,
-                                        fullTime: fullTimeStr
-                                    }
-                                ];
-                                logsChanged = true;
-                            }
-                            hasChanges = true;
-                        }
-                    });
-                    if (hasChanges) { setOrders(updatedOrders); setMatchedDeposits(newMatchedIds); setDepositLinks(newDepositLinks); }
-                    if (logsChanged) { setCustomerDepositLogs(newDepositLogs); }
-                }, 500); 
-                return () => clearTimeout(timer);
-            }, [allDeposits, orders, matchedDeposits, depositorNames, deletedDepositIds, archivedDepositIds, getCalculatedShipping, ignoredAutoMatch, addressLookup, depositLinks, setDepositLinks, customerDepositLogs, setCustomerDepositLogs]);
-
-            const lastSavedDataStr = useRef('');
-            const savedDepositsHistoryMapRef = useRef({});
-
-            // ✨ 구글 시트의 방송 목록을 불러와서 원하는 날짜의 방송 주문서로 언제든 전환/복원할 수 있는 모달 상태
-            const [sheetListModal, setSheetListModal] = useState({ isOpen: false, tabs: [], loading: false });
-
-            const openSheetSelectorModal = useCallback(async () => {
-                if (!googleScriptUrl || !masterSheetId) return openModal('스크립트 URL과 마스터 시트 ID를 먼저 설정해주세요.', 'alert');
-                setSheetListModal({ isOpen: true, tabs: [], loading: true });
-                try {
-                    const actualSheetId = getCleanSheetId(masterSheetId);
-                    const res = await fetchGas(`${googleScriptUrl}?action=get_order_tabs&masterId=${actualSheetId}&t=${Date.now()}`);
-                    if (res && res.success && Array.isArray(res.tabs)) {
-                        const extractDateScore = (tName) => {
-                            const s = String(tName || '').replace(/^주문_/, '').trim();
-                            if (s === '메인주문') return 99999999;
-                            const md = s.match(/(?:^|[^\d])(1[0-2]|0?[1-9])[./\-\s월]+([0-2]?\d|3[01])(?:일|\b|\s|[^0-9])/);
-                            if (md) return 20260000 + parseInt(md[1], 10) * 100 + parseInt(md[2], 10);
-                            return 0;
-                        };
-                        const sortedTabs = [...res.tabs].sort((a, b) => extractDateScore(b) - extractDateScore(a));
-                        setSheetListModal({ isOpen: true, tabs: sortedTabs, loading: false });
-                    } else {
-                        setSheetListModal({ isOpen: false, tabs: [], loading: false });
-                        loadOrdersFromGoogleSheet(false, '메인주문');
-                    }
-                } catch (e) {
-                    setSheetListModal({ isOpen: false, tabs: [], loading: false });
-                    loadOrdersFromGoogleSheet(false, '메인주문');
-                }
-            }, [googleScriptUrl, masterSheetId, openModal]);
-
-            const loadOrdersFromGoogleSheet = useCallback(async (isSilent = false, targetTabName = '메인주문') => {
-                if (!googleScriptUrl || !masterSheetId) return;
-                try {
-                    const actualSheetId = getCleanSheetId(masterSheetId);
-                    const tabParam = targetTabName ? `&tabName=${encodeURIComponent(targetTabName)}` : '';
-                    const res = await fetchGas(`${googleScriptUrl}?action=get_orders&masterId=${actualSheetId}${tabParam}&t=${Date.now()}`);
-                    if (res && res.success && Array.isArray(res.data) && res.data.length > 0) {
-                        const loadedOrders = [];
-                        const loadedCards = {};
-                        const loadedShips = {};
-                        const loadedTrks = {};
-                        const loadedConfirmed = [];
-                        const loadedDepJsonMap = {};
-
-                        res.data.forEach((row, idx) => {
-                            const nick = String(row['닉네임'] || '').trim();
-                            if (!nick) return;
-                            if (nick === '___WORKSPACE_META___') {
-                                if (row['상품명']) setBroadcastName(String(row['상품명']));
-                                return;
-                            }
-                            const prod = String(row['상품명'] || '').trim();
-                            const qty = Number(row['수량']) || 1;
-                            const price = Number(row['단가(제품금액)']) || 0;
-                            const dep = Number(row['입금액']) || 0;
-                            const waitStr = String(row['대기여부'] || '').trim();
-                            const isWait = waitStr === 'O' || waitStr.includes('대기');
-                            const cardStr = String(row['카드결제'] || '').trim();
-                            if (cardStr.startsWith('O') || cardStr.includes('카드') || cardStr.includes('완료')) {
-                                loadedCards[nick] = cardStr.includes('완료') ? 'completed' : true;
-                            }
-                            if (row['배송비'] !== undefined && row['배송비'] !== '') {
-                                loadedShips[nick] = Number(row['배송비']);
-                            }
-                            const trk = String(row['송장번호'] || row['운송장번호'] || row['송장'] || row['운송장'] || '').replace(/^'+/, '').trim();
-                            if (trk && trk !== '__CLEAR__') loadedTrks[nick] = trk;
-                            if (String(row['주문확인'] || '').trim() === 'O') {
-                                loadedConfirmed.push(nick);
-                            }
-                            if (row['입금내역JSON']) {
-                                try {
-                                    const parsed = JSON.parse(String(row['입금내역JSON']));
-                                    if (Array.isArray(parsed) && parsed.length > 0) {
-                                        loadedDepJsonMap[nick] = parsed;
-                                    }
-                                } catch (e) {}
-                            }
-
-                            loadedOrders.push({
-                                id: Date.now() + idx + Math.random(),
-                                customer: nick,
-                                product: prod,
-                                quantity: qty,
-                                price: price,
-                                deposit: dep,
-                                isCancelled: false,
-                                isUnmodified: false,
-                                isWaitlist: isWait,
-                                loadedFromCloud: true
-                            });
-                        });
-
-                        if (Object.keys(loadedDepJsonMap).length > 0) {
-                            savedDepositsHistoryMapRef.current = Object.assign({}, savedDepositsHistoryMapRef.current, loadedDepJsonMap);
-                            setCustomerDepositLogs(loadedDepJsonMap);
-                        } else {
-                            setCustomerDepositLogs({});
-                        }
-
-                        if (loadedOrders.length > 0) {
-                            setOrders(loadedOrders);
-                            setCardPayments(loadedCards);
-                            setShippingOverrides(loadedShips);
-                            setTrackingNumbers(loadedTrks);
-                            setCheckedOrders(new Set(loadedConfirmed));
-
-                            // ✨ 해당 방송 날짜에 저장되어 있던 상품리스트(실시간 재고)도 함께 복원! (보관함에 없으면 주문 품목에서 자동 추출)
-                            let restoredInv = [];
-                            if (Array.isArray(res.broadcastInventory) && res.broadcastInventory.length > 0) {
-                                restoredInv = res.broadcastInventory.map((item, iIdx) => ({
-                                    id: `inv_${Date.now()}_${iIdx}_${Math.random()}`,
-                                    name: item.name,
-                                    price: Number(item.price) || 0,
-                                    stock: item.stock !== undefined && item.stock !== null ? item.stock : '',
-                                    isSoldOut: item.status === '품절',
-                                    isLocked: Boolean(item.isLocked)
-                                }));
-                            } else {
-                                const prodMap = new Map();
-                                loadedOrders.forEach(o => {
-                                    const pName = String(o.product || '').trim();
-                                    if (!pName) return;
-                                    const uPrice = o.quantity > 0 ? Math.round(Number(o.price) / Number(o.quantity)) : Number(o.price);
-                                    if (!prodMap.has(pName)) {
-                                        prodMap.set(pName, {
-                                            id: `inv_${Date.now()}_${Math.random()}`,
-                                            name: pName,
-                                            price: uPrice || 0,
-                                            stock: '',
-                                            isSoldOut: false,
-                                            isLocked: false
+                            // 현재 재고 목록 + 주문서에 적혀있는 모든 옵션 상품명도 누락 없이 병합하여 시트에 전송
+                            const mergedInvMap = new Map();
+                            if (Array.isArray(inventoryRef.current)) {
+                                inventoryRef.current.forEach(i => {
+                                    const iName = String(i.name || '').trim();
+                                    if (iName) {
+                                        mergedInvMap.set(iName, {
+                                            name: iName,
+                                            price: Number(i.price) || 0,
+                                            stock: i.stock !== undefined ? i.stock : '',
+                                            status: i.isSoldOut ? '품절' : '',
+                                            isLocked: Boolean(i.isLocked)
                                         });
                                     }
                                 });
-                                restoredInv = Array.from(prodMap.values());
                             }
-
-                            if (restoredInv.length > 0) {
-                                inventorySyncLock.current = Date.now();
-                                setInventory(restoredInv);
-                                if (window.pushInventoryToLiveCatalog) {
-                                    window.pushInventoryToLiveCatalog(restoredInv);
+                            orders.filter(o => !o.isCancelled && o.product).forEach(o => {
+                                const pName = String(o.product || '').trim();
+                                if (pName && pName !== '적립금' && !mergedInvMap.has(pName)) {
+                                    const uPrice = (Number(o.quantity) || 1) > 0 ? Math.round((Number(o.price) || 0) / (Number(o.quantity) || 1)) : (Number(o.price) || 0);
+                                    if (uPrice > 0 || pName.includes('사은품')) {
+                                        mergedInvMap.set(pName, {
+                                            name: pName,
+                                            price: uPrice,
+                                            stock: '',
+                                            status: '',
+                                            isLocked: false
+                                        });
+                                    }
                                 }
-                                const nextHist = {};
-                                restoredInv.forEach(ri => { if (ri.price > 0) nextHist[ri.name] = ri.price; });
-                                setProductHistory(prev => ({ ...prev, ...nextHist }));
-                            }
-
-                            if (!isSilent) openModal(`[${targetTabName}] 시트에서 주문 ${loadedOrders.length}건과 상품리스트(${restoredInv.length}종)를 안전하게 불러왔습니다!`, 'alert');
-                        } else if (!isSilent) {
-                            openModal(`[${targetTabName}] 시트에 저장된 주문 내역이 없습니다.`, 'alert');
-                        }
-                    } else if (!isSilent) {
-                        openModal('시트에서 주문 내역을 불러오지 못했습니다.', 'alert');
-                    }
-                } catch (e) {
-                    if (!isSilent) openModal('시트 불러오기 중 통신 오류가 발생했습니다.', 'alert');
-                }
-            }, [googleScriptUrl, masterSheetId, setOrders, setCardPayments, setShippingOverrides, setTrackingNumbers, setCheckedOrders, setBroadcastName, setCustomerDepositLogs, setInventory, setProductHistory, openModal]);
-
-            // 최초 실행 시 로컬 주문서가 비어있다면 마스터 시트(메인주문)에서 자동으로 주문내역을 복구합니다.
-            const initialCloudLoadRef = useRef(false);
-            useEffect(() => {
-                if (!initialCloudLoadRef.current && orders.length === 0 && googleScriptUrl && masterSheetId) {
-                    initialCloudLoadRef.current = true;
-                    loadOrdersFromGoogleSheet(true);
-                }
-            }, [orders.length, googleScriptUrl, masterSheetId, loadOrdersFromGoogleSheet]);
-
-            const autoSaveToGoogleSheet = useCallback(async (isManual = false) => { 
-                if (!googleScriptUrl || !masterSheetId) return; 
-                if (orders.length === 0 && !isManual) return;
-                
-                const customerTotalsForShipping = {}; 
-                const customerTotalDeposits = {}; 
-
-                orders.forEach(o => {
-                    if (!customerTotalDeposits[o.customer]) customerTotalDeposits[o.customer] = 0;
-                    customerTotalDeposits[o.customer] += (o.deposit || 0);
-                });
-
-                orders.filter(o => !o.isCancelled && !o.isWaitlist).forEach(o => { 
-                    customerTotalsForShipping[o.customer] = (customerTotalsForShipping[o.customer] || 0) + (Number(o.price) > 0 ? Number(o.price) : 0); 
-                });
-                
-                const uniqueNicknames = Array.from(new Set(orders.filter(o => !o.isCancelled).map(o => o.customer)));
-                const printedDeposits = {};
-                
-                const saveList = orders.filter(o=>!o.isCancelled).map(o => { 
-                    let addrRes = addressLookup.get(o.customer); let addr = addrRes.data || {}; 
-                    const currentShipping = getCalculatedShipping(o.customer, customerTotalsForShipping[o.customer] || 0); 
-                    const isCard = cardPayments[o.customer] ? true : false; 
-                    const customerVal = o.customer || '';
-                    
-                    let depositToSave = 0;
-                    let customerDepsJson = '';
-                    if (!printedDeposits[customerVal]) {
-                        depositToSave = customerTotalDeposits[customerVal] || 0;
-                        // ✨ 1순위: 고객 주문서에 영구 박제된 입금기록 장부(customerDepositLogs) 사용 (입금 시트에서 원본을 지웠더라도 기록이 100% 살아있음!)
-                        const permanentLogs = (customerDepositLogs && Array.isArray(customerDepositLogs[customerVal])) ? customerDepositLogs[customerVal] : [];
-                        // ✨ 2순위: 현재 실시간 입금 목록에서 연결된 내역 확인
-                        const liveMatchedDeps = (allDepositsRef.current || []).filter(d => {
-                            const isLinked = (depositLinks[d.id] === customerVal) || (d.legacyId && depositLinks[d.legacyId] === customerVal);
-                            const isMatched = matchedDeposits.has(d.id) || (d.legacyId && matchedDeposits.has(d.legacyId));
-                            return isLinked && isMatched;
-                        }).map(d => ({
-                            id: d.id,
-                            time: formatDepositFullDateTime(d.rawTime || d.time || d.date || '') || d.time || '',
-                            name: d.name,
-                            amount: Number(d.amount)
-                        }));
-
-                        // 영구 장부와 실시간 매칭 내역을 중복 없이 병합
-                        const mergedDepsMap = new Map();
-                        permanentLogs.forEach(item => {
-                            const key = item.id || `${item.name}_${item.amount}_${item.time}`;
-                            mergedDepsMap.set(key, {
-                                id: item.id || key,
-                                time: item.fullTime || item.time || '',
-                                name: item.name || customerVal,
-                                amount: Number(item.amount)
                             });
-                        });
-                        liveMatchedDeps.forEach(item => {
-                            const key = item.id || `${item.name}_${item.amount}_${item.time}`;
-                            if (!mergedDepsMap.has(key)) {
-                                mergedDepsMap.set(key, item);
-                            }
-                        });
+                            const invArchivePayload = Array.from(mergedInvMap.values());
 
-                        let matchedDepsForCust = Array.from(mergedDepsMap.values());
-
-                        // ✨ 시트에서 불러온 주문서이거나 새로고침한 경우, 기존에 저장되어 있던 입금내역JSON을 보존
-                        if (matchedDepsForCust.length === 0 && depositToSave > 0) {
-                            const savedHist = savedDepositsHistoryMapRef.current[customerVal];
-                            if (Array.isArray(savedHist) && savedHist.length > 0) {
-                                matchedDepsForCust = savedHist;
-                            }
-                        }
-
-                        if (matchedDepsForCust.length > 0) {
-                            savedDepositsHistoryMapRef.current[customerVal] = matchedDepsForCust;
-                            customerDepsJson = JSON.stringify(matchedDepsForCust);
-                        }
-                        printedDeposits[customerVal] = true;
-                    }
-                    
-                    const custType = specialCustomers && specialCustomers[normalizeString(customerVal)]?.type;
-                    const isVip = custType === 'vip' || custType === 'manager';
-                    const isNoShow = noShowCustomers && noShowCustomers[customerVal];
-                    const itemWaitRank = o.isWaitlist ? (waitlistRankMap[`${String(o.product || '').trim()}___${customerVal}`] || 1) : 0;
-                    const isWaitlist = (waitlistCustomers && waitlistCustomers[customerVal]) || o.isWaitlist;
-                    const waitlistCellVal = o.isWaitlist ? `대기${itemWaitRank}번` : (isWaitlist ? 'O' : '');
-                    const cleanPhone = addr.phone ? fixPhoneNumber(addr.phone) : '';
-                    const pinToSave = (customerPasswords && customerPasswords[customerVal]) || (cleanPhone.length >= 4 ? cleanPhone.slice(-4) : '');
-                    const isConfirmedOrder = checkedOrders && checkedOrders.has(customerVal);
-                    const rawTrkVal = (trackingNumbers && trackingNumbers[customerVal]) || '';
-                    const trkToSave = rawTrkVal === '__CLEAR__' ? '__CLEAR__' : (rawTrkVal ? "'" + rawTrkVal : '');
-                    const cardModeVal = cardPayments[o.customer];
-                    const cardCellStr = cardModeVal === 'completed' ? `카드완료(${feeRateNum}%)` : (cardModeVal ? `O(${feeRateNum}%)` : '');
-                    
-                    return { 
-                        '닉네임': customerVal,
-                        '상품명': o.product,
-                        '수량': o.quantity,
-                        '단가(제품금액)': o.price,
-                        '배송비': currentShipping,
-                        '입금액': depositToSave,
-                        '카드결제': cardCellStr,
-                        '수령인명': addr.realname || '',
-                        '연락처': addr.phone ? "'" + addr.phone : '',
-                        '주소': addr.address || '',
-                        '요청사항': addr.memo || '',
-                        'VIP여부': isVip ? 'O' : '',
-                        '노쇼여부': isNoShow ? 'O' : '',
-                        '대기여부': waitlistCellVal,
-                        '비밀번호': pinToSave ? "'" + pinToSave : '',
-                        '주문확인': isConfirmedOrder ? 'O' : '',
-                        '입금내역JSON': customerDepsJson,
-                        '송장번호': trkToSave
-                    }; 
-                }); 
-
-                const currentDataStr = JSON.stringify(saveList);
-                if (currentDataStr === lastSavedDataStr.current) return;
-
-                // ✨ 수동 저장 버튼을 직접 눌렀을 때만 스피너(isSaving)를 표시하여 백그라운드 자동저장 시 리렌더링 끊김 방지
-                if (isManual) setIsSaving(true); 
-
-                if (broadcastName) { 
-                    const bn = broadcastName;
-                    const metaCustomer = '___WORKSPACE_META___';
-                    saveList.unshift({ 
-                        '닉네임': metaCustomer,
-                        '상품명': bn,
-                        '수량': Number(freeShippingThreshold) || 200000,
-                        '단가(제품금액)': Number(quickShipping) || 4000,
-                        '배송비': feeRateNum,
-                        '입금액': 0,
-                        '카드결제': '',
-                        '수령인명': '',
-                        '연락처': '',
-                        '주소': '',
-                        '요청사항': '',
-                        'VIP여부': '',
-                        '노쇼여부': '',
-                        '대기여부': '',
-                        '비밀번호': '',
-                        '주문확인': '',
-                        '입금내역JSON': '',
-                        '송장번호': ''
-                    }); 
-                }
-                try { 
-                    const actualSheetId = getCleanSheetId(masterSheetId); 
-                    if(actualSheetId) { 
-                        const confirmedNicknames = uniqueNicknames.filter(n => checkedOrders && checkedOrders.has(n));
-                        const invArchivePayload = Array.isArray(inventoryRef.current)
-                            ? inventoryRef.current.map(i => ({ name: i.name, price: i.price, stock: i.stock !== undefined ? i.stock : '', status: i.isSoldOut ? '품절' : '', isLocked: Boolean(i.isLocked) }))
-                            : [];
-
-                        // ✨ 고객용 포털(customer_portal.html)이 동시 접속 폭주 시에도 0.1초 만에 열릴 수 있도록 Firebase에도 현재 방송 주문서 미러링!
-                        if (window.emberRealtimeDb && broadcastName) {
-                            try {
-                                const cleanBName = String(broadcastName).replace(/^주문_/, '').trim();
-                                const safeBKey = cleanBName.replace(/[.#$\[\]\/]/g, '_');
-                                const portalCustomers = uniqueNicknames.map(nick => {
-                                    const custOrders = orders.filter(o => !o.isCancelled && o.customer === nick);
-                                    let addrRes = addressLookup.get(nick);
-                                    let addr = addrRes.data || {};
-                                    const cleanPh = addr.phone ? fixPhoneNumber(addr.phone) : '';
-                                    const pin4 = (customerPasswords && customerPasswords[nick]) || (cleanPh.length >= 4 ? cleanPh.slice(-4) : '');
-                                    const custType = specialCustomers && specialCustomers[normalizeString(nick)]?.type;
-                                    const isVip = custType === 'vip' || custType === 'manager';
-                                    const currentShipping = getCalculatedShipping(nick, customerTotalsForShipping[nick] || 0);
-                                    const cardModeVal = cardPayments[nick];
-                                    const cardStr = cardModeVal === 'completed' ? `카드완료(${feeRateNum}%)` : (cardModeVal ? `O(${feeRateNum}%)` : '');
-                                    const rawTrk = (trackingNumbers && trackingNumbers[nick] && trackingNumbers[nick] !== '__CLEAR__') ? trackingNumbers[nick] : '';
-                                    const zipM = String(addr.address || '').match(/^\((\d{5})\)\s*(.*)$/);
-                                    return {
-                                        sheetTabName: '주문_' + cleanBName,
-                                        nickname: nick,
-                                        phoneLast4: pin4,
+                            // ✨ 고객용 포털(customer_portal.html)이 동시 접속 폭주 시에도 0.1초 만에 열릴 수 있도록 Firebase에도 현재 방송 주문서 미러링!
+                            if (window.emberRealtimeDb && broadcastName) {
+                                try {
+                                    const cleanBName = String(broadcastName).replace(/^주문_/, '').trim();
+                                    const safeBKey = cleanBName.replace(/[.#$\[\]\/]/g, '_');
+                                    const portalCustomers = uniqueNicknames.map(nick => {
+                                        const custOrders = orders.filter(o => !o.isCancelled && o.customer === nick);
+                                        let addrRes = addressLookup.get(nick);
+                                        let addr = addrRes.data || {};
+                                        const cleanPh = addr.phone ? fixPhoneNumber(addr.phone) : '';
+                                        const pin4 = (customerPasswords && customerPasswords[nick]) || (cleanPh.length >= 4 ? cleanPh.slice(-4) : '');
+                                        const custType = specialCustomers && specialCustomers[normalizeString(nick)]?.type;
+                                        const isVip = custType === 'vip' || custType === 'manager';
+                                        const currentShipping = getCalculatedShipping(nick, customerTotalsForShipping[nick] || 0);
+                                        const cardModeVal = cardPayments[nick];
+                                        const cardStr = cardModeVal === 'completed' ? `카드완료(${feeRateNum}%)` : (cardModeVal ? `O(${feeRateNum}%)` : '');
+                                        const rawTrk = (trackingNumbers && trackingNumbers[nick] && trackingNumbers[nick] !== '__CLEAR__') ? trackingNumbers[nick] : '';
+                                        const zipM = String(addr.address || '').match(/^\((\d{5})\)\s*(.*)$/);
+                                        return {
+                                            sheetTabName: '주문_' + cleanBName,
+                                            nickname: nick,
+                                            phoneLast4: pin4,
+                                            broadcastName: cleanBName,
+                                            isVip: isVip,
+                                            freeShippingThreshold: Number(freeShippingThreshold) || 70000,
+                                            cardFeeRate: feeRateNum,
+                                            isCard: cardStr,
+                                            shipping: currentShipping,
+                                            depositTotal: customerTotalDeposits[nick] || 0,
+                                            deposits: savedDepositsHistoryMapRef.current[nick] || [],
+                                            items: custOrders.map((co, cIdx) => ({
+                                                id: cIdx + 1,
+                                                product: co.product || '',
+                                                qty: Number(co.quantity) || 1,
+                                                price: Number(co.price) || 0,
+                                                isWaitlist: Boolean(co.isWaitlist),
+                                                waitlistOrder: co.isWaitlist ? (waitlistRankMap[`${String(co.product || '').trim()}___${nick}`] || 1) : 0
+                                            })),
+                                            address: (addr.address || addr.realname) ? {
+                                                realname: addr.realname || '',
+                                                phone: cleanPh,
+                                                zipcode: zipM ? zipM[1] : (addr.zipcode || ''),
+                                                baseAddress: zipM ? zipM[2] : (addr.address || ''),
+                                                detailAddress: '',
+                                                memo: addr.memo || '',
+                                                updatedAt: addr.timestamp || ''
+                                            } : null,
+                                            trackingNumbers: rawTrk ? [rawTrk] : [],
+                                            isConfirmed: Boolean(checkedOrders && checkedOrders.has(nick))
+                                        };
+                                    });
+                                    window.emberRealtimeDb.ref(`ember_live_data/_portal_orders/${safeBKey}`).set({
                                         broadcastName: cleanBName,
-                                        isVip: isVip,
-                                        freeShippingThreshold: Number(freeShippingThreshold) || 70000,
-                                        cardFeeRate: feeRateNum,
-                                        isCard: cardStr,
-                                        shipping: currentShipping,
-                                        depositTotal: customerTotalDeposits[nick] || 0,
-                                        deposits: savedDepositsHistoryMapRef.current[nick] || [],
-                                        items: custOrders.map((co, cIdx) => ({
-                                            id: cIdx + 1,
-                                            product: co.product || '',
-                                            qty: Number(co.quantity) || 1,
-                                            price: Number(co.price) || 0,
-                                            isWaitlist: Boolean(co.isWaitlist),
-                                            waitlistOrder: co.isWaitlist ? (waitlistRankMap[`${String(co.product || '').trim()}___${nick}`] || 1) : 0
-                                        })),
-                                        address: (addr.address || addr.realname) ? {
-                                            realname: addr.realname || '',
-                                            phone: cleanPh,
-                                            zipcode: zipM ? zipM[1] : (addr.zipcode || ''),
-                                            baseAddress: zipM ? zipM[2] : (addr.address || ''),
-                                            detailAddress: '',
-                                            memo: addr.memo || '',
-                                            updatedAt: addr.timestamp || ''
-                                        } : null,
-                                        trackingNumbers: rawTrk ? [rawTrk] : [],
-                                        isConfirmed: Boolean(checkedOrders && checkedOrders.has(nick))
-                                    };
-                                });
-                                window.emberRealtimeDb.ref(`ember_live_data/_portal_orders/${safeBKey}`).set({
-                                    broadcastName: cleanBName,
-                                    updatedAt: Date.now(),
-                                    customers: portalCustomers
-                                }).catch(() => {});
-                            } catch (fbErr) {}
-                        }
+                                        updatedAt: Date.now(),
+                                        customers: portalCustomers
+                                    }).catch(() => {});
+                                } catch (fbErr) {}
+                            }
 
-                        await fetchGas(googleScriptUrl, { action: 'save_orders', masterId: actualSheetId, broadcastName: broadcastName, data: saveList, inventoryData: invArchivePayload, nicknames: uniqueNicknames, confirmedNicknames: confirmedNicknames }); 
-                        if (isManual && invArchivePayload.length > 0) {
-                            await fetchGas(googleScriptUrl, { action: 'save_inventory', masterId: actualSheetId, broadcastName: broadcastName, data: invArchivePayload });
-                        }
-                        lastSavedDataStr.current = currentDataStr;
-                    } 
-                } catch(e) {} finally { if (isManual) setIsSaving(false); } 
-            }, [orders, cardPayments, getCalculatedShipping, googleScriptUrl, addressLookup, masterSheetId, broadcastName, specialCustomers, noShowCustomers, waitlistCustomers, customerPasswords, trackingNumbers, checkedOrders, depositLinks, customerDepositLogs, matchedDeposits, depositorNames, freeShippingThreshold, quickShipping, feeRateNum, waitlistRankMap]);
+                            if (invArchivePayload.length > 0 && window.pushInventoryToLiveCatalog) {
+                                window.pushInventoryToLiveCatalog(invArchivePayload.map(x => ({
+                                    name: x.name,
+                                    price: x.price,
+                                    stock: x.stock,
+                                    isSoldOut: x.status === '품절',
+                                    isLocked: x.isLocked
+                                })));
+                            }
+
+                            const resOrders = await fetchGas(googleScriptUrl, { action: 'save_orders', masterId: actualSheetId, broadcastName: broadcastName, data: saveList, inventoryData: invArchivePayload, nicknames: uniqueNicknames, confirmedNicknames: confirmedNicknames }); 
+                            if (invArchivePayload.length > 0) {
+                                inventorySyncLock.current = Date.now();
+                                await fetchGas(googleScriptUrl, { action: 'save_inventory', masterId: actualSheetId, broadcastName: broadcastName, data: invArchivePayload });
+                            }
+                            if (resOrders && (resOrders.status === 'success' || resOrders.success)) {
+                                lastSavedDataStr.current = currentDataStr;
+                            }
+                        } 
+                    } catch(e) {} finally { if (isManual) setIsSaving(false); } 
+            }, [orders, cardPayments, getCalculatedShipping, googleScriptUrl, addressLookup, masterSheetId, broadcastName, specialCustomers, noShowCustomers, waitlistCustomers, customerPasswords, trackingNumbers, checkedOrders, depositLinks, customerDepositLogs, matchedDeposits, depositorNames, freeShippingThreshold, quickShipping, feeRateNum, waitlistRankMap, allDeposits]);
 
             const autoSaveRef = useRef(); useEffect(() => { autoSaveRef.current = autoSaveToGoogleSheet; }, [autoSaveToGoogleSheet]);
             useEffect(() => { const saveInterval = setInterval(() => { if (autoSaveRef.current) autoSaveRef.current(); }, 10000); return () => clearInterval(saveInterval); }, []); 
@@ -4790,18 +4620,22 @@ const dashboardStats = useMemo(() => {
             const findAddress = (nick) => {
                 if (!nick) return undefined;
                 const cleanNick = normalizeString(nick);
+                const handleNick = normalizeHandleNick(nick);
                 const mappedTarget = addressMapping[nick] || addressMapping[cleanNick];
                 if (mappedTarget === '__UNMAPPED__') return undefined;
                 
-                let matches = addresses.filter(a => normalizeString(a.nickname) === (mappedTarget ? normalizeString(mappedTarget) : cleanNick));
-                if (matches.length === 0 && !mappedTarget) {
-                    matches = addresses.filter(a => normalizeString(a.realname) === cleanNick);
+                const targetClean = mappedTarget ? normalizeString(mappedTarget) : cleanNick;
+                const targetHandle = mappedTarget ? normalizeHandleNick(mappedTarget) : handleNick;
+
+                // 1순위: 100% 일치 매칭, 2순위: 유튜브 핸들 꼬리표(-e4g 등) 제거 후 100% 일치 매칭
+                let matches = addresses.filter(a => normalizeString(a.nickname) === targetClean);
+                if (matches.length === 0 && targetHandle && targetHandle.length >= 2) {
+                    matches = addresses.filter(a => normalizeHandleNick(a.nickname) === targetHandle);
                 }
 
                 if (matches.length > 0) {
-                    matches.sort((a,b) => parseSafeDate(b.timestamp).getTime() - parseSafeDate(a.timestamp).getTime());
-                    const masterMatch = matches.find(m => m._source === 'master');
-                    return masterMatch || matches[0];
+                    matches.sort((a, b) => (b._rowOrder || 0) - (a._rowOrder || 0));
+                    return matches[0];
                 }
                 return undefined;
             };
