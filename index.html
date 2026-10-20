@@ -2432,15 +2432,15 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     if (res.masterAddresses && Array.isArray(res.masterAddresses)) {
                         const masterAddrs = res.masterAddresses.map(a => ({
                             ...a,
-                            nickname: String(a.nickname || a['닉네임'] || a['주문자'] || '').trim(),
-                            realname: String(a.realname || a['수령인명'] || a['수령인'] || a['이름'] || a['성명'] || '').trim(),
-                            phone: fixPhoneNumber(String(a.phone || a['연락처'] || a['핸드폰번호'] || a['전화번호'] || '').trim()),
-                            address: String(a.address || a['주소'] || a['배송지'] || '').trim(),
-                            memo: String(a.memo || a['배송메모'] || a['요청사항'] || a['메모'] || '').trim(),
-                            timestamp: a.timestamp || a['저장시간'] || a['일시'] || '',
-                            _parsedTime: parseSafeDate(a.timestamp || a['저장시간'] || '').getTime(),
+                            nickname: String(a.nickname || a['닉네임'] || a['주문자'] || a.col_0 || '').trim(),
+                            realname: String(a.realname || a['수령인명'] || a['수령인'] || a['이름'] || a['성명'] || a.col_1 || '').trim(),
+                            phone: fixPhoneNumber(String(a.phone || a['연락처'] || a['핸드폰번호'] || a['전화번호'] || a.col_2 || '').trim()),
+                            address: String(a.address || a['주소'] || a['배송지'] || a.col_3 || '').trim(),
+                            memo: String(a.memo || a['배송메모'] || a['요청사항'] || a['메모'] || a.col_5 || '').trim(),
+                            timestamp: a.timestamp || a['저장시간'] || a['일시'] || a.col_6 || '',
+                            _parsedTime: parseSafeDate(a.timestamp || a['저장시간'] || a.col_6 || '').getTime(),
                             _source: 'master'
-                        })).filter(a => a.nickname || a.realname);
+                        })).filter(a => (a.nickname || a.realname) && String(a.nickname).toLowerCase() !== 'nickname');
                         mergedAddr = [...masterAddrs];
                         gasMsg += `주소(${masterAddrs.length}) `;
                     }
@@ -5195,7 +5195,7 @@ const dashboardStats = useMemo(() => {
             const [orders, setOrders] = useLocalStorage('youtubeOrders', []);
             const [activeTab, setActiveTab] = useState('live');
             
-            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwRdlzvE-FN9R7mMXGiVSoHXDx1dmbi-XEtviDDsCAAlFr1K1pj2lp_jTkd_pQ4tZ8v/exec';
+            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwC6u5ZjrKYmhiIOMuSxSaNRvTaiphDMIM6w2puihCkkapCpuePrKa4cj8yRfyQMKv1/exec';
             const [googleScriptUrl, setGoogleScriptUrl] = useLocalStorage('googleScriptUrl', NEW_SCRIPT_URL);
         
         const [youtubeApiKey, setYoutubeApiKey] = useLocalStorage('youtubeApiKey', '');
@@ -5214,7 +5214,7 @@ const dashboardStats = useMemo(() => {
 
             useEffect(() => {
                 const currentUrl = window.localStorage.getItem(getLsKey('googleScriptUrl'));
-                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbwRdlzvE-FN9R7mMXGiVSoHXDx1dmbi-XEtviDDsCAAlFr1K1pj2lp_jTkd_pQ4tZ8v')) {
+                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbwC6u5ZjrKYmhiIOMuSxSaNRvTaiphDMIM6w2puihCkkapCpuePrKa4cj8yRfyQMKv1')) {
                     setGoogleScriptUrl(NEW_SCRIPT_URL);
                 }
             }, [setGoogleScriptUrl]);
