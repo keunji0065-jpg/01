@@ -2483,7 +2483,28 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         const addrKeys = mergedAddr.map(a => a.nickname + (a.address||'') + (a.phone||'')).join(',');
                         if (addrKeys !== prevAddrsStr.current) {
                             if (mergedAddr.length > prevAddrCount.current && prevAddrCount.current !== 0) playBellSound();
-                            if (mergedAddr.length > 0) setAddresses(mergedAddr);
+                            if (mergedAddr.length > 0) {
+                                setAddresses(mergedAddr);
+                                // ✨ 고객용 포털(customer_portal.html)이 0.1초 만에 열리도록 찐고객사전 주소록도 Firebase에 자동 백업
+                                if (window.emberRealtimeDb) {
+                                    try {
+                                        const fbAddrMap = {};
+                                        mergedAddr.forEach(a => {
+                                            const k = String(a.nickname || '').replace(/[.#$\[\]\/]/g, '_').trim();
+                                            if (k && a.address) {
+                                                fbAddrMap[k] = {
+                                                    nickname: a.nickname,
+                                                    realname: a.realname || '',
+                                                    phone: a.phone || '',
+                                                    address: a.address || '',
+                                                    memo: a.memo || ''
+                                                };
+                                            }
+                                        });
+                                        window.emberRealtimeDb.ref('ember_live_data/_portal_master_addrs').set(fbAddrMap).catch(() => {});
+                                    } catch (e) {}
+                                }
+                            }
                             prevAddrsStr.current = addrKeys;
                         }
                         prevAddrCount.current = mergedAddr.length;
@@ -5301,7 +5322,7 @@ const dashboardStats = useMemo(() => {
             const [orders, setOrders] = useLocalStorage('youtubeOrders', []);
             const [activeTab, setActiveTab] = useState('live');
             
-            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx1rWCPnPf23AFtsCgPrHwP1mpFXO_5cW6bRdRkj_pfdLmODk3z19gMXg-GLQw7ET9D/exec';
+            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz5wMdAoYwgihXThXfWyVwnEVfI57HhE9MeK4K6FdtEU53s_Sr5LaM6IdlgfgwzvhBU/exec';
             const [googleScriptUrl, setGoogleScriptUrl] = useLocalStorage('googleScriptUrl', NEW_SCRIPT_URL);
         
         const [youtubeApiKey, setYoutubeApiKey] = useLocalStorage('youtubeApiKey', '');
@@ -5320,7 +5341,7 @@ const dashboardStats = useMemo(() => {
 
             useEffect(() => {
                 const currentUrl = window.localStorage.getItem(getLsKey('googleScriptUrl'));
-                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbx1rWCPnPf23AFtsCgPrHwP1mpFXO_5cW6bRdRkj_pfdLmODk3z19gMXg-GLQw7ET9D')) {
+                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbz5wMdAoYwgihXThXfWyVwnEVfI57HhE9MeK4K6FdtEU53s_Sr5LaM6IdlgfgwzvhBU')) {
                     setGoogleScriptUrl(NEW_SCRIPT_URL);
                 }
             }, [setGoogleScriptUrl]);
