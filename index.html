@@ -1675,7 +1675,7 @@ useEffect(() => {
             );
         };
 
-const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHistory, setProductHistory, quickShipping, jejuShipping, freeShippingThreshold, cardFeeRate, shippingOverrides, setShippingOverrides, bankAccount, googleScriptUrl, depSheetId, masterSheetId, addresses, setAddresses, cardPayments, setCardPayments, manualDeposits, setManualDeposits, matchedDeposits, setMatchedDeposits, depositorNames, setDepositorNames, clickedChats, setClickedChats, openModal, keywords, setKeywords, sentAddressRequests, setSentAddressRequests, deletedDepositIds, setDeletedDepositIds, checkedOrders, setCheckedOrders, addressMapping, setAddressMapping, templateConfig, specialCustomers, setSpecialCustomers, inventory, setInventory, quickMessages, handleResetAllData, broadcastName, setBroadcastName, setGlobalError, cashReceipts, setCashReceipts, soundEnabled, soundVolume, depositLinks, setDepositLinks, customerDepositLogs, setCustomerDepositLogs, noShowCustomers, setNoShowCustomers, waitlistCustomers, setWaitlistCustomers, customerPasswords, setCustomerPasswords, trackingNumbers, setTrackingNumbers, customerCredits, setCustomerCredits }) => {
+const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHistory, setProductHistory, quickShipping, jejuShipping, freeShippingThreshold, cardFeeRate, shippingOverrides, setShippingOverrides, bankAccount, googleScriptUrl, setGoogleScriptUrl, depSheetId, masterSheetId, addresses, setAddresses, cardPayments, setCardPayments, manualDeposits, setManualDeposits, matchedDeposits, setMatchedDeposits, depositorNames, setDepositorNames, clickedChats, setClickedChats, openModal, keywords, setKeywords, sentAddressRequests, setSentAddressRequests, deletedDepositIds, setDeletedDepositIds, checkedOrders, setCheckedOrders, addressMapping, setAddressMapping, templateConfig, specialCustomers, setSpecialCustomers, inventory, setInventory, quickMessages, handleResetAllData, broadcastName, setBroadcastName, setGlobalError, cashReceipts, setCashReceipts, soundEnabled, soundVolume, depositLinks, setDepositLinks, customerDepositLogs, setCustomerDepositLogs, noShowCustomers, setNoShowCustomers, waitlistCustomers, setWaitlistCustomers, customerPasswords, setCustomerPasswords, trackingNumbers, setTrackingNumbers, customerCredits, setCustomerCredits }) => {
             const [serverDeposits, setServerDeposits] = useState([]);
             const [selectedNick, setSelectedNick] = useState(null);
             const feeRateNum = (cardFeeRate !== undefined && cardFeeRate !== '' && Number(cardFeeRate) > 0) ? Number(cardFeeRate) : 10;
@@ -3586,18 +3586,54 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             setSheetListModal({ isOpen: true, tabs: [], loading: true });
             try {
                 const cleanId = getCleanSheetId(masterSheetId);
-                const res = await fetchGas(`${googleScriptUrl}?action=get_order_tabs&masterId=${cleanId}&t=${Date.now()}`);
-                const rawTabs = (res && Array.isArray(res.tabs)) ? res.tabs : [];
-                const tabSet = new Set(rawTabs.filter(t => t && String(t).trim().startsWith('주문_')).map(t => String(t).trim()));
+                const BACKUP_GAS_URL = 'https://script.google.com/macros/s/AKfycbyr4OHuMBwQWLSuan1Dg36w_wt_TdyLUYhT2Qq8jqOPaK9eNhZscB5uj6YDd2_jj_3_/exec';
 
-                // 구글 서버에 구버전 스크립트('10/18 여성복' 제외 버그)가 남아있을 경우를 대비해 실제 '주문_10/18 여성복' 시트 존재 여부를 직접 검증하여 복구!
-                if (!tabSet.has('주문_10/18 여성복')) {
+                // 1) 현재 설정된 스크립트 URL로 탭 목록 조회 시도
+                let res = await fetchGas(`${googleScriptUrl}?action=get_order_tabs&masterId=${cleanId}&t=${Date.now()}`, null, 8000);
+                let rawTabs = (res && Array.isArray(res.tabs)) ? res.tabs : [];
+
+                // 2) 만약 구버전 배포 URL이어서 tabs 배열이 비어있다면 최신 배포 URL로 즉시 재시도
+                if (rawTabs.length === 0 && googleScriptUrl !== BACKUP_GAS_URL) {
+                    const backupRes = await fetchGas(`${BACKUP_GAS_URL}?action=get_order_tabs&masterId=${cleanId}&t=${Date.now()}`, null, 8000);
+                    if (backupRes && Array.isArray(backupRes.tabs) && backupRes.tabs.length > 0) {
+                        rawTabs = backupRes.tabs;
+                        setGoogleScriptUrl(BACKUP_GAS_URL);
+                    }
+                }
+
+                const tabSet = new Set(
+                    rawTabs.filter(t => t && String(t).trim().startsWith('주문_')).map(t => String(t).trim())
+                );
+
+                // 3) 만약 여전히 3개 미만이라면, 실제 구글 시트에 존재하는지 직접 찔러보고 데이터가 있는 진짜 '주문_' 시트만 추가 (00000 같은 가짜는 절대 제외!)
+                let candidateNames = ['주문_10/20 악세사리', '주문_10/18 여성복', '주문_10/16 여성복'];
+                if (window.emberRealtimeDb) {
                     try {
-                        const check1018 = await fetchGas(`${googleScriptUrl}?action=get_orders&masterId=${cleanId}&tabName=${encodeURIComponent('주문_10/18 여성복')}&t=${Date.now()}`);
-                        if (check1018 && Array.isArray(check1018.data) && check1018.data.length > 0) {
-                            tabSet.add('주문_10/18 여성복');
+                        const snap = await window.emberRealtimeDb.ref('ember_live_data/_portal_orders').once('value');
+                        const val = snap.val();
+                        if (val && typeof val === 'object') {
+                            Object.values(val).forEach(b => {
+                                const bName = String(b?.broadcastName || '').replace(/^주문_/, '').trim();
+                                // 슬래시(/)가 포함된 정상 날짜 형식 방송명만 후보에 추가 (00000, 띄어쓰기 가짜 시트 제외)
+                                if (bName && /\d+\/\d+/.test(bName)) {
+                                    candidateNames.push('주문_' + bName);
+                                }
+                            });
                         }
                     } catch (e) {}
+                }
+
+                candidateNames = Array.from(new Set(candidateNames)).filter(c => !tabSet.has(c));
+                if (candidateNames.length > 0) {
+                    await Promise.all(candidateNames.map(async (candTab) => {
+                        try {
+                            const checkRes = await fetchGas(`${googleScriptUrl}?action=get_orders&masterId=${cleanId}&tabName=${encodeURIComponent(candTab)}&t=${Date.now()}`, null, 6000);
+                            const rows = Array.isArray(checkRes?.data) ? checkRes.data : (Array.isArray(checkRes?.orders) ? checkRes.orders : []);
+                            if (rows.length > 0) {
+                                tabSet.add(candTab);
+                            }
+                        } catch (e) {}
+                    }));
                 }
 
                 const uniqueTabs = Array.from(tabSet);
@@ -3613,13 +3649,54 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             } catch (e) {
                 setSheetListModal({ isOpen: true, tabs: ['메인주문'], loading: false });
             }
-        }, [googleScriptUrl, masterSheetId, openModal]);
+        }, [googleScriptUrl, masterSheetId, openModal, setGoogleScriptUrl]);
 
         const loadOrdersFromGoogleSheet = useCallback(async (isSilent = false, targetTabName = '메인주문') => {
             if (!googleScriptUrl || !masterSheetId) return;
             try {
-                const res = await fetchGas(`${googleScriptUrl}?action=get_orders&masterId=${getCleanSheetId(masterSheetId)}&tabName=${encodeURIComponent(targetTabName)}&t=${Date.now()}`);
-                const rows = (res && Array.isArray(res.data)) ? res.data : [];
+                const cleanId = getCleanSheetId(masterSheetId);
+                let res = await fetchGas(`${googleScriptUrl}?action=get_orders&masterId=${cleanId}&tabName=${encodeURIComponent(targetTabName)}&t=${Date.now()}`);
+                let rows = (res && Array.isArray(res.data)) ? res.data : (res && Array.isArray(res.orders) ? res.orders : []);
+
+                // 시트에서 못 읽었을 경우 Firebase(_portal_orders) 백업본에서 즉시 복원 폴백
+                if (rows.length === 0 && targetTabName !== '메인주문' && window.emberRealtimeDb) {
+                    const cleanB = targetTabName.replace(/^주문_/, '').trim();
+                    const safeBKey = cleanB.replace(/[.#$\[\]\/]/g, '_');
+                    const snap = await window.emberRealtimeDb.ref(`ember_live_data/_portal_orders/${safeBKey}`).once('value');
+                    const fbVal = snap.val();
+                    if (fbVal && Array.isArray(fbVal.customers) && fbVal.customers.length > 0) {
+                        rows = [{
+                            '닉네임': '___WORKSPACE_META___',
+                            '상품명': cleanB
+                        }];
+                        fbVal.customers.forEach(c => {
+                            const items = Array.isArray(c.items) && c.items.length > 0 ? c.items : [{ product: '', qty: 1, price: 0 }];
+                            items.forEach((it, idx) => {
+                                rows.push({
+                                    '닉네임': c.nickname,
+                                    '상품명': it.product || '',
+                                    '수량': Number(it.qty) || 1,
+                                    '단가(제품금액)': Number(it.price) || 0,
+                                    '배송비': Number(c.shipping) || 0,
+                                    '입금액': idx === 0 ? (Number(c.depositTotal) || 0) : 0,
+                                    '카드결제': c.isCard || '',
+                                    '수령인명': c.address?.realname || '',
+                                    '연락처': c.address?.phone || '',
+                                    '주소': c.address?.baseAddress || '',
+                                    '요청사항': c.address?.memo || '',
+                                    'VIP여부': c.isVip ? 'O' : '',
+                                    '노쇼여부': c.isNoShow ? 'O' : '',
+                                    '대기여부': it.isWaitlist ? `대기${it.waitlistOrder || 1}번` : '',
+                                    '비밀번호': c.phoneLast4 || '',
+                                    '주문확인': c.isConfirmed ? 'O' : '',
+                                    '입금내역JSON': idx === 0 && Array.isArray(c.deposits) ? JSON.stringify(c.deposits) : '',
+                                    '송장번호': Array.isArray(c.trackingNumbers) && c.trackingNumbers[0] ? c.trackingNumbers[0] : ''
+                                });
+                            });
+                        });
+                    }
+                }
+
                 if (rows.length === 0) {
                     if (!isSilent) openModal(`'${targetTabName}' 시트에 저장된 주문 내역이 없습니다.`, "alert");
                     return;
@@ -4764,26 +4841,37 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                 let chatClasses = '';
                                 if (isFocused) {
                                     if (isProcessed) {
-                                        // 포커스 됨 + 이미 등록됨 -> 회색조의 톤다운된 포커스 (이미 처리된 느낌)
-                                        chatClasses = 'ring-2 ring-slate-400 bg-slate-200 dark:bg-slate-700 border-slate-400 z-10 scale-[1.02] shadow-md opacity-70';
+                                        chatClasses = 'bg-slate-200 dark:bg-slate-800 border-2 border-blue-500 text-slate-500 dark:text-slate-400 shadow-md';
                                     } else {
-                                        // 포커스 됨 + 새로운 채팅 -> 기존처럼 쨍한 파란색 포커스
-                                        chatClasses = 'ring-2 ring-blue-500 bg-blue-100 dark:bg-blue-900/60 border-blue-400 z-10 scale-[1.02] shadow-md';
+                                        chatClasses = 'bg-blue-50/90 dark:bg-blue-900/40 border-2 border-blue-500 text-slate-900 dark:text-white font-bold shadow-md';
                                     }
+                                } else if (isProcessed) {
+                                    chatClasses = 'bg-slate-100 dark:bg-slate-800/60 border border-transparent text-slate-400 dark:text-slate-500';
+                                } else if (isMatched) {
+                                    chatClasses = 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 text-slate-900 dark:text-slate-100 shadow-sm';
                                 } else {
-                                    chatClasses = isProcessed ? 'opacity-80 bg-slate-100 dark:bg-slate-800/80 border-transparent' : (isMatched ? 'bg-slate-100 dark:bg-slate-800 border-slate-400 dark:border-slate-600 ring-1 ring-slate-400 dark:ring-slate-600 shadow-sm' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700');
+                                    chatClasses = 'bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 text-slate-800 dark:text-slate-200 hover:border-blue-300';
                                 }
-                                
-                                const custStatus = specialCustomers[normalizeString(c.nickname)]?.type;
-                                let statusBadge = null;
-                                if (custStatus === 'vip') statusBadge = <span className="text-[9px] bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400 px-1 py-0.5 rounded flex items-center gap-0.5 shrink-0"><Icon name="crown" weight="fill"/> VIP</span>;
-                                else if (custStatus === 'noshow') statusBadge = <span className="text-[9px] bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400 px-1 py-0.5 rounded flex items-center gap-0.5 shrink-0"><Icon name="user-minus" weight="fill"/> 노쇼</span>;
-                                else if (custStatus === 'manager') statusBadge = <span className="text-[9px] bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 px-1 py-0.5 rounded flex items-center gap-0.5 shrink-0"><Icon name="shield-check" weight="fill"/> 관리자</span>;
 
                                 return (
-                                    <div key={c.id} id={`chat-item-${c.id}`} onClick={() => { setFocusedChatId(c.id); handleChatClick(c); }} className={`py-1.5 px-2 border rounded cursor-pointer transition-all flex flex-col gap-1 ${chatClasses}`}>
-                                        <div className="flex justify-between items-start"><span className={`flex items-center gap-1 break-all text-[12px] font-bold ${isProcessed && !isFocused ? 'text-slate-400 dark:text-slate-500' : 'text-slate-800 dark:text-slate-200'}`}>{c.nickname} {statusBadge}</span><span className="text-[10px] text-slate-400 dark:text-slate-500 shrink-0 mt-0.5">{formatTimeOnly(c.time)}</span></div>
-                                        <div className={`text-[12px] font-medium leading-snug break-all pl-1 ${isProcessed && !isFocused ? 'text-slate-400 dark:text-slate-500' : 'text-slate-700 dark:text-slate-300'}`}>{renderChatContent(safeContent, keywords || [])}</div>
+                                    <div
+                                        key={c.id || idx}
+                                        onClick={() => { setFocusedChatId(c.id); handleChatClick(c); }}
+                                        className={`p-1.5 rounded text-xs cursor-pointer transition-all flex items-start justify-between gap-1 group ${chatClasses}`}
+                                    >
+                                        <div className="flex-1 min-w-0 break-words leading-snug">
+                                            <span className="text-[9px] text-slate-400 mr-1 tabular-nums">{c.time}</span>
+                                            <span className={`font-extrabold mr-1.5 ${isProcessed ? 'line-through text-slate-400' : 'text-blue-700 dark:text-blue-400'}`}>{c.nickname}</span>
+                                            <span className={isProcessed ? 'line-through' : ''}>{renderChatContent(safeContent, keywords)}</span>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={(e) => { e.stopPropagation(); setHiddenChatIds(prev => [...prev, c.id]); }}
+                                            className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 p-0.5 shrink-0"
+                                            title="이 채팅 숨기기"
+                                        >
+                                            <Icon name="x" weight="bold" size={10} />
+                                        </button>
                                     </div>
                                 );
                             })}
@@ -4941,28 +5029,23 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                 return (
                                     <div key={d.id} className={`relative flex flex-col py-1.5 px-1.5 border rounded transition-all group ${isUsed ? 'bg-slate-100 dark:bg-slate-800/80 border-transparent' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm'}`}>
                                         <div className="flex items-center justify-between w-full">
-                                            <div className="flex items-center gap-1 overflow-hidden min-w-0">
-                                                <span onClick={(e) => handleCopyDepositName(e, d.name)} className={`text-[12px] truncate font-bold cursor-pointer hover:text-blue-500 transition-colors ${isUsed ? 'text-slate-500 dark:text-slate-400' : 'text-slate-800 dark:text-slate-100'}`} title="클릭하여 복사">{d.name}</span>
-                                                {d.source === 'manual' && <span className="text-[8px] text-slate-400 dark:text-slate-500 bg-slate-200 dark:bg-slate-700 px-0.5 rounded shrink-0">수동</span>}
+                                            <div className="flex items-center gap-1 min-w-0 pr-1">
+                                                <span onClick={(e) => handleCopyDepositName(e, d.name)} className={`font-bold text-xs truncate cursor-pointer hover:text-blue-600 ${isUsed ? 'line-through text-slate-400 dark:text-slate-500' : 'text-slate-800 dark:text-slate-100'}`} title="클릭하여 입금자명 복사">{d.name}</span>
+                                                <span className="text-[9px] text-slate-400 shrink-0 tabular-nums">{d.time}</span>
                                             </div>
-                                            <div className="flex items-center gap-1.5 shrink-0 ml-1">
-                                                <span className="text-[8px] text-slate-400 dark:text-slate-500 whitespace-nowrap">{formatTimeOnly(d.time || d.date)}</span>
-                                                <span className={`font-bold text-[12px] ${isUsed ? 'text-slate-400 dark:text-slate-500 line-through' : 'text-slate-700 dark:text-slate-300'}`}>+{Number(d.amount).toLocaleString()}</span>
-                                            </div>
-                                        </div>
-                                        <div className="flex items-center justify-between w-full mt-1 min-h-[16px]">
-                                            <div className="text-[10px] text-blue-600 dark:text-blue-400 font-bold truncate pr-1">
-                                                {isUsed && linkedNick && `🔗 ${linkedNick} 연결됨`}
-                                            </div>
-                                            <div className="flex gap-1 shrink-0">
-                                                {isUsed ? (
-                                                    <button onClick={(e) => { e.stopPropagation(); handleDepositClick(d, 'unmatch'); }} className="bg-red-50 border border-red-200 text-red-600 px-2 py-0.5 rounded text-[9px] font-bold hover:bg-red-100 shadow-sm z-10 relative">해제</button>
-                                                ) : (
-                                                    <button onClick={(e) => { e.stopPropagation(); handleDepositClick(d, 'match'); }} className="bg-blue-50 border border-blue-200 text-blue-600 px-2 py-0.5 rounded text-[9px] font-bold hover:bg-blue-100 shadow-sm z-10 relative">연결</button>
-                                                )}
+                                            <div className="flex items-center gap-1 shrink-0">
+                                                <button onClick={(e) => { e.stopPropagation(); handleDepositClick(d); }} className={`px-1.5 py-0.5 rounded text-[9px] font-bold transition-colors shadow-sm ${isUsed ? 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-red-100 hover:text-red-600' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}>
+                                                    {isUsed ? '해제' : '연결'}
+                                                </button>
+                                                <button onClick={(e) => { e.stopPropagation(); handleDeleteDepositItem(d.id); }} className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 p-0.5 transition-opacity" title="이 입금내역 숨기기"><Icon name="x" weight="bold" size={10}/></button>
                                             </div>
                                         </div>
-                                        <button onClick={(e)=>{e.stopPropagation(); handleDeleteDepositItem(d.id);}} className="absolute -right-1 -top-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm z-10"><Icon name="trash" size={10} weight="bold"/></button>
+                                        <div className="flex items-center justify-between w-full mt-0.5">
+                                            {linkedNick ? (
+                                                <span className="text-[9px] text-blue-600 dark:text-blue-400 font-bold truncate max-w-[90px]">🔗 {linkedNick}</span>
+                                            ) : <span />}
+                                            <span className={`font-extrabold text-xs tabular-nums ${isUsed ? 'line-through text-slate-400 dark:text-slate-500' : 'text-blue-600 dark:text-blue-400'}`}>{Number(d.amount).toLocaleString()}원</span>
+                                        </div>
                                     </div>
                                 );
                             })}
@@ -5680,7 +5763,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             const [orders, setOrders] = useLocalStorage('youtubeOrders', []);
             const [activeTab, setActiveTab] = useState('live');
             
-            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwBjZG8rSPi129Jr2Et_4008ZU8Q_SH3Q0rI0ls1Wt9SYD7J47NlG3bgY2FZ6Hl7b_e/exec';
+            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzQiXNFeSrZGH8TPvDHoaSaEV5Wg3KVy-WaMp62ssPNHkec-XojgxDGII2oYQD_iVKZ/exec';
             const [googleScriptUrl, setGoogleScriptUrl] = useLocalStorage('googleScriptUrl', NEW_SCRIPT_URL);
         
         const [youtubeApiKey, setYoutubeApiKey] = useLocalStorage('youtubeApiKey', '');
@@ -5699,7 +5782,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
 
             useEffect(() => {
                 const currentUrl = window.localStorage.getItem(getLsKey('googleScriptUrl'));
-                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbwBjZG8rSPi129Jr2Et_4008ZU8Q_SH3Q0rI0ls1Wt9SYD7J47NlG3bgY2FZ6Hl7b_e')) {
+                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbzQiXNFeSrZGH8TPvDHoaSaEV5Wg3KVy-WaMp62ssPNHkec-XojgxDGII2oYQD_iVKZ')) {
                     setGoogleScriptUrl(NEW_SCRIPT_URL);
                 }
             }, [setGoogleScriptUrl]);
@@ -6009,7 +6092,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
 
             <div className="flex-1 overflow-hidden flex flex-col">
                 <div className={`flex-1 overflow-hidden ${activeTab === 'live' ? 'flex' : 'hidden'}`}>
-                    <LiveTab youtubeApiKey={youtubeApiKey} youtubeVideoId={youtubeVideoId} orders={orders} setOrders={setOrders} productHistory={productHistory} setProductHistory={setProductHistory} quickShipping={quickShipping} jejuShipping={jejuShipping} freeShippingThreshold={freeShippingThreshold} cardFeeRate={cardFeeRate} shippingOverrides={shippingOverrides} setShippingOverrides={setShippingOverrides} bankAccount={bankAccount} googleScriptUrl={googleScriptUrl} depSheetId={depSheetId} masterSheetId={masterSheetId} addresses={addresses} setAddresses={setAddresses} cardPayments={cardPayments} setCardPayments={setCardPayments} manualDeposits={manualDeposits} setManualDeposits={setManualDeposits} matchedDeposits={matchedDeposits} setMatchedDeposits={setMatchedDeposits} depositLinks={depositLinks} setDepositLinks={setDepositLinks} customerDepositLogs={customerDepositLogs} setCustomerDepositLogs={setCustomerDepositLogs} depositorNames={depositorNames} setDepositorNames={setDepositorNames} clickedChats={clickedChats} setClickedChats={setClickedChats} openModal={openModal} keywords={keywords} setKeywords={setKeywords} sentAddressRequests={sentAddressRequests} setSentAddressRequests={setSentAddressRequests} deletedDepositIds={deletedDepositIds} setDeletedDepositIds={setDeletedDepositIds} checkedOrders={checkedOrders} setCheckedOrders={setCheckedOrders} addressMapping={addressMapping} setAddressMapping={setAddressMapping} templateConfig={templateConfig} specialCustomers={specialCustomers} setSpecialCustomers={setSpecialCustomers} inventory={inventory} setInventory={setInventory} quickMessages={quickMessages} handleResetAllData={handleResetAllData} broadcastName={broadcastName} setBroadcastName={setBroadcastName} setGlobalError={setGlobalError} cashReceipts={cashReceipts} setCashReceipts={setCashReceipts} soundEnabled={soundEnabled} soundVolume={soundVolume} noShowCustomers={noShowCustomers} setNoShowCustomers={setNoShowCustomers} waitlistCustomers={waitlistCustomers} setWaitlistCustomers={setWaitlistCustomers} customerPasswords={customerPasswords} setCustomerPasswords={setCustomerPasswords} trackingNumbers={trackingNumbers} setTrackingNumbers={setTrackingNumbers} customerCredits={customerCredits} setCustomerCredits={setCustomerCredits} />
+                    <LiveTab youtubeApiKey={youtubeApiKey} youtubeVideoId={youtubeVideoId} orders={orders} setOrders={setOrders} productHistory={productHistory} setProductHistory={setProductHistory} quickShipping={quickShipping} jejuShipping={jejuShipping} freeShippingThreshold={freeShippingThreshold} cardFeeRate={cardFeeRate} shippingOverrides={shippingOverrides} setShippingOverrides={setShippingOverrides} bankAccount={bankAccount} googleScriptUrl={googleScriptUrl} setGoogleScriptUrl={setGoogleScriptUrl} depSheetId={depSheetId} masterSheetId={masterSheetId} addresses={addresses} setAddresses={setAddresses} cardPayments={cardPayments} setCardPayments={setCardPayments} manualDeposits={manualDeposits} setManualDeposits={setManualDeposits} matchedDeposits={matchedDeposits} setMatchedDeposits={setMatchedDeposits} depositLinks={depositLinks} setDepositLinks={setDepositLinks} customerDepositLogs={customerDepositLogs} setCustomerDepositLogs={setCustomerDepositLogs} depositorNames={depositorNames} setDepositorNames={setDepositorNames} clickedChats={clickedChats} setClickedChats={setClickedChats} openModal={openModal} keywords={keywords} setKeywords={setKeywords} sentAddressRequests={sentAddressRequests} setSentAddressRequests={setSentAddressRequests} deletedDepositIds={deletedDepositIds} setDeletedDepositIds={setDeletedDepositIds} checkedOrders={checkedOrders} setCheckedOrders={setCheckedOrders} addressMapping={addressMapping} setAddressMapping={setAddressMapping} templateConfig={templateConfig} specialCustomers={specialCustomers} setSpecialCustomers={setSpecialCustomers} inventory={inventory} setInventory={setInventory} quickMessages={quickMessages} handleResetAllData={handleResetAllData} broadcastName={broadcastName} setBroadcastName={setBroadcastName} setGlobalError={setGlobalError} cashReceipts={cashReceipts} setCashReceipts={setCashReceipts} soundEnabled={soundEnabled} soundVolume={soundVolume} noShowCustomers={noShowCustomers} setNoShowCustomers={setNoShowCustomers} waitlistCustomers={waitlistCustomers} setWaitlistCustomers={setWaitlistCustomers} customerPasswords={customerPasswords} setCustomerPasswords={setCustomerPasswords} trackingNumbers={trackingNumbers} setTrackingNumbers={setTrackingNumbers} customerCredits={customerCredits} setCustomerCredits={setCustomerCredits} />
                 </div>
                 <div className={`flex-1 overflow-y-auto ${activeTab === 'management' ? 'block' : 'hidden'}`}>
                     <OrderManagementTab orders={orders} shippingOverrides={shippingOverrides} quickShipping={quickShipping} jejuShipping={jejuShipping} freeShippingThreshold={freeShippingThreshold} cardFeeRate={cardFeeRate} broadcastName={broadcastName} addresses={addresses} handleExportBackup={handleExportBackup} handleImportBackup={handleImportBackup} addressMapping={addressMapping} cardPayments={cardPayments} specialCustomers={specialCustomers} openModal={openModal} cashReceipts={cashReceipts} inventory={inventory} productHistory={productHistory} noShowCustomers={noShowCustomers} waitlistCustomers={waitlistCustomers} trackingNumbers={trackingNumbers} setTrackingNumbers={setTrackingNumbers} googleScriptUrl={googleScriptUrl} masterSheetId={masterSheetId} />
