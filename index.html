@@ -168,16 +168,15 @@
                     return subB - subA;
                 });
 
-                // 마감 상태(catalogClosedLock 또는 isStoreClosed === true)일 때는 자동 저장이 절대 마감을 풀거나 카탈로그를 다시 채우지 않도록 보호!
-                window.emberRealtimeDb.ref('ember_live_data/_global_config').once('value').then(snap => {
-                    const cfg = snap.val() || {};
-                    const isClosed = cfg.catalogClosedLock !== undefined ? Boolean(cfg.catalogClosedLock) : Boolean(cfg.isStoreClosed);
-                    if (isClosed) return;
-                    window.emberRealtimeDb.ref('ember_live_data/_live_catalog').set({
+                // 강은지 주문서에서 상품을 등록/수정하면 마감 잠금도 함께 풀고 라인업(_live_catalog)에 즉시 덮어씌움!
+                window.emberRealtimeDb.ref('ember_live_data').update({
+                    '_global_config/catalogClosedLock': false,
+                    '_global_config/isStoreClosed': false,
+                    '_live_catalog': {
                         items: groupArray,
                         rawCount: validRows.length,
                         updatedAt: Date.now()
-                    }).catch(() => {});
+                    }
                 }).catch(() => {});
             } catch (e) {}
         };
@@ -2069,6 +2068,9 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                 catalogClosedLock: false,
                                 isStoreClosed: false
                             }).catch(() => {});
+                        }
+                        if (window.pushInventoryToLiveCatalog) {
+                            window.pushInventoryToLiveCatalog(inventoryRef.current || []);
                         }
                     },
                     null,
@@ -5939,28 +5941,16 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             const openModal = useCallback((msg, type = 'alert', onConfirm = null, onCancel = null, initVal = '') => { setModalConfig({ isOpen: true, type, message: msg, onConfirm: (val) => { setModalConfig(p => ({...p, isOpen: false})); if(onConfirm) onConfirm(val); }, onCancel: () => { setModalConfig(p => ({...p, isOpen: false})); if(onCancel) onCancel(); }, initialValue: initVal }); }, []);
 
             const handleResetAllData = () => {
-                openModal(`현재 [${broadcastName}] 생방송을 마감하여 [직원용 시트('주문')]로 넘기시겠습니까?\n\n• 사장님 시트의 '메인주문' 데이터가 직원용 시트의 '주문' 시트에 자동으로 합쳐집니다.\n• 마감 후 사장님의 '메인주문'과 '실시간재고'는 다음 방송을 위해 깨끗하게 비워집니다.`, 'confirm', () => {
+                openModal(`현재 [${broadcastName}] 생방송을 마감하여 내 시트에 [주문_${String(broadcastName || '오늘의방송').replace(/^주문_/, '').trim()}] 시트로 저장하시겠습니까?\n\n• 내 시트에 '주문_방송이름' 탭이 생성되어 저장됩니다. (이 내용을 복사해서 직원용 시트 '주문' 탭에 붙여넣으시면 됩니다!)\n• 마감 후 내 시트의 '메인주문'과 '실시간재고'는 다음 방송을 위해 깨끗하게 비워집니다.`, 'confirm', () => {
                     setTimeout(() => {
                         openModal('다음 방송 대기 이름을 입력해 주세요. (비워두셔도 다음 생방송 시작 때 설정할 수 있습니다)', 'prompt', async (newBroadcastTitle) => {
                             const prevBroadcastTitle = String(broadcastName || '오늘의방송').replace(/^주문_/, '').trim();
+                            const archiveSheetName = '주문_' + (prevBroadcastTitle || '마감방송');
+                            const safePrevBKey = prevBroadcastTitle.replace(/[.#$\[\]\/]/g, '_');
 
-                            // 🔒 생방송 모드 즉시 OFF 및 생방송 임시 포털 노드(__MAIN_LIVE__) 비우기
-                            try {
-                                localStorage.setItem(getLsKey('isLiveBroadcasting'), JSON.stringify(false));
-                            } catch (e) {}
-                            if (window.emberRealtimeDb) {
-                                window.emberRealtimeDb.ref('ember_live_data/_portal_live_mode').set({
-                                    isLive: false,
-                                    lastClosedBroadcastName: prevBroadcastTitle,
-                                    updatedAt: Date.now()
-                                }).catch(() => {});
-                                window.emberRealtimeDb.ref('ember_live_data/_portal_orders/__MAIN_LIVE__').remove().catch(() => {});
-                            }
-
-                            // 마감 직전의 주문 데이터를 직원 전용 시트(STAFF_SHEET_ID)의 '주문' 탭으로 넘기기 위해 스냅샷 생성
                             const feeRateNumNow = (cardFeeRate !== undefined && cardFeeRate !== '' && Number(cardFeeRate) > 0) ? Number(cardFeeRate) : 10;
                             const activePrevOrders = (Array.isArray(orders) ? orders : []).filter(o => !o.isCancelled);
-                            const prevStaffRows = [{
+                            const prevArchiveRows = [{
                                 '닉네임': '___WORKSPACE_META___',
                                 '상품명': prevBroadcastTitle || '마감방송',
                                 '수량': Number(freeShippingThreshold) || 70000,
@@ -5970,6 +5960,8 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                 '카드결제': '', '수령인명': '', '연락처': '', '주소': '', '요청사항': '',
                                 'VIP여부': '', '노쇼여부': '', '대기여부': '', '비밀번호': '', '주문확인': '', '입금내역JSON': '', '송장번호': ''
                             }];
+
+                            const closedPortalCustomers = [];
 
                             if (activePrevOrders.length > 0 && prevBroadcastTitle) {
                                 const uniquePrevNicks = Array.from(new Set(activePrevOrders.map(o => o.customer)));
@@ -5990,11 +5982,48 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                     const shipFee = (!prodSumForShip || isVip) ? 0 : (shippingOverrides[nick] !== undefined ? Number(shippingOverrides[nick]) : ((isFree ? 0 : (Number(quickShipping) || 4000)) + (isJeju ? 3000 : 0)));
                                     const cardVal = cardPayments[nick];
                                     const cardStr = cardVal === 'completed' ? `카드완료(${feeRateNumNow}%)` : (cardVal ? `O(${feeRateNumNow}%)` : '');
-                                    const depJson = (customerDepositLogs && Array.isArray(customerDepositLogs[nick]) && customerDepositLogs[nick].length > 0) ? JSON.stringify(customerDepositLogs[nick]) : '';
+                                    const depLogsArr = (customerDepositLogs && Array.isArray(customerDepositLogs[nick])) ? customerDepositLogs[nick] : [];
+                                    const depJson = depLogsArr.length > 0 ? JSON.stringify(depLogsArr) : '';
                                     const rawTrk = (trackingNumbers && trackingNumbers[nick] && trackingNumbers[nick] !== '__CLEAR__') ? trackingNumbers[nick] : '';
+                                    const cleanAddrStr = stripZipcodeFromAddr(matchedAddr.address || '');
+
+                                    closedPortalCustomers.push({
+                                        sheetTabName: archiveSheetName,
+                                        nickname: nick,
+                                        phoneLast4: pin4,
+                                        broadcastName: prevBroadcastTitle,
+                                        isVip: isVip,
+                                        isNoShow: Boolean(noShowCustomers[nick]),
+                                        credit: Number(customerCredits?.[nick]) || 0,
+                                        freeShippingThreshold: Number(freeShippingThreshold) || 70000,
+                                        cardFeeRate: feeRateNumNow,
+                                        isCard: cardStr,
+                                        shipping: shipFee,
+                                        depositTotal: depSum,
+                                        deposits: depLogsArr,
+                                        items: custOrders.map((co, cIdx) => ({
+                                            id: cIdx + 1,
+                                            product: co.product || '',
+                                            qty: Number(co.quantity) || 1,
+                                            price: Number(co.price) || 0,
+                                            isWaitlist: Boolean(co.isWaitlist),
+                                            waitlistOrder: co.isWaitlist ? 1 : 0
+                                        })),
+                                        address: (cleanAddrStr || matchedAddr.realname) ? {
+                                            realname: matchedAddr.realname || depositorNames[nick] || '',
+                                            phone: cleanPh,
+                                            zipcode: '',
+                                            baseAddress: cleanAddrStr,
+                                            detailAddress: '',
+                                            memo: matchedAddr.memo || '',
+                                            updatedAt: matchedAddr.timestamp || ''
+                                        } : null,
+                                        trackingNumbers: rawTrk ? [rawTrk] : [],
+                                        isConfirmed: Boolean(checkedOrders && checkedOrders.has(nick))
+                                    });
 
                                     custOrders.forEach((o, idx) => {
-                                        prevStaffRows.push({
+                                        prevArchiveRows.push({
                                             '닉네임': nick,
                                             '상품명': o.product || '',
                                             '수량': Number(o.quantity) || 1,
@@ -6004,7 +6033,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                             '카드결제': cardStr,
                                             '수령인명': matchedAddr.realname || depositorNames[nick] || '',
                                             '연락처': cleanPh ? "'" + cleanPh : '',
-                                            '주소': stripZipcodeFromAddr(matchedAddr.address || ''),
+                                            '주소': cleanAddrStr,
                                             '요청사항': matchedAddr.memo || '',
                                             'VIP여부': isVip ? 'O' : '',
                                             '노쇼여부': noShowCustomers[nick] ? 'O' : '',
@@ -6016,6 +6045,28 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                         });
                                     });
                                 });
+                            }
+
+                            // 생방송 모드 OFF 및 고객포털 클라우드에 마감 방송 등록
+                            try {
+                                localStorage.setItem(getLsKey('isLiveBroadcasting'), JSON.stringify(false));
+                            } catch (e) {}
+                            if (window.emberRealtimeDb) {
+                                if (safePrevBKey && closedPortalCustomers.length > 0) {
+                                    window.emberRealtimeDb.ref(`ember_live_data/_portal_orders/${safePrevBKey}`).set({
+                                        broadcastName: prevBroadcastTitle,
+                                        updatedAt: Date.now(),
+                                        updatedBy: 'boss_closed',
+                                        staffPriority: true,
+                                        customers: closedPortalCustomers
+                                    }).catch(() => {});
+                                }
+                                window.emberRealtimeDb.ref('ember_live_data/_portal_live_mode').set({
+                                    isLive: false,
+                                    lastClosedBroadcastName: prevBroadcastTitle,
+                                    updatedAt: Date.now()
+                                }).catch(() => {});
+                                window.emberRealtimeDb.ref('ember_live_data/_portal_orders/__MAIN_LIVE__').remove().catch(() => {});
                             }
 
                             const nextTitle = (newBroadcastTitle && newBroadcastTitle.trim()) ? newBroadcastTitle.trim() : '오늘의방송';
@@ -6031,7 +6082,6 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
 
                             const lockedItems = Array.isArray(inventory) ? inventory.filter(i => i.isLocked) : [];
 
-                            // 0.8초 로컬스토리지 딜레이 없이 즉시 초기화 반영
                             try {
                                 localStorage.setItem(getLsKey('broadcastName'), JSON.stringify(nextTitle));
                                 localStorage.setItem(getLsKey('youtubeOrders'), JSON.stringify([]));
@@ -6066,7 +6116,6 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                             setManualDeposits([]); setNoShowCustomers({}); setWaitlistCustomers({}); setTrackingNumbers({});
                             window.dispatchEvent(new CustomEvent('clear-chats'));
 
-                            // 새 방송 초기화 시 고객용 실시간 상품목록(Firebase)도 잠금 상품만 남기고 즉시 초기화!
                             if (window.pushInventoryToLiveCatalog) {
                                 window.pushInventoryToLiveCatalog(lockedItems);
                             }
@@ -6095,41 +6144,23 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                     '송장번호': ''
                                 }];
                                 try {
+                                    // 1) 사장님 본인 시트에 '주문_방송이름' 탭으로 마감 주문서 저장!
                                     if (prevBroadcastTitle && activePrevOrders.length > 0) {
-                                        // 🚀 마감된 방송 주문서를 직원용 시트(STAFF_SHEET_ID)의 기존 '주문' 통합 시트 상단에 합쳐서 단일 시트로 저장! (새 탭 생성 안 함)
-                                        let combinedStaffRows = [...prevStaffRows];
-                                        try {
-                                            const existRes = await fetchGas(`${googleScriptUrl}?action=get_orders&masterId=${STAFF_SHEET_ID}&tabName=${encodeURIComponent('주문')}&t=${Date.now()}`, null, 10000);
-                                            const existRows = Array.isArray(existRes?.data) ? existRes.data : [];
-                                            if (existRows.length > 0) {
-                                                let skipBlock = false;
-                                                existRows.forEach(r => {
-                                                    const rNick = String(r['닉네임'] || r.col_0 || '').trim();
-                                                    const rProd = String(r['상품명'] || r.col_1 || '').replace(/^주문_/, '').trim();
-                                                    if (rNick.startsWith('___WORKSPACE')) {
-                                                        skipBlock = (rProd === prevBroadcastTitle);
-                                                    }
-                                                    if (!skipBlock && rNick && rNick !== '닉네임') {
-                                                        combinedStaffRows.push(r);
-                                                    }
-                                                });
-                                            }
-                                        } catch (e) {}
-
                                         await fetchGas(googleScriptUrl, {
                                             action: 'save_orders',
-                                            masterId: STAFF_SHEET_ID,
-                                            targetSheetName: '주문',
+                                            masterId: cleanMaster,
+                                            targetSheetName: archiveSheetName,
                                             onlyMainOrder: true,
-                                            broadcastName: '오늘의방송',
-                                            data: combinedStaffRows
+                                            broadcastName: prevBroadcastTitle,
+                                            data: prevArchiveRows
                                         });
                                     }
-                                    // 사장님 시트는 오직 '실시간재고'와 '메인주문'만 깨끗하게 초기화 (방송별상품보관함 등 불필요 시트 사용 안 함)
+                                    // 2) 사장님 시트의 '실시간재고'와 '메인주문'은 깨끗하게 비움!
                                     await Promise.all([
                                         fetchGas(googleScriptUrl, { action: 'save_inventory', masterId: cleanMaster, forceClear: true, data: invPayload }),
-                                        fetchGas(googleScriptUrl, { action: 'save_orders', masterId: cleanMaster, broadcastName: '오늘의방송', onlyMainOrder: true, data: emptyOrderList, nicknames: [], confirmedNicknames: [] })
+                                        fetchGas(googleScriptUrl, { action: 'save_orders', masterId: cleanMaster, targetSheetName: '메인주문', broadcastName: nextTitle, onlyMainOrder: true, data: emptyOrderList, nicknames: [], confirmedNicknames: [] })
                                     ]);
+                                    openModal(`✅ 내 시트에 [${archiveSheetName}] 시트로 저장이 완료되었습니다!\n\n해당 시트 내용을 복사해서 직원용 시트('주문' 탭)에 붙여넣으시면 됩니다.`, 'alert');
                                 } catch (e) {}
                             }
                         }, null, '');
