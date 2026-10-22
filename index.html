@@ -11,6 +11,14 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>강은지 주문서</title>
+    <script>
+        window.addEventListener('error', function(e) {
+            if (!e.message || e.message === 'Script error.' || (e.filename && e.filename.includes('google.com'))) {
+                e.preventDefault();
+                return true;
+            }
+        }, true);
+    </script>
     
     <!-- PWA 강제 설치를 위한 매니페스트 (URL 인코딩 방식) -->
     <link rel="manifest" href="data:application/manifest+json,%7B%22name%22%3A%22%EA%B0%95%EC%9D%80%EC%A7%80%20%EC%A3%BC%EB%AC%B8%EC%84%9C%22%2C%22short_name%22%3A%22%EA%B0%95%EC%9D%80%EC%A7%80%22%2C%22display%22%3A%22standalone%22%2C%22start_url%22%3A%22.%2F%22%2C%22background_color%22%3A%22%23202124%22%2C%22theme_color%22%3A%22%23202124%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22https%3A%2F%2Fcdn-icons-png.flaticon.com%2F512%2F3593%2F3593455.png%22%2C%22sizes%22%3A%22512x512%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
@@ -27,11 +35,11 @@
         }
     </script>
     
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin="anonymous"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
-    <script src="https://unpkg.com/@babel/standalone@7.23.9/babel.min.js" crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone@7.23.9/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/@phosphor-icons/web" crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <script src="https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
@@ -2031,21 +2039,8 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             const [syncStatus, setSyncStatus] = useState("대기중");
             const [broadcastAddresses, setBroadcastAddresses] = useLocalStorage('broadcastAddresses', {});
             const [isViewingPastBroadcast, setIsViewingPastBroadcast] = useLocalStorage('isViewingPastBroadcast', false);
-            const [isLiveBroadcasting, setIsLiveBroadcasting] = useLocalStorage('isLiveBroadcasting', false);
-
-            // Firebase에서 현재 생방송 ON/OFF 상태 실시간 동기화
-            useEffect(() => {
-                if (!window.emberRealtimeDb) return;
-                const liveModeRef = window.emberRealtimeDb.ref('ember_live_data/_portal_live_mode');
-                const handleLiveMode = (snap) => {
-                    const val = snap.val();
-                    if (val && typeof val.isLive === 'boolean') {
-                        setIsLiveBroadcasting(val.isLive);
-                    }
-                };
-                liveModeRef.on('value', handleLiveMode);
-                return () => liveModeRef.off('value', handleLiveMode);
-            }, [setIsLiveBroadcasting]);
+            // 기본 시작 상태를 무조건 '방송마감(false)'으로 시작하여, 사장님이 직접 버튼을 눌러 방송명을 지정하고 생방송을 켜도록 설정!
+            const [isLiveBroadcasting, setIsLiveBroadcasting] = useState(false);
 
             // 🔴 생방송 시작 버튼 핸들러 (켜는 순간 고객 포털이 사장님 실시간 주문서 + 직원용 시트를 함께 조회)
             const handleStartLiveBroadcast = useCallback(() => {
@@ -3917,8 +3912,8 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         if(actualSheetId) { 
                             const confirmedNicknames = uniqueNicknames.filter(n => checkedOrders && checkedOrders.has(n));
 
-                            // ✨ 고객용 포털(customer_portal.html)이 동시 접속 폭주 시에도 0.1초 만에 열릴 수 있도록 Firebase에도 현재 방송 주문서(_portal_orders/__MAIN_LIVE__) 미러링!
-                            if (window.emberRealtimeDb) {
+                            // ✨ 오직 사장님이 [🔴 생방송중]을 켠 상태일 때만 고객 포털 클라우드(__MAIN_LIVE__)에 실시간 미러링!
+                            if (isLiveBroadcasting && window.emberRealtimeDb) {
                                 try {
                                     const safeBKey = cleanBName.replace(/[.#$\[\]\/]/g, '_');
                                     const portalCustomers = uniqueNicknames.map(nick => {
@@ -3968,7 +3963,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                             isConfirmed: Boolean(checkedOrders && checkedOrders.has(nick))
                                         };
                                     });
-                                    // 현재 생방송 전용 노드(__MAIN_LIVE__)와 방송명 노드에 동시 반영
+                                    // 현재 생방송 전용 노드(__MAIN_LIVE__)에만 반영하여 방송명 변경 시 중복 방 생성 원천 차단!
                                     const livePayload = {
                                         broadcastName: cleanBName,
                                         updatedAt: Date.now(),
@@ -3976,9 +3971,6 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                         customers: portalCustomers
                                     };
                                     window.emberRealtimeDb.ref(`ember_live_data/_portal_orders/__MAIN_LIVE__`).set(livePayload).catch(() => {});
-                                    if (safeBKey) {
-                                        window.emberRealtimeDb.ref(`ember_live_data/_portal_orders/${safeBKey}`).set(livePayload).catch(() => {});
-                                    }
                                 } catch (fbErr) {}
                             }
 
@@ -3996,8 +3988,12 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                 lastSavedDataStr.current = currentDataStr;
                             }
                         } 
-                    } catch(e) {} finally { if (isManual) setIsSaving(false); } 
-            }, [isViewingPastBroadcast, openModal, orders, cardPayments, getCalculatedShipping, googleScriptUrl, addressLookup, masterSheetId, broadcastName, specialCustomers, noShowCustomers, waitlistCustomers, customerPasswords, trackingNumbers, customerCredits, checkedOrders, depositLinks, customerDepositLogs, matchedDeposits, depositorNames, freeShippingThreshold, quickShipping, feeRateNum, waitlistRankMap, allDeposits]);
+                    } catch (e) {
+                        if (isManual) openModal("시트 저장 중 통신 오류가 발생했습니다.", "alert");
+                    } finally {
+                        if (isManual) setIsSaving(false);
+                    }
+            }, [isViewingPastBroadcast, isLiveBroadcasting, openModal, orders, cardPayments, getCalculatedShipping, googleScriptUrl, addressLookup, masterSheetId, broadcastName, specialCustomers, noShowCustomers, waitlistCustomers, customerPasswords, trackingNumbers, customerCredits, checkedOrders, depositLinks, customerDepositLogs, matchedDeposits, depositorNames, freeShippingThreshold, quickShipping, feeRateNum, waitlistRankMap, allDeposits]);
 
             const autoSaveRef = useRef(); useEffect(() => { autoSaveRef.current = autoSaveToGoogleSheet; }, [autoSaveToGoogleSheet]);
             useEffect(() => {
@@ -4007,26 +4003,15 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             }, [isViewingPastBroadcast]); 
 
             // ✨ 핵심 수정: 주문 품목(orders)이 추가되거나 상품명·수량·단가가 수정되는 즉시!
-            // 10초를 기다리지 않고 고객 포털 클라우드(_portal_orders)에 0.3초 만에 실시간 반영하며, 생방송 모드도 자동으로 켜줍니다!
+            // 단, 사장님이 직접 [🔒 방송마감] 버튼을 눌러 [🔴 생방송중]으로 켠 상태일 때만 고객 포털 클라우드에 실시간 반영합니다!
             useEffect(() => {
                 if (isViewingPastBroadcast) return;
                 const activeOrders = orders.filter(o => !o.isCancelled);
                 if (activeOrders.length === 0) return;
 
-                if (!isLiveBroadcasting) {
-                    setIsLiveBroadcasting(true);
-                    if (window.emberRealtimeDb) {
-                        window.emberRealtimeDb.ref('ember_live_data/_portal_live_mode').set({
-                            isLive: true,
-                            activeBroadcastName: String(broadcastName || '오늘의방송').replace(/^주문_/, '').trim(),
-                            updatedAt: Date.now()
-                        }).catch(() => {});
-                    }
-                }
-
-                // 1) Firebase 고객 포털 클라우드에는 0.3초 만에 즉시 미러링 (고객이 조회 시 0.1초 만에 보이도록!)
+                // 1) 사장님이 직접 [🔴 생방송중]을 켠 상태일 때만 Firebase 고객 포털 클라우드에 0.3초 만에 즉시 미러링!
                 const fbMirrorTimer = setTimeout(() => {
-                    if (!window.emberRealtimeDb) return;
+                    if (!isLiveBroadcasting || !window.emberRealtimeDb) return;
                     try {
                         const cleanBName = String(broadcastName || '오늘의방송').replace(/^주문_/, '').trim();
                         const safeBKey = cleanBName.replace(/[.#$\[\]\/]/g, '_');
@@ -4089,14 +4074,6 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                             updatedBy: 'boss',
                             customers: portalCustomers
                         }).catch(() => {});
-                        if (safeBKey) {
-                            window.emberRealtimeDb.ref(`ember_live_data/_portal_orders/${safeBKey}`).set({
-                                broadcastName: cleanBName,
-                                updatedAt: Date.now(),
-                                updatedBy: 'boss',
-                                customers: portalCustomers
-                            }).catch(() => {});
-                        }
                     } catch (e) {}
                 }, 300);
 
@@ -5817,7 +5794,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             const [orders, setOrders] = useLocalStorage('youtubeOrders', []);
             const [activeTab, setActiveTab] = useState('live');
             
-            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxvccAS0Zy37eBEyY0IDgHBFroNwzabYVDvg3JvaYUQYr9d_hfxdWdKbDssEPg-OJN7/exec';
+            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzrMczblUPLxqGESdkZks8osdL-CihDenW94Ae3ODL8u_QhVAZGKrsVI_KchtHjCTFg/exec';
             const STAFF_SHEET_ID = '1sM5bkDqEjD6Kpxu2yoJe2aiMuqpcWLMAIGpY3iL5_x8';
             const [googleScriptUrl, setGoogleScriptUrl] = useLocalStorage('googleScriptUrl', NEW_SCRIPT_URL);
         
@@ -5837,7 +5814,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
 
             useEffect(() => {
                 const currentUrl = window.localStorage.getItem(getLsKey('googleScriptUrl'));
-                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbxvccAS0Zy37eBEyY0IDgHBFroNwzabYVDvg3JvaYUQYr9d_hfxdWdKbDssEPg-OJN7')) {
+                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbzrMczblUPLxqGESdkZks8osdL-CihDenW94Ae3ODL8u_QhVAZGKrsVI_KchtHjCTFg')) {
                     setGoogleScriptUrl(NEW_SCRIPT_URL);
                 }
             }, [setGoogleScriptUrl]);
@@ -5941,7 +5918,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             const openModal = useCallback((msg, type = 'alert', onConfirm = null, onCancel = null, initVal = '') => { setModalConfig({ isOpen: true, type, message: msg, onConfirm: (val) => { setModalConfig(p => ({...p, isOpen: false})); if(onConfirm) onConfirm(val); }, onCancel: () => { setModalConfig(p => ({...p, isOpen: false})); if(onCancel) onCancel(); }, initialValue: initVal }); }, []);
 
             const handleResetAllData = () => {
-                openModal(`현재 [${broadcastName}] 생방송을 마감하여 내 시트에 [주문_${String(broadcastName || '오늘의방송').replace(/^주문_/, '').trim()}] 시트로 저장하시겠습니까?\n\n• 내 시트에 '주문_방송이름' 탭이 생성되어 저장됩니다. (이 내용을 복사해서 직원용 시트 '주문' 탭에 붙여넣으시면 됩니다!)\n• 마감 후 내 시트의 '메인주문'과 '실시간재고'는 다음 방송을 위해 깨끗하게 비워집니다.`, 'confirm', () => {
+                openModal(`현재 [${broadcastName}] 생방송을 마감하여 내 시트에 [주문_${String(broadcastName || '오늘의방송').replace(/^주문_/, '').trim()}] 시트로 저장하시겠습니까?\n\n• 내 시트에 '주문_방송이름' 탭이 생성되어 저장됩니다. (이 내용을 복사해서 직원용 시트 '메인주문' 탭에 붙여넣으시면 됩니다!)\n• 마감 후 내 시트의 '메인주문'과 '실시간재고'는 다음 방송을 위해 깨끗하게 비워집니다.`, 'confirm', () => {
                     setTimeout(() => {
                         openModal('다음 방송 대기 이름을 입력해 주세요. (비워두셔도 다음 생방송 시작 때 설정할 수 있습니다)', 'prompt', async (newBroadcastTitle) => {
                             const prevBroadcastTitle = String(broadcastName || '오늘의방송').replace(/^주문_/, '').trim();
@@ -6047,20 +6024,12 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                 });
                             }
 
-                            // 생방송 모드 OFF 및 고객포털 클라우드에 마감 방송 등록
+                            // 생방송 모드 OFF 및 임시 생방송 노드(__MAIN_LIVE__) 정리
+                            setIsLiveBroadcasting(false);
                             try {
                                 localStorage.setItem(getLsKey('isLiveBroadcasting'), JSON.stringify(false));
                             } catch (e) {}
                             if (window.emberRealtimeDb) {
-                                if (safePrevBKey && closedPortalCustomers.length > 0) {
-                                    window.emberRealtimeDb.ref(`ember_live_data/_portal_orders/${safePrevBKey}`).set({
-                                        broadcastName: prevBroadcastTitle,
-                                        updatedAt: Date.now(),
-                                        updatedBy: 'boss_closed',
-                                        staffPriority: true,
-                                        customers: closedPortalCustomers
-                                    }).catch(() => {});
-                                }
                                 window.emberRealtimeDb.ref('ember_live_data/_portal_live_mode').set({
                                     isLive: false,
                                     lastClosedBroadcastName: prevBroadcastTitle,
@@ -6116,8 +6085,18 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                             setManualDeposits([]); setNoShowCustomers({}); setWaitlistCustomers({}); setTrackingNumbers({});
                             window.dispatchEvent(new CustomEvent('clear-chats'));
 
-                            if (window.pushInventoryToLiveCatalog) {
-                                window.pushInventoryToLiveCatalog(lockedItems);
+                            // ✨ 방송 마감 시 고객용 라이브 제품 목록(live_catalog.html)도 즉시 마감 잠금 처리 및 비우기!
+                            if (window.emberRealtimeDb) {
+                                window.emberRealtimeDb.ref('ember_live_data').update({
+                                    '_global_config/catalogClosedLock': true,
+                                    '_global_config/isStoreClosed': true,
+                                    '_global_config/currentPinnedId': null,
+                                    '_live_catalog': {
+                                        items: [],
+                                        rawCount: 0,
+                                        updatedAt: Date.now()
+                                    }
+                                }).catch(() => {});
                             }
 
                             if (googleScriptUrl && masterSheetId) {
@@ -6160,7 +6139,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                         fetchGas(googleScriptUrl, { action: 'save_inventory', masterId: cleanMaster, forceClear: true, data: invPayload }),
                                         fetchGas(googleScriptUrl, { action: 'save_orders', masterId: cleanMaster, targetSheetName: '메인주문', broadcastName: nextTitle, onlyMainOrder: true, data: emptyOrderList, nicknames: [], confirmedNicknames: [] })
                                     ]);
-                                    openModal(`✅ 내 시트에 [${archiveSheetName}] 시트로 저장이 완료되었습니다!\n\n해당 시트 내용을 복사해서 직원용 시트('주문' 탭)에 붙여넣으시면 됩니다.`, 'alert');
+                                    openModal(`✅ 내 시트에 [${archiveSheetName}] 시트로 저장이 완료되었습니다!\n\n해당 시트 내용을 복사해서 직원용 시트('메인주문' 탭)에 붙여넣으시면 됩니다.`, 'alert');
                                 } catch (e) {}
                             }
                         }, null, '');
