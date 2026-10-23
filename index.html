@@ -3594,12 +3594,28 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                 let loadedBName = targetTabName !== '메인주문' ? targetTabName.replace(/^주문_/, '') : broadcastName;
 
                 rows.forEach((r, idx) => {
-                    const nick = String(r['닉네임'] || r['주문자'] || '').trim();
-                    if (!nick || nick === '닉네임') return;
-                    if (nick === '___WORKSPACE_META___') {
-                        if (r['상품명']) loadedBName = String(r['상품명']).trim();
+                    const nick = String(r['닉네임'] || r['주문자'] || r.col_0 || '').trim();
+                    const prod = String(r['상품명'] || r['품목'] || r.col_1 || '').trim();
+                    const rawQtyMeta = r['수량'] ?? r.col_2;
+                    const rawPriceMeta = r['단가(제품금액)'] ?? r.col_3;
+                    const rawShipMeta = r['배송비'] ?? r.col_4;
+                    const rawRealMeta = String(r['수령인명'] ?? r.col_7 ?? '').trim();
+                    const rawPhoneMeta = String(r['연락처'] ?? r.col_8 ?? '').trim();
+                    const isImplicitMeta = (
+                        !nick &&
+                        prod &&
+                        prod !== '상품명' &&
+                        prod !== '품목' &&
+                        !rawRealMeta &&
+                        !rawPhoneMeta &&
+                        (Number(rawQtyMeta) >= 10000 || Number(rawPriceMeta) === 4000 || Number(rawPriceMeta) === 0 || Number(rawShipMeta) === 10)
+                    );
+
+                    if (nick.startsWith('___WORKSPACE') || isImplicitMeta) {
+                        if (prod) loadedBName = String(prod).replace(/^주문_/, '').trim();
                         return;
                     }
+                    if (!nick || nick === '닉네임' || nick === '주문자') return;
                     const rAddr = String(r['주소'] || '').trim();
                     const rName = String(r['수령인명'] || '').trim();
                     const rPhone = fixPhoneNumber(String(r['연락처'] || '').trim());
@@ -3611,7 +3627,6 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         const hKey = normalizeHandleNick(nick);
                         if (hKey) loadedBcastAddrs[hKey] = addrEntry;
                     }
-                    const prod = String(r['상품명'] || '').trim();
                     const qty = Number(String(r['수량'] || '1').replace(/[^0-9.-]/g, '')) || 1;
                     const price = Number(String(r['단가(제품금액)'] || '0').replace(/[^0-9.-]/g, '')) || 0;
                     const dep = Number(String(r['입금액'] || '0').replace(/[^0-9.-]/g, '')) || 0;
@@ -3771,11 +3786,21 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     const wRank = o.isWaitlist ? (waitlistRankMap[`${String(o.product || '').trim()}___${nick}`] || 1) : 0;
                     saveList.push({
                         '닉네임': nick,
+                        '주문자': nick,
+                        customer: nick,
+                        nickname: nick,
+                        name: nick,
                         '상품명': o.product || '',
+                        product: o.product || '',
                         '수량': Number(o.quantity) || 1,
+                        quantity: Number(o.quantity) || 1,
+                        qty: Number(o.quantity) || 1,
                         '단가(제품금액)': Number(o.price) || 0,
+                        price: Number(o.price) || 0,
                         '배송비': currentShipping,
+                        shipping: currentShipping,
                         '입금액': idx === 0 ? (customerTotalDeposits[nick] || 0) : 0,
+                        deposit: idx === 0 ? (customerTotalDeposits[nick] || 0) : 0,
                         '카드결제': cardStr,
                         '수령인명': addrInfo.realname || depositorNames[nick] || '',
                         '연락처': cleanPh ? "'" + cleanPh : '',
@@ -3805,11 +3830,21 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     const cleanBName = String(broadcastName || '오늘의방송').replace(/^주문_/, '').trim();
                     saveList.unshift({ 
                         '닉네임': '___WORKSPACE_META___',
+                        '주문자': '___WORKSPACE_META___',
+                        customer: '___WORKSPACE_META___',
+                        nickname: '___WORKSPACE_META___',
+                        name: '___WORKSPACE_META___',
                         '상품명': cleanBName,
+                        product: cleanBName,
                         '수량': Number(freeShippingThreshold) || 70000,
+                        quantity: Number(freeShippingThreshold) || 70000,
+                        qty: Number(freeShippingThreshold) || 70000,
                         '단가(제품금액)': Number(quickShipping) || 4000,
+                        price: Number(quickShipping) || 4000,
                         '배송비': feeRateNum,
+                        shipping: feeRateNum,
                         '입금액': 0,
+                        deposit: 0,
                         '카드결제': '',
                         '수령인명': '',
                         '연락처': '',
@@ -3934,11 +3969,21 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         const cleanBName = String(broadcastName || '오늘의방송').replace(/^주문_/, '').trim();
                         const emptyRow = [{
                             '닉네임': '___WORKSPACE_META___',
+                            '주문자': '___WORKSPACE_META___',
+                            customer: '___WORKSPACE_META___',
+                            nickname: '___WORKSPACE_META___',
+                            name: '___WORKSPACE_META___',
                             '상품명': cleanBName,
+                            product: cleanBName,
                             '수량': Number(freeShippingThreshold) || 70000,
+                            quantity: Number(freeShippingThreshold) || 70000,
+                            qty: Number(freeShippingThreshold) || 70000,
                             '단가(제품금액)': Number(quickShipping) || 4000,
+                            price: Number(quickShipping) || 4000,
                             '배송비': feeRateNum,
+                            shipping: feeRateNum,
                             '입금액': 0,
+                            deposit: 0,
                             '카드결제': '', '수령인명': '', '연락처': '', '주소': '', '요청사항': '',
                             'VIP여부': '', '노쇼여부': '', '대기여부': '', '비밀번호': '', '주문확인': '', '입금내역JSON': '', '송장번호': ''
                         }];
@@ -5974,11 +6019,21 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                             const activePrevOrders = (Array.isArray(orders) ? orders : []).filter(o => !o.isCancelled);
                             const prevArchiveRows = [{
                                 '닉네임': '___WORKSPACE_META___',
+                                '주문자': '___WORKSPACE_META___',
+                                customer: '___WORKSPACE_META___',
+                                nickname: '___WORKSPACE_META___',
+                                name: '___WORKSPACE_META___',
                                 '상품명': prevBroadcastTitle || '마감방송',
+                                product: prevBroadcastTitle || '마감방송',
                                 '수량': Number(freeShippingThreshold) || 70000,
+                                quantity: Number(freeShippingThreshold) || 70000,
+                                qty: Number(freeShippingThreshold) || 70000,
                                 '단가(제품금액)': Number(quickShipping) || 4000,
+                                price: Number(quickShipping) || 4000,
                                 '배송비': feeRateNumNow,
+                                shipping: feeRateNumNow,
                                 '입금액': 0,
+                                deposit: 0,
                                 '카드결제': '', '수령인명': '', '연락처': '', '주소': '', '요청사항': '',
                                 'VIP여부': '', '노쇼여부': '', '대기여부': '', '비밀번호': '', '주문확인': '', '입금내역JSON': '', '송장번호': ''
                             }];
@@ -6051,11 +6106,21 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                     custOrders.forEach((o, idx) => {
                                         prevArchiveRows.push({
                                             '닉네임': nick,
+                                            '주문자': nick,
+                                            customer: nick,
+                                            nickname: nick,
+                                            name: nick,
                                             '상품명': o.product || '',
+                                            product: o.product || '',
                                             '수량': Number(o.quantity) || 1,
+                                            quantity: Number(o.quantity) || 1,
+                                            qty: Number(o.quantity) || 1,
                                             '단가(제품금액)': Number(o.price) || 0,
+                                            price: Number(o.price) || 0,
                                             '배송비': shipFee,
+                                            shipping: shipFee,
                                             '입금액': idx === 0 ? depSum : 0,
+                                            deposit: idx === 0 ? depSum : 0,
                                             '카드결제': cardStr,
                                             '수령인명': matchedAddr.realname || depositorNames[nick] || '',
                                             '연락처': cleanPh ? "'" + cleanPh : '',
@@ -6153,11 +6218,21 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                 const invPayload = lockedItems.map(i => ({ name: i.name, price: i.price, stock: i.stock !== undefined ? i.stock : '', status: i.isSoldOut ? '품절' : '', isLocked: Boolean(i.isLocked) }));
                                 const emptyOrderList = [{
                                     '닉네임': '___WORKSPACE_META___',
+                                    '주문자': '___WORKSPACE_META___',
+                                    customer: '___WORKSPACE_META___',
+                                    nickname: '___WORKSPACE_META___',
+                                    name: '___WORKSPACE_META___',
                                     '상품명': nextTitle,
+                                    product: nextTitle,
                                     '수량': Number(freeShippingThreshold) || 70000,
+                                    quantity: Number(freeShippingThreshold) || 70000,
+                                    qty: Number(freeShippingThreshold) || 70000,
                                     '단가(제품금액)': Number(quickShipping) || 4000,
+                                    price: Number(quickShipping) || 4000,
                                     '배송비': feeRateNumNow,
+                                    shipping: feeRateNumNow,
                                     '입금액': 0,
+                                    deposit: 0,
                                     '카드결제': '',
                                     '수령인명': '',
                                     '연락처': '',
