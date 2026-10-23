@@ -70,7 +70,7 @@
                 const validRows = [];
                 invList.forEach(item => {
                     const name = String(item.name || '').trim();
-                    if (!name) return;
+                    if (!name || name === '__EMPTY__') return;
                     const priceNum = Number(item.price) || 0;
                     if (priceNum <= 0) return;
                     validRows.push({
@@ -177,12 +177,17 @@
                 });
 
                 // 강은지 주문서에서 상품을 등록/수정하면 마감 잠금도 함께 풀고 라인업(_live_catalog)에 즉시 덮어씌움!
+                // 🛡️ 단, 빈 배열(validRows.length === 0)일 때는 다른 탭이 현재 방송 라인업을 지워버리지 못하도록 절대 전송하지 않음!
+                if (validRows.length === 0) return;
+
                 window.emberRealtimeDb.ref('ember_live_data').update({
                     '_global_config/catalogClosedLock': false,
                     '_global_config/isStoreClosed': false,
+                    '_deleted_catalog_ids': null,
                     '_live_catalog': {
                         items: groupArray,
                         rawCount: validRows.length,
+                        explicitClear: false,
                         updatedAt: Date.now()
                     }
                 }).catch(() => {});
@@ -1932,20 +1937,24 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                 if (!Array.isArray(newInvList) || (newInvList.length === 0 && !allowEmpty)) {
                     return;
                 }
+                const cleanList = newInvList.filter(i => i && String(i.name || '').trim() && i.name !== '__EMPTY__');
                 // 1) Firebase 실시간 DB로 0.1초 만에 직통 푸시 (고객용 상품목록 웹앱에 딜레이 없이 즉시 반영!)
                 if (window.pushInventoryToLiveCatalog) {
-                    window.pushInventoryToLiveCatalog(newInvList);
+                    window.pushInventoryToLiveCatalog(cleanList);
                 }
-                // 2) 구글 시트 백업 및 보관함 저장
+                // 2) 구글 시트 백업 저장 (구버전 GAS가 빈 시트일 때 옛날 '방송별상품보관함'을 불러오는 버그를 막기 위해 빈 배열일 때는 __EMPTY__ 마커 저장!)
                 if (googleScriptUrl && masterSheetId) {
                     inventorySyncLock.current = Date.now();
+                    const payloadData = cleanList.length > 0
+                        ? cleanList.map(i => ({ name: i.name, price: i.price, stock: i.stock !== undefined ? i.stock : '', status: i.isSoldOut ? '품절' : '', isLocked: Boolean(i.isLocked) }))
+                        : [{ name: '__EMPTY__', price: 0, stock: '', status: '품절', isLocked: false }];
                     try { 
                         await fetchGas(googleScriptUrl, { 
                             action: 'save_inventory', 
                             masterId: getCleanSheetId(masterSheetId), 
                             broadcastName: broadcastName,
-                            forceClear: Boolean(allowEmpty && newInvList.length === 0),
-                            data: newInvList.map(i => ({ name: i.name, price: i.price, stock: i.stock !== undefined ? i.stock : '', status: i.isSoldOut ? '품절' : '', isLocked: Boolean(i.isLocked) })) 
+                            forceClear: true,
+                            data: payloadData 
                         }); 
                     } catch (e) {}
                 }
@@ -2663,168 +2672,8 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         prevAddrCount.current = mergedAddr.length;
                     }
 
-                    if (res.inventory && Array.isArray(res.inventory)) {
-                        if (!isViewingPastBroadcast && Date.now() - inventorySyncLock.current > 20000) {
-                            const validServerInv = res.inventory.map(i => {
-                                const rawName = String(i.name || i['상품명'] || i.col_0 || '').trim();
-                                const rawPrice = i.price !== undefined && i.price !== '' ? i.price : (i['단가'] !== undefined && i['단가'] !== '' ? i['단가'] : i.col_1);
-                                const rawStock = i.stock !== undefined ? i.stock : (i['재고'] !== undefined ? i['재고'] : i.col_2);
-                                const rawStatus = String(i.status || i['상태'] || i.col_3 || '').trim();
-                                const rawLocked = i.isLocked === 'TRUE' || i.isLocked === true || i['잠금'] === 'TRUE' || i.col_4 === 'TRUE';
-                                return {
-                                    name: rawName,
-                                    price: Number(String(rawPrice || '0').replace(/[^0-9.-]/g, '')) || 0,
-                                    stock: rawStock !== undefined && rawStock !== null ? rawStock : '',
-                                    status: rawStatus,
-                                    isLocked: Boolean(rawLocked)
-                                };
-                            }).filter(i => i.name && i.name.toLowerCase() !== 'name' && i.name !== '상품명');
-
-                            if (validServerInv.length > 0) {
-                                const invKeys = validServerInv.map(i => i.name + i.price + i.status).join(',');
-                                if (invKeys !== prevInvStr.current) {
-                                    setInventory(prevInv => {
-                                        const prevArray = (Array.isArray(prevInv) ? prevInv : []).filter(i => i && String(i.name || '').trim() && String(i.name).toLowerCase() !== 'name');
-                                        const prevMap = new Map(prevArray.map(i => [i.name, i]));
-                                        
-                                        const merged = validServerInv.map(i => {
-                                            const existing = prevMap.get(i.name);
-                                            return {
-                                                id: existing && existing.id ? existing.id : `inv_${Date.now()}_${Math.random()}`, 
-                                                name: i.name,
-                                                price: Number(i.price) || 0, 
-                                                stock: existing && existing.stock !== undefined && existing.stock !== '' ? existing.stock : (i.stock !== undefined ? i.stock : ''), 
-                                                isSoldOut: i.status === '품절' || Boolean(existing && existing.isSoldOut),
-                                                isLocked: Boolean(i.isLocked || (existing && existing.isLocked))
-                                            };
-                                        });
-                                        return merged;
-                                    });
-                                    prevInvStr.current = invKeys;
-                                }
-                            } else {
-                                // 시트가 비어있는데 현재 사장님 주문서 화면에 등록된 재고가 있다면 화면을 지우지 않고 반대로 시트와 라인업에 즉시 밀어넣음!
-                                const curLocalInv = (Array.isArray(inventoryRef.current) ? inventoryRef.current : []).filter(i => i && String(i.name || '').trim() && String(i.name).toLowerCase() !== 'name');
-                                if (curLocalInv.length > 0) {
-                                    saveInventoryToServer(curLocalInv);
-                                }
-                            }
-                        }
-                    }
-
-                    if (res.customerDb && Array.isArray(res.customerDb)) {
-                        const parsedSpecial = {};
-                        const parsedNoShow = {};
-                        const parsedWaitlist = {};
-                        const parsedPins = {};
-                        const parsedCredits = {};
-                        const confirmedNicksFromServer = [];
-                        
-                        res.customerDb.forEach(row => {
-                            const nick = String(row['닉네임'] || '').trim();
-                            const status = String(row['고객상태'] || '').trim().toLowerCase();
-                            const rawPinDigits = String(row['비밀번호'] || '').replace(/[^0-9]/g, '');
-                            const pin = rawPinDigits ? (rawPinDigits.length < 4 ? rawPinDigits.padStart(4, '0') : rawPinDigits.slice(-4)) : '';
-                            const confirmed = String(row['주문확인'] || '').trim();
-                            const creditVal = Number(String(row['적립금'] || '0').replace(/[^0-9.-]/g, '')) || 0;
-                            const ts = row['저장시간'] || '';
-                            if (nick) {
-                                if (status === 'vip' || status === 'manager' || status === '관리자') {
-                                    const normType = status === '관리자' ? 'manager' : status;
-                                    parsedSpecial[normalizeString(nick)] = { type: normType, originalName: nick, timestamp: ts };
-                                } else if (status === 'noshow' || status === '노쇼') {
-                                    parsedNoShow[nick] = true;
-                                } else if (status === 'waitlist' || status === '대기') {
-                                    parsedWaitlist[nick] = true;
-                                }
-                                if (pin) {
-                                    parsedPins[nick] = pin;
-                                }
-                                if (row['적립금'] !== undefined && row['적립금'] !== '') {
-                                    parsedCredits[nick] = creditVal;
-                                }
-                                if (confirmed === 'O' || confirmed === '확인완료') {
-                                    confirmedNicksFromServer.push(nick);
-                                }
-                            }
-                        });
-                        
-                        setSpecialCustomers(prev => {
-                            const merged = { ...prev, ...parsedSpecial };
-                            return JSON.stringify(prev) !== JSON.stringify(merged) ? merged : prev;
-                        });
-                        setNoShowCustomers(prev => {
-                            const merged = { ...prev, ...parsedNoShow };
-                            return JSON.stringify(prev) !== JSON.stringify(merged) ? merged : prev;
-                        });
-                        setWaitlistCustomers(prev => {
-                            const merged = { ...prev, ...parsedWaitlist };
-                            return JSON.stringify(prev) !== JSON.stringify(merged) ? merged : prev;
-                        });
-                        if (Object.keys(parsedCredits).length > 0 && (Date.now() - creditSyncLock.current > 12000)) {
-                            setCustomerCredits(prev => {
-                                const merged = { ...prev, ...parsedCredits };
-                                return JSON.stringify(prev) !== JSON.stringify(merged) ? merged : prev;
-                            });
-                        }
-                        if (Object.keys(parsedPins).length > 0 || (res.orderPinMap && Object.keys(res.orderPinMap).length > 0)) {
-                            setCustomerPasswords(prev => {
-                                const merged = { ...prev, ...(res.orderPinMap || {}), ...parsedPins };
-                                return JSON.stringify(prev) !== JSON.stringify(merged) ? merged : prev;
-                            });
-                        }
-                        if (confirmedNicksFromServer.length > 0) {
-                            setCheckedOrders(prev => {
-                                let changed = false;
-                                const next = new Set(prev);
-                                const now = Date.now();
-                                confirmedNicksFromServer.forEach(cn => {
-                                    // 최근 45초 이내에 주문 추가/수정으로 인해 미확인으로 풀린 고객은 구버전 서버 캐시가 덮어쓰지 못하도록 방어
-                                    if (recentlyUncheckedRef.current[cn] && (now - recentlyUncheckedRef.current[cn] < 45000)) {
-                                        return;
-                                    }
-                                    if (!next.has(cn)) {
-                                        next.add(cn);
-                                        changed = true;
-                                    }
-                                });
-                                return changed ? next : prev;
-                            });
-                        }
-                    }
-
-                    // ✨ 시트에 직접 넣었거나 저장된 송장번호도 3초 폴링 때 화면(trackingNumbers)으로 자동 동기화하여 10초 자동저장이 빈칸으로 덮어쓰지 못하게 완벽 보호!
-                    if (res.orderTrackingMap && typeof res.orderTrackingMap === 'object' && (Date.now() - trackingSyncLock.current > 12000)) {
-                        setTrackingNumbers(prev => {
-                            let changed = false;
-                            const next = Object.assign({}, prev);
-                            const activeNicks = Array.from(new Set(orders.filter(o => !o.isCancelled).map(o => o.customer)));
-
-                            Object.entries(res.orderTrackingMap).forEach(([k, v]) => {
-                                if (!k.startsWith('__') && v && next[k] !== '__CLEAR__' && next[k] !== v) {
-                                    next[k] = v;
-                                    changed = true;
-                                }
-                            });
-
-                            activeNicks.forEach(nick => {
-                                if (next[nick] === '__CLEAR__') return;
-                                const addrInfo = addressLookup.get(nick)?.data;
-                                const rName = addrInfo?.realname || depositorNames[nick] || '';
-                                const matchedTrk = res.orderTrackingMap[nick]
-                                    || res.orderTrackingMap['__H__' + cleanForMatch(nick)]
-                                    || (rName && res.orderTrackingMap['__NAME__' + normalizeString(rName)])
-                                    || '';
-                                if (matchedTrk && next[nick] !== matchedTrk) {
-                                    next[nick] = matchedTrk;
-                                    changed = true;
-                                }
-                            });
-
-                            return changed ? next : prev;
-                        });
-                    }
-
+                    // 🧟‍♂️ 구버전 앱스 스크립트가 '방송별상품보관함'에서 옛날 악세사리(E 423 등)를 몰래 꺼내 보내주더라도,
+                    // 사장님이 현재 주문서에서 직접 등록한 재고만 유지되도록 외부 시트 역류를 원천 차단합니다!
                     setGasStatus(prev => prev === gasMsg.trim() ? prev : gasMsg.trim());
                 } else {
                     setGasStatus("시트 응답오류");
@@ -2860,34 +2709,63 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             const portalBcastAddrRef = safeActiveBKey ? window.emberRealtimeDb.ref(`ember_live_data/_portal_broadcast_addresses/${safeActiveBKey}`) : null;
             const portalConfRef = window.emberRealtimeDb.ref('ember_live_data/_portal_confirmed');
             const portalCredRef = window.emberRealtimeDb.ref('ember_live_data/_portal_credits');
+            const catalogResetRef = window.emberRealtimeDb.ref('ember_live_data/_global_config/catalogResetAt');
+            const deletedCatalogIdsRef = window.emberRealtimeDb.ref('ember_live_data/_deleted_catalog_ids');
+
+            let initialResetCheck = true;
+            const handleCatalogReset = (snap) => {
+                const resetAt = snap.val();
+                if (initialResetCheck) {
+                    initialResetCheck = false;
+                    return;
+                }
+                if (resetAt && Date.now() - resetAt < 15000) {
+                    setInventory(prev => (Array.isArray(prev) ? prev.filter(i => i && i.isLocked) : []));
+                }
+            };
+
+            const handleDeletedCatalogIds = (snap) => {
+                const delMap = snap.val();
+                if (!delMap || typeof delMap !== 'object') return;
+                const getSafeKey = (name) => String(name || '').replace(/[.#$\[\]]/g, '_');
+                setInventory(prev => {
+                    if (!Array.isArray(prev) || prev.length === 0) return prev;
+                    const filtered = prev.filter(item => {
+                        const sKey = getSafeKey(item.name);
+                        if (delMap[sKey]) return false;
+                        return !Object.keys(delMap).some(dk => sKey === dk || sKey.startsWith(dk + ' '));
+                    });
+                    return filtered.length !== prev.length ? filtered : prev;
+                });
+            };
 
             const applyIncomingBroadcastAddrs = (incomingList, targetBName) => {
-                if (!targetBName || !Array.isArray(incomingList) || incomingList.length === 0) return;
+                if (!Array.isArray(incomingList) || incomingList.length === 0 || !targetBName) return;
+                addressSyncLock.current = Date.now();
                 setBroadcastAddresses(prev => {
                     const curBMap = { ...(prev[targetBName] || {}) };
-                    let changed = false;
+                    let bChanged = false;
                     incomingList.forEach(item => {
-                        if (!item || !item.nickname || !item.address) return;
                         const fixedPh = fixPhoneNumber(item.phone || '');
-                        const cleanN = normalizeString(item.nickname);
-                        const handleN = normalizeHandleNick(item.nickname);
-                        const prevEntry = curBMap[item.nickname] || curBMap[cleanN];
-                        if (!prevEntry || prevEntry.address !== item.address || prevEntry.realname !== item.realname || prevEntry.phone !== fixedPh || prevEntry.memo !== (item.memo || '')) {
-                            const newEntry = {
-                                nickname: item.nickname,
-                                realname: item.realname || '',
-                                phone: fixedPh,
-                                address: item.address,
-                                memo: item.memo || '',
-                                timestamp: item.updatedAt || new Date().toISOString()
-                            };
+                        const cNick = normalizeString(item.nickname);
+                        const hNick = normalizeHandleNick(item.nickname);
+                        const newEntry = {
+                            nickname: item.nickname,
+                            realname: item.realname || '',
+                            phone: fixedPh,
+                            address: item.address,
+                            memo: item.memo || '',
+                            timestamp: item.updatedAt || new Date().toISOString()
+                        };
+                        const prevEntry = curBMap[item.nickname] || curBMap[cNick];
+                        if (!prevEntry || prevEntry.address !== newEntry.address || prevEntry.realname !== newEntry.realname || prevEntry.phone !== newEntry.phone || prevEntry.memo !== newEntry.memo) {
+                            bChanged = true;
                             curBMap[item.nickname] = newEntry;
-                            if (cleanN) curBMap[cleanN] = newEntry;
-                            if (handleN) curBMap[handleN] = newEntry;
-                            changed = true;
+                            if (cNick) curBMap[cNick] = newEntry;
+                            if (hNick) curBMap[hNick] = newEntry;
                         }
                     });
-                    return changed ? { ...prev, [targetBName]: curBMap } : prev;
+                    return bChanged ? { ...prev, [targetBName]: curBMap } : prev;
                 });
             };
 
@@ -3100,19 +2978,23 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             if (portalBcastAddrRef) portalBcastAddrRef.on('value', handlePortalBcastAddr);
             portalConfRef.on('value', handlePortalConf);
             portalCredRef.on('value', handlePortalCred);
+            catalogResetRef.on('value', handleCatalogReset);
+            deletedCatalogIdsRef.on('value', handleDeletedCatalogIds);
             if (staffOrderRef) staffOrderRef.on('value', handleStaffOrderSync);
             return () => {
                 portalAddrRef.off('value', handlePortalAddr);
                 if (portalBcastAddrRef) portalBcastAddrRef.off('value', handlePortalBcastAddr);
                 portalConfRef.off('value', handlePortalConf);
                 portalCredRef.off('value', handlePortalCred);
+                catalogResetRef.off('value', handleCatalogReset);
+                deletedCatalogIdsRef.off('value', handleDeletedCatalogIds);
                 if (staffOrderRef) staffOrderRef.off('value', handleStaffOrderSync);
             };
-        }, [broadcastName, setAddresses, setBroadcastAddresses, setAddressMapping, setCheckedOrders, setCustomerCredits, setOrders, setCardPayments, setShippingOverrides, setNoShowCustomers, setWaitlistCustomers, setCustomerPasswords, setTrackingNumbers, setCustomerDepositLogs]);
+        }, [broadcastName, setAddresses, setBroadcastAddresses, setAddressMapping, setCheckedOrders, setCustomerCredits, setOrders, setCardPayments, setCashReceipts, setShippingOverrides, setNoShowCustomers, setWaitlistCustomers, setCustomerPasswords, setTrackingNumbers, setCustomerDepositLogs, setInventory]);
 
         useEffect(() => {
-            let ytTimer = null;
             let isCancelled = false;
+            let ytTimer = null;
             const loopYoutube = async () => {
                 if (isCancelled) return;
                 await fetchYoutubeData();
@@ -4721,6 +4603,14 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     prevInvStr.current = '__EMPTY__';
                     setInventory(lockedOnly);
                     try { window.localStorage.setItem(getLsKey('inventory'), JSON.stringify(lockedOnly)); } catch (err) {}
+                    if (window.emberRealtimeDb) {
+                        window.emberRealtimeDb.ref('ember_live_data/_live_catalog').set({
+                            items: [],
+                            rawCount: 0,
+                            explicitClear: true,
+                            updatedAt: Date.now()
+                        }).catch(() => {});
+                    }
                     saveInventoryToServer(lockedOnly, true);
                 });
             }, [inventory, setInventory, saveInventoryToServer, openModal]);
