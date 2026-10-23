@@ -2664,7 +2664,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     }
 
                     if (res.inventory && Array.isArray(res.inventory)) {
-                        if (!isViewingPastBroadcast && Date.now() - inventorySyncLock.current > 10000) {
+                        if (!isViewingPastBroadcast && Date.now() - inventorySyncLock.current > 20000) {
                             const validServerInv = res.inventory.map(i => {
                                 const rawName = String(i.name || i['상품명'] || i.col_0 || '').trim();
                                 const rawPrice = i.price !== undefined && i.price !== '' ? i.price : (i['단가'] !== undefined && i['단가'] !== '' ? i['단가'] : i.col_1);
@@ -2703,16 +2703,10 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                     prevInvStr.current = invKeys;
                                 }
                             } else {
-                                // 시트의 실시간재고가 비어있으면(마감/초기 상태) 화면의 유령 재고도 즉시 깨끗하게 비움!
-                                if (prevInvStr.current !== '__EMPTY__') {
-                                    setInventory(prevInv => {
-                                        const cleanPrev = (Array.isArray(prevInv) ? prevInv : []).filter(i => i && String(i.name || '').trim() && String(i.name).toLowerCase() !== 'name');
-                                        if (cleanPrev.length !== (Array.isArray(prevInv) ? prevInv.length : 0)) {
-                                            return cleanPrev;
-                                        }
-                                        return [];
-                                    });
-                                    prevInvStr.current = '__EMPTY__';
+                                // 시트가 비어있는데 현재 사장님 주문서 화면에 등록된 재고가 있다면 화면을 지우지 않고 반대로 시트와 라인업에 즉시 밀어넣음!
+                                const curLocalInv = (Array.isArray(inventoryRef.current) ? inventoryRef.current : []).filter(i => i && String(i.name || '').trim() && String(i.name).toLowerCase() !== 'name');
+                                if (curLocalInv.length > 0) {
+                                    saveInventoryToServer(curLocalInv);
                                 }
                             }
                         }
@@ -4702,15 +4696,34 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                 const stockNum = newInvStock === '' ? '' : parseInt(newInvStock);
                 if(inventory.some(i => i.name === cleanName)) return openModal("이미 등록된 상품명입니다.", "alert");
                 
-                setInventory(prev => {
-                    const newInv = [{ id: `inv_${Date.now()}_${Math.random()}`, name: cleanName, price: priceNum, stock: stockNum, isSoldOut: false, isLocked: false }, ...prev];
-                    saveInventoryToServer(newInv);
-                    return newInv;
-                });
+                inventorySyncLock.current = Date.now();
+                const currentInv = Array.isArray(inventory) ? inventory : [];
+                const newInv = [{ id: `inv_${Date.now()}_${Math.random()}`, name: cleanName, price: priceNum, stock: stockNum, isSoldOut: false, isLocked: false }, ...currentInv];
+                setInventory(newInv);
+                try { window.localStorage.setItem(getLsKey('inventory'), JSON.stringify(newInv)); } catch (err) {}
+                saveInventoryToServer(newInv);
                 
                 if(priceNum > 0) setProductHistory(prev => ({...prev, [cleanName]: priceNum}));
                 setNewInvName(''); setNewInvPrice(''); setNewInvStock('');
             };
+
+            const handleForcePushInventory = useCallback(() => {
+                const cleanInv = (Array.isArray(inventory) ? inventory : []).filter(i => i && String(i.name || '').trim() && String(i.name).toLowerCase() !== 'name');
+                inventorySyncLock.current = Date.now();
+                saveInventoryToServer(cleanInv, true);
+                openModal(`현재 실시간 재고(${cleanInv.length}종)를 메인 시트와 고객 라인업에 즉시 전송했습니다!`, "alert");
+            }, [inventory, saveInventoryToServer, openModal]);
+
+            const handleClearAllInventory = useCallback(() => {
+                openModal("실시간 재고 목록을 모두 비우시겠습니까?\n(잠금 설정된 상품은 유지되며, 메인 시트와 라인업에서도 즉시 비워집니다)", "confirm", () => {
+                    const lockedOnly = (Array.isArray(inventory) ? inventory : []).filter(i => i && i.isLocked);
+                    inventorySyncLock.current = Date.now();
+                    prevInvStr.current = '__EMPTY__';
+                    setInventory(lockedOnly);
+                    try { window.localStorage.setItem(getLsKey('inventory'), JSON.stringify(lockedOnly)); } catch (err) {}
+                    saveInventoryToServer(lockedOnly, true);
+                });
+            }, [inventory, setInventory, saveInventoryToServer, openModal]);
 
             // ✨ 띄어쓰기 및 단어 경계를 정확히 인식하여 통째로 찾아 바꾸는 도우미 함수
             const getExactReplacedName = useCallback((name, oldStr, newStr) => {
@@ -5166,10 +5179,13 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     {/* 실시간 재고 2줄 컴팩트 리스트 (클릭 시 제자리에서 열림) */}
                     <div ref={panelInv.ref} className="flex flex-col bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg shadow-sm resizable-panel" style={{ width: panelInv.width, minWidth: '160px' }}>
                         <div className="p-2 bg-slate-100 dark:bg-slate-800 border-b dark:border-slate-700 flex flex-col gap-2 shrink-0">
-                            <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between shrink-0">
-                                <span className="flex items-center gap-1"><Icon name="package" weight="fill"/> 실시간 재고</span>
-                                <div className="flex items-center gap-1.5">
-                                    <span className="text-xs text-slate-500 dark:text-slate-400">{inventory.length}종</span>
+                            <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between shrink-0 gap-1 flex-wrap">
+                                <span className="flex items-center gap-1"><Icon name="package" weight="fill"/> 실시간 재고 <span className="text-xs text-slate-500 dark:text-slate-400 font-normal">({inventory.length})</span></span>
+                                <div className="flex items-center gap-1">
+                                    <button type="button" onClick={handleForcePushInventory} className="px-1.5 py-0.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-[10px] font-bold shadow-sm transition-colors" title="현재 실시간 재고를 메인 시트와 고객 라인업에 즉시 강제 전송">⚡라인업전송</button>
+                                    {inventory.length > 0 && (
+                                        <button type="button" onClick={handleClearAllInventory} className="px-1.5 py-0.5 bg-red-500 hover:bg-red-600 text-white rounded text-[10px] font-bold shadow-sm transition-colors" title="실시간 재고 전체 비우기">비우기</button>
+                                    )}
                                 </div>
                             </div>
                             <div className="flex flex-col gap-1.5 shrink-0">
