@@ -4037,7 +4037,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     clearTimeout(fbMirrorTimer);
                     clearTimeout(sheetSyncTimer);
                 };
-            }, [isViewingPastBroadcast, orders, broadcastName, isLiveBroadcasting, setIsLiveBroadcasting, addressLookup, customerPasswords, specialCustomers, getCalculatedShipping, cardPayments, cashReceipts, feeRateNum, trackingNumbers, customerCredits, freeShippingThreshold, customerDepositLogs, waitlistRankMap, checkedOrders]);
+            }, [isViewingPastBroadcast, orders, broadcastName, isLiveBroadcasting, setIsLiveBroadcasting, addressLookup, customerPasswords, specialCustomers, getCalculatedShipping, cardPayments, cashReceipts, feeRateNum, trackingNumbers, customerCredits, freeShippingThreshold, customerDepositLogs, matchedDeposits, depositLinks, waitlistRankMap, checkedOrders]);
 
             useEffect(() => {
                 const handleSaveShortcut = (e) => {
@@ -4326,6 +4326,21 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             const handleFullDepositToggle = useCallback((nick, grandTotal, currentDeposit) => { 
                 if (currentDeposit >= grandTotal) { 
                     setOrders(prev => prev.map(o => o.customer === nick ? { ...o, deposit: 0 } : o)); 
+                    // 해당 고객에게 연결되어 있던 입금 매칭 상태도 함께 정리하여 다시 매칭할 수 있게 초기화
+                    setMatchedDeposits(prev => {
+                        const next = new Set(prev);
+                        Object.entries(depositLinks || {}).forEach(([depId, linkedNick]) => {
+                            if (linkedNick === nick) next.delete(depId);
+                        });
+                        return next;
+                    });
+                    setDepositLinks(prev => {
+                        const next = Object.assign({}, prev);
+                        Object.keys(next).forEach(depId => {
+                            if (next[depId] === nick) delete next[depId];
+                        });
+                        return next;
+                    });
                     setCustomerDepositLogs(prev => {
                         const next = Object.assign({}, prev);
                         delete next[nick];
@@ -4339,7 +4354,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     setOrders(prev => { 
                         let done = false; 
                         return prev.map(o => { 
-                            if (o.customer === nick) { 
+                            if (o.customer === nick && !o.isCancelled) { 
                                 if (!done) {
                                     done = true; 
                                     return { ...o, deposit: grandTotal }; 
@@ -4363,7 +4378,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         });
                     });
                 } 
-            }, [setOrders, setCustomerDepositLogs, addressLookup, depositorNames]);
+            }, [setOrders, setMatchedDeposits, depositLinks, setDepositLinks, setCustomerDepositLogs, addressLookup, depositorNames]);
 
             const addOrderLogic = useCallback((nick, content, qty = 1, force = false, afterId = null, customPrice = null, markAsModified = false, isAuto = false) => {
                 const cNick = String(nick).replace(/@/g, '').trim(); const cContent = String(content || '').trim();
@@ -4442,10 +4457,10 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                 setOrders(prev => {
                     let rem = Number(amountToDeduct);
                     return prev.map(o => {
-                        if (o.customer === targetNick && (o.deposit || 0) > 0 && rem > 0) {
+                        if (o.customer === targetNick && !o.isCancelled && (o.deposit || 0) > 0 && rem > 0) {
                             const deduct = Math.min(o.deposit, rem);
                             rem -= deduct;
-                            return { ...o, deposit: o.deposit - deduct };
+                            return { ...o, deposit: Math.max(0, o.deposit - deduct) };
                         }
                         return o;
                     });
@@ -4456,18 +4471,21 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                 setMatchedDeposits(p => {
                     const next = new Set(p);
                     next.delete(dep.id);
+                    if (dep.contentId) next.delete(dep.contentId);
                     if (dep.legacyId) next.delete(dep.legacyId);
                     return next;
                 });
                 setDepositLinks(p => {
                     const next = Object.assign({}, p);
                     delete next[dep.id];
+                    if (dep.contentId) delete next[dep.contentId];
                     if (dep.legacyId) delete next[dep.legacyId];
                     return next;
                 });
                 setIgnoredAutoMatch(p => {
                     const next = new Set(p);
                     next.add(dep.id);
+                    if (dep.contentId) next.add(dep.contentId);
                     if (dep.legacyId) next.add(dep.legacyId);
                     return next;
                 });
@@ -4476,7 +4494,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     const nicksToClean = targetNick ? [targetNick] : Object.keys(next);
                     nicksToClean.forEach(n => {
                         if (Array.isArray(next[n])) {
-                            next[n] = next[n].filter(item => item.id !== dep.id && (!dep.legacyId || item.legacyId !== dep.legacyId));
+                            next[n] = next[n].filter(item => item.id !== dep.id && (!dep.contentId || item.id !== dep.contentId) && (!dep.legacyId || item.legacyId !== dep.legacyId));
                         }
                     });
                     return next;
@@ -4484,11 +4502,11 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             }, [setMatchedDeposits, setDepositLinks, setIgnoredAutoMatch, setCustomerDepositLogs]);
             
             const handleDepositClick = (dep, forceAction = null) => {
-                const isUsed = matchedDeposits?.has(dep.id) || (dep.legacyId && matchedDeposits?.has(dep.legacyId));
+                const isUsed = matchedDeposits?.has(dep.id) || (dep.contentId && matchedDeposits?.has(dep.contentId)) || (dep.legacyId && matchedDeposits?.has(dep.legacyId));
                 const action = forceAction || (isUsed ? 'unmatch' : 'match');
 
                 if (action === 'unmatch') {
-                    const targetNick = depositLinks[dep.id] || (dep.legacyId && depositLinks[dep.legacyId]) || orders.find(o => !o.isCancelled && cleanForMatch(o.customer) === cleanForMatch(dep.name))?.customer || selectedNick;
+                    const targetNick = depositLinks[dep.id] || (dep.contentId && depositLinks[dep.contentId]) || (dep.legacyId && depositLinks[dep.legacyId]) || orders.find(o => !o.isCancelled && cleanForMatch(o.customer) === cleanForMatch(dep.name))?.customer || selectedNick;
                     openModal(`'${dep.name}' 님의 입금 매칭을 취소(해제)하시겠습니까?`, 'confirm', () => {
                         if (targetNick) { 
                             deductCustomerDeposit(targetNick, dep.amount);
@@ -4499,25 +4517,67 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                 }
                 
                 const targetNick = selectedNick || orders.find(o => !o.isCancelled && cleanForMatch(o.customer) === cleanForMatch(dep.name))?.customer;
-                if (!targetNick) return openModal("입금을 연결할 주문자(닉네임)를 먼저 클릭하여 노란색으로 선택해주세요.", "alert");
-                setOrders(prev => { let done = false; return prev.map(o => { if (!done && o.customer === targetNick) { done = true; return { ...o, deposit: (o.deposit || 0) + Number(dep.amount) }; } return o; }); });
-                setMatchedDeposits(p => { const next = new Set(p); next.add(dep.id); if (dep.legacyId) next.add(dep.legacyId); return next; });
-                setIgnoredAutoMatch(p => { const next = new Set(p); next.add(dep.id); if (dep.legacyId) next.add(dep.legacyId); return next; });
-                setDepositLinks(p => ({ ...p, [dep.id]: targetNick }));
+                if (!targetNick) return openModal("입금을 연결할 주문자(닉네임)를 먼저 클릭하여 선택해주세요.", "alert");
+
+                const addAmt = Number(dep.amount) || 0;
+                setOrders(prev => {
+                    let done = false;
+                    // 1순위: 취소되지 않은 활성 주문 줄에 입금액 합산
+                    const next = prev.map(o => {
+                        if (!done && o.customer === targetNick && !o.isCancelled) {
+                            done = true;
+                            return { ...o, deposit: (Number(o.deposit) || 0) + addAmt };
+                        }
+                        return o;
+                    });
+                    // 만약 모든 줄이 취소 상태라면 첫 번째 줄에라도 반영
+                    if (!done) {
+                        return prev.map(o => {
+                            if (!done && o.customer === targetNick) {
+                                done = true;
+                                return { ...o, deposit: (Number(o.deposit) || 0) + addAmt };
+                            }
+                            return o;
+                        });
+                    }
+                    return next;
+                });
+
+                setMatchedDeposits(p => {
+                    const next = new Set(p);
+                    next.add(dep.id);
+                    if (dep.contentId) next.add(dep.contentId);
+                    if (dep.legacyId) next.add(dep.legacyId);
+                    return next;
+                });
+                // 다시 연결했으므로 해제 무시 목록(ignoredAutoMatch)에서 제거
+                setIgnoredAutoMatch(p => {
+                    const next = new Set(p);
+                    next.delete(dep.id);
+                    if (dep.contentId) next.delete(dep.contentId);
+                    if (dep.legacyId) next.delete(dep.legacyId);
+                    return next;
+                });
+                setDepositLinks(p => {
+                    const next = { ...p, [dep.id]: targetNick };
+                    if (dep.contentId) next[dep.contentId] = targetNick;
+                    if (dep.legacyId) next[dep.legacyId] = targetNick;
+                    return next;
+                });
 
                 // ✨ 수동으로 [연결]을 누르는 순간에도 고객의 영구 입금기록 장부(customerDepositLogs)에 즉시 박제!
                 const fullTimeStr = formatDepositFullDateTime(dep.rawTime || dep.time || dep.date || '') || dep.time || '';
                 setCustomerDepositLogs(prev => {
                     const existing = Array.isArray(prev[targetNick]) ? prev[targetNick] : [];
-                    if (existing.some(item => item.id === dep.id || (dep.legacyId && item.legacyId === dep.legacyId))) return prev;
+                    const filtered = existing.filter(item => item.id !== dep.id && (!dep.contentId || item.id !== dep.contentId) && (!dep.legacyId || item.legacyId !== dep.legacyId));
                     return Object.assign({}, prev, {
                         [targetNick]: [
-                            ...existing,
+                            ...filtered,
                             {
                                 id: dep.id,
                                 legacyId: dep.legacyId || '',
                                 name: dep.name,
-                                amount: Number(dep.amount),
+                                amount: addAmt,
                                 time: fullTimeStr,
                                 fullTime: fullTimeStr
                             }
