@@ -2100,7 +2100,8 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             const [syncStatus, setSyncStatus] = useState("대기중");
             const [broadcastAddresses, setBroadcastAddresses] = useLocalStorage('broadcastAddresses', {});
             const [isViewingPastBroadcast, setIsViewingPastBroadcast] = useLocalStorage('isViewingPastBroadcast', false);
-            const [isLiveBroadcasting, setIsLiveBroadcasting] = useLocalStorage('isLiveBroadcasting', false);
+            // 기본값은 항상 방송마감(false) 상태로 시작하며, 사장님이 직접 버튼을 누르거나 유튜브 라이브 주소를 연결할 때만 ON 됩니다.
+            const [isLiveBroadcasting, setIsLiveBroadcasting] = useState(false);
 
             // 🔴 생방송 시작 버튼 핸들러 (켜는 순간 고객 포털이 사장님 실시간 주문서 + 직원용 시트를 함께 조회)
             const handleStartLiveBroadcast = useCallback(() => {
@@ -4625,18 +4626,6 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                 // 새 주문이 추가되면(채팅 클릭 포함) 무조건 주문확인 체크를 풀어서 고객이 다시 확인 버튼을 누를 수 있게 활성화
                 resetCustomerConfirmation(cNick);
                 if (!isAuto) { setSelectedNick(cNick); }
-                // ✨ 사장님이 현재 방송에서 주문을 입력하기 시작하면 자동으로 [🔴 생방송중] 모드를 켜서 고객 포털에 즉시 노출 보장!
-                if (!isViewingPastBroadcast && !isLiveBroadcasting) {
-                    setIsLiveBroadcasting(true);
-                    if (window.emberRealtimeDb) {
-                        window.emberRealtimeDb.ref('ember_live_data/_portal_live_mode').set({
-                            isLive: true,
-                            liveOwner: 'boss',
-                            activeBroadcastName: String(broadcastName || '오늘의방송').replace(/^주문_/, '').trim(),
-                            updatedAt: Date.now()
-                        }).catch(() => {});
-                    }
-                }
                 
                 const newOrder = { id: Date.now() + Math.random(), customer: cNick, product: cContent, quantity: qty, price: Number(price) * qty, deposit: 0, isCancelled: false, isUnmodified: !markAsModified, isSentToEmp: false };
                 setOrders(prev => {
@@ -6351,9 +6340,6 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
 
                             // 생방송 모드 OFF 및 임시 생방송 노드(__MAIN_LIVE__) 정리
                             setIsLiveBroadcasting(false);
-                            try {
-                                localStorage.setItem(getLsKey('isLiveBroadcasting'), JSON.stringify(false));
-                            } catch (e) {}
                             if (window.emberRealtimeDb) {
                                 window.emberRealtimeDb.ref('ember_live_data/_portal_live_mode').set({
                                     isLive: false,
