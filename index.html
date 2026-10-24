@@ -526,6 +526,56 @@
             }
         };
 
+        // ⚡ 앱스 스크립트(GAS)가 바쁘거나 타임아웃이 걸려도 입금 시트에서 0.3초 만에 직접 입금 내역을 긁어오는 직통 JSONP 리더
+        const fetchDepositSheetDirectGviz = (sheetId) => {
+            return new Promise((resolve) => {
+                const cleanId = getCleanSheetId(sheetId);
+                if (!cleanId) { resolve(null); return; }
+                let settled = false;
+                const cbName = `dep_gviz_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+                const timer = setTimeout(() => {
+                    if (!settled) { settled = true; window[cbName] = () => {}; resolve(null); }
+                }, 4500);
+
+                window[cbName] = (res) => {
+                    if (settled) return;
+                    settled = true;
+                    clearTimeout(timer);
+                    window[cbName] = () => {};
+                    if (!res || res.status === 'error' || !res.table || !Array.isArray(res.table.rows)) {
+                        resolve(null);
+                        return;
+                    }
+                    const totalRows = res.table.rows.length;
+                    const startIdx = Math.max(0, totalRows - 250);
+                    const sliced = res.table.rows.slice(startIdx);
+                    const rawRows = sliced.map((r, i) => {
+                        const cells = (r.c || []).map(cell => {
+                            if (!cell) return '';
+                            if (cell.f !== undefined && cell.f !== null) return String(cell.f);
+                            if (cell.v !== undefined && cell.v !== null) return String(cell.v);
+                            return '';
+                        });
+                        cells.push(`__ROW_${startIdx + i + 2}__`);
+                        return cells;
+                    });
+                    resolve(rawRows);
+                };
+
+                try {
+                    const script = document.createElement('script');
+                    script.src = `https://docs.google.com/spreadsheets/d/${cleanId}/gviz/tq?tqx=responseHandler:${cbName}&gid=0&t=${Date.now()}`;
+                    script.onerror = () => {
+                        if (!settled) { settled = true; clearTimeout(timer); window[cbName] = () => {}; resolve(null); }
+                    };
+                    document.body.appendChild(script);
+                    setTimeout(() => { try { if (script.parentNode) script.parentNode.removeChild(script); } catch (e) {} }, 5000);
+                } catch (e) {
+                    if (!settled) { settled = true; clearTimeout(timer); resolve(null); }
+                }
+            });
+        };
+
         const generateSmartGroups = (inventory) => {
             const available = (inventory || []).filter(i => !i.isSoldOut);
             const byPrice = {};
@@ -2457,6 +2507,113 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
         const [youtubeStatus, setYoutubeStatus] = useState("채팅(대기)");
         const [gasStatus, setGasStatus] = useState("입금(대기)");
         const lastGasFetchTimeRef = useRef(0);
+        const heavyScanCountRef = useRef(0);
+
+        const parseRawDepositRowsToObjects = useCallback((depRowsInput) => {
+            if (!Array.isArray(depRowsInput)) return [];
+            let depRows = depRowsInput;
+            if (depRows.length > 0 && Array.isArray(depRows[0]) && depRows[0].some(c => typeof c === 'string' && (c.includes('이름') || c.includes('금액') || c.includes('닉네임') || c.includes('입금자')))) {
+                depRows = depRows.slice(1);
+            }
+            const contentKeyCountMap = {};
+            return depRows.map((rawRow, idx) => {
+                if (!Array.isArray(rawRow)) return null;
+                const row = [...rawRow];
+                let sheetRowTag = '';
+                if (row.length > 0 && /^__ROW_\d+__$/.test(String(row[row.length - 1] || ''))) {
+                    sheetRowTag = String(row.pop()).replace(/[^0-9]/g, '');
+                }
+                const stableIdx = sheetRowTag || String(idx);
+                const findAnyTimeInRow = (r, skipIdx) => {
+                    for (let k = r.length - 1; k >= 0; k--) {
+                        if (k === skipIdx) continue;
+                        const s = String(r[k] ?? '').trim();
+                        if (!s || s.startsWith('{')) continue;
+                        if (/(\d{1,2}:\d{2})|(\d{4}[-./]\s*\d{1,2})|(GMT|오전|오후|AM|PM|T\d{2}:)/i.test(s)) return s;
+                    }
+                    return '';
+                };
+                if (row.length >= 6) {
+                    const colE = String(row[4] ?? '').trim();
+                    const rawColF = String(row[5] ?? '').trim();
+                    const amtF = Number(rawColF.replace(/[^0-9.-]/g, ''));
+                    if (colE && !colE.startsWith('{') && !isNaN(amtF) && amtF > 0) {
+                        const rawTimeG = String(row[6] || findAnyTimeInRow(row, 5) || row[row.length - 1] || row[0] || '').trim();
+                        const time = formatTimeOnly(rawTimeG);
+                        const cleanName = colE.replace(/^[:"'\-\s]+/, '').replace(/^입\s+/, '').trim();
+                        const baseSig = `${rawTimeG}_${cleanName}_${amtF}`;
+                        contentKeyCountMap[baseSig] = (contentKeyCountMap[baseSig] || 0) + 1;
+                        const contentId = `c_${baseSig}_${contentKeyCountMap[baseSig]}`;
+                        return {
+                            id: sheetRowTag ? `r_${stableIdx}_${rawTimeG}_${cleanName}_${amtF}` : contentId,
+                            contentId,
+                            legacyId: `d_${idx}_${rawTimeG}_${cleanName}_${amtF}`,
+                            time,
+                            rawTime: rawTimeG,
+                            name: cleanName,
+                            amount: amtF
+                        };
+                    }
+                }
+
+                const validCells = row.filter(cell => cell !== null && cell !== undefined && String(cell).trim() !== '');
+                if (validCells.length < 2) return null;
+                let amountIdx = -1;
+                let parsedAmount = 0;
+                for (let i = validCells.length - 1; i >= 0; i--) {
+                    const val = String(validCells[i]).trim();
+                    if (/(\d{1,2}:\d{2})|(\d{4}[-./]\d{1,2}[-./]\d{1,2})/.test(val)) continue;
+                    const num = Number(val.replace(/[,원\s]/g, ''));
+                    if (!isNaN(num) && num >= 100 && /^[0-9,원\s]+$/.test(val)) {
+                        amountIdx = i;
+                        parsedAmount = num;
+                        break;
+                    }
+                }
+                if (amountIdx === -1 || parsedAmount <= 0) return null;
+
+                let timeIdx = -1;
+                for (let i = validCells.length - 1; i >= 0; i--) {
+                    if (i === amountIdx) continue;
+                    const cellStr = String(validCells[i]).trim();
+                    if (!cellStr.startsWith('{') && (/(\d{1,2}:\d{2})|(\d{4}[-./]\s*\d{1,2})|(GMT|오전|오후|AM|PM|T\d{2}:)/i.test(cellStr))) {
+                        timeIdx = i;
+                        break;
+                    }
+                }
+
+                let nameIdx = -1;
+                if (amountIdx > 0 && !String(validCells[amountIdx - 1]).trim().startsWith('{') && (amountIdx - 1) !== timeIdx) {
+                    nameIdx = amountIdx - 1;
+                } else {
+                    for (let i = 0; i < validCells.length; i++) {
+                        const cStr = String(validCells[i]).trim();
+                        if (i !== amountIdx && i !== timeIdx && !cStr.startsWith('{') && !cStr.includes('모임통장 입금')) {
+                            nameIdx = i;
+                            break;
+                        }
+                    }
+                }
+                if (nameIdx === -1) nameIdx = amountIdx > 0 ? amountIdx - 1 : amountIdx + 1;
+
+                let rawName = String(validCells[nameIdx] || '').trim();
+                let name = rawName.replace(/^[:"'\-\s]+/, '').replace(/^입\s+/, '').trim();
+                let rawTime = timeIdx !== -1 ? String(validCells[timeIdx]).trim() : String(validCells[validCells.length - 1] || '').trim();
+                let time = formatTimeOnly(rawTime);
+                const baseSig = `${rawTime}_${name}_${parsedAmount}`;
+                contentKeyCountMap[baseSig] = (contentKeyCountMap[baseSig] || 0) + 1;
+                const contentId = `c_${baseSig}_${contentKeyCountMap[baseSig]}`;
+                return {
+                    id: sheetRowTag ? `r_${stableIdx}_${rawTime}_${name}_${parsedAmount}` : contentId,
+                    contentId,
+                    legacyId: `d_${idx}_${rawTime}_${name}_${parsedAmount}`,
+                    time,
+                    rawTime,
+                    name,
+                    amount: parsedAmount
+                };
+            }).filter(d => d !== null && d.name && d.amount > 0).reverse();
+        }, []);
 
         const fetchYoutubeData = useCallback(async () => {
             if (!activeApiKey || !liveChatId) {
@@ -2512,12 +2669,34 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
         }, [activeApiKey, liveChatId, handleKeySwitch, setChats, googleScriptUrl, masterSheetId, broadcastName]);
 
         const fetchGasData = useCallback(async (force = false) => {
+            if (force && isViewingPastBroadcast) {
+                setIsViewingPastBroadcast(false);
+            }
+
+            // ⚡ 1단계: 앱스 스크립트(GAS)의 응답 지연/Lock과 무관하게 입금 시트 직통 리더(JSONP)로 0.3초 만에 입금 내역부터 즉시 스캔!
+            if (depSheetId) {
+                fetchDepositSheetDirectGviz(depSheetId).then(directRows => {
+                    if (Array.isArray(directRows) && directRows.length > 0) {
+                        const directDeps = parseRawDepositRowsToObjects(directRows);
+                        if (directDeps.length > 0) {
+                            const depIds = directDeps.map(d => d.id + '_' + d.time).join(',');
+                            if (depIds !== prevDepsStr.current) {
+                                if (directDeps.length > prevDepCount.current && prevDepCount.current !== 0) playCoinSound();
+                                setServerDeposits(directDeps);
+                                prevDepsStr.current = depIds;
+                            }
+                            prevDepCount.current = directDeps.length;
+                            setGasStatus(prev => prev.includes('입금(') ? prev : `입금(${directDeps.length}) 직통연동중`);
+                        }
+                    }
+                }).catch(() => {});
+            }
+
             if (!googleScriptUrl) {
                 setGasStatus(prev => prev === "설정 ⚙️: 스크립트 URL 입력!" ? prev : "설정 ⚙️: 스크립트 URL 입력!");
                 return;
             }
-            // 이전 요청이 7초 이상 걸리고 있다면 락을 강제로 해제하여 1분 이상 먹통되는 현상 원천 차단!
-            if (!force && isGasFetchingRef.current && (Date.now() - lastGasFetchTimeRef.current < 7000)) return;
+            if (!force && isGasFetchingRef.current && (Date.now() - lastGasFetchTimeRef.current < 12000)) return;
 
             isGasFetchingRef.current = true;
             lastGasFetchTimeRef.current = Date.now();
@@ -2525,127 +2704,20 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             
             const slowWarningTimer = setTimeout(() => {
                 setGasStatus("⏳ 시트 재요청중...");
-            }, 6500);
+            }, 11000);
 
             try {
                 let gasMsg = "";
-                const fetchUrl = `${googleScriptUrl}?action=get_all&depId=${getCleanSheetId(depSheetId)}&masterId=${getCleanSheetId(masterSheetId)}&broadcastName=${encodeURIComponent(broadcastName || '')}&skipHeavy=false&t=${Date.now()}`;
-                const res = await fetchGas(fetchUrl, null, 7500);
+                heavyScanCountRef.current = (heavyScanCountRef.current + 1) % 3;
+                const shouldSkipHeavy = !force && prevAddrsStr.current !== '' && heavyScanCountRef.current !== 1;
+                const fetchUrl = `${googleScriptUrl}?action=get_all&depId=${getCleanSheetId(depSheetId)}&masterId=${getCleanSheetId(masterSheetId)}&broadcastName=${encodeURIComponent(broadcastName || '')}&skipHeavy=${shouldSkipHeavy}&t=${Date.now()}`;
+                const res = await fetchGas(fetchUrl, null, 14000);
                 
                 clearTimeout(slowWarningTimer);
                 
                 if (res && res.status === 'success') {
                     if (res.deposits && Array.isArray(res.deposits)) {
-                        let depRows = res.deposits;
-                        if (depRows.length > 0 && Array.isArray(depRows[0]) && depRows[0].some(c => typeof c === 'string' && (c.includes('이름') || c.includes('금액') || c.includes('닉네임') || c.includes('입금자')))) {
-                            depRows = depRows.slice(1);
-                        }
-                        const contentKeyCountMap = {};
-                        const newDeps = depRows.map((rawRow, idx) => {
-                            if (!Array.isArray(rawRow)) return null;
-                            const row = [...rawRow];
-                            let sheetRowTag = '';
-                            if (row.length > 0 && /^__ROW_\d+__$/.test(String(row[row.length - 1] || ''))) {
-                                sheetRowTag = String(row.pop()).replace(/[^0-9]/g, '');
-                            }
-                            const stableIdx = sheetRowTag || String(idx);
-                            // 행 전체에서 날짜/시간으로 보이는 셀을 보조로 탐색하는 헬퍼
-                            const findAnyTimeInRow = (r, skipIdx) => {
-                                for (let k = r.length - 1; k >= 0; k--) {
-                                    if (k === skipIdx) continue;
-                                    const s = String(r[k] ?? '').trim();
-                                    if (!s || s.startsWith('{')) continue;
-                                    if (/(\d{1,2}:\d{2})|(\d{4}[-./]\s*\d{1,2})|(GMT|오전|오후|AM|PM|T\d{2}:)/i.test(s)) return s;
-                                }
-                                return '';
-                            };
-                            // ✨ 1순위: '입금 수집기' 시트 전용 고정 열 매핑 (E열: 입금자명, F열: 금액, G열: 시간)
-                            if (row.length >= 6) {
-                                const colE = String(row[4] ?? '').trim();
-                                const rawColF = String(row[5] ?? '').trim();
-                                const amtF = Number(rawColF.replace(/[^0-9.-]/g, ''));
-                                if (colE && !colE.startsWith('{') && !isNaN(amtF) && amtF > 0) {
-                                    const rawTimeG = String(row[6] || findAnyTimeInRow(row, 5) || row[row.length - 1] || row[0] || '').trim();
-                                    const time = formatTimeOnly(rawTimeG);
-                                    const cleanName = colE.replace(/^[:"'\-\s]+/, '').replace(/^입\s+/, '').trim();
-                                    const baseSig = `${rawTimeG}_${cleanName}_${amtF}`;
-                                    contentKeyCountMap[baseSig] = (contentKeyCountMap[baseSig] || 0) + 1;
-                                    const contentId = `c_${baseSig}_${contentKeyCountMap[baseSig]}`;
-                                    return { 
-                                        id: sheetRowTag ? `r_${stableIdx}_${rawTimeG}_${cleanName}_${amtF}` : contentId,
-                                        contentId,
-                                        legacyId: `d_${idx}_${rawTimeG}_${cleanName}_${amtF}`,
-                                        time, 
-                                        rawTime: rawTimeG, 
-                                        name: cleanName, 
-                                        amount: amtF 
-                                    };
-                                }
-                            }
-
-                            // ✨ 2순위: 열 위치가 다르거나 변형된 입금 시트도 100% 인식하도록 유연 파싱
-                            const validCells = row.filter(cell => cell !== null && cell !== undefined && String(cell).trim() !== '');
-                            if (validCells.length < 2) return null;
-                            let amountIdx = -1;
-                            let parsedAmount = 0;
-                            // 뒤쪽 열부터 금액(100원 이상 숫자) 탐색
-                            for (let i = validCells.length - 1; i >= 0; i--) {
-                                const val = String(validCells[i]).trim();
-                                // 날짜/시간 형태(2026-10-18, 16:20 등)는 금액에서 제외
-                                if (/(\d{1,2}:\d{2})|(\d{4}[-./]\d{1,2}[-./]\d{1,2})/.test(val)) continue;
-                                const num = Number(val.replace(/[,원\s]/g, ''));
-                                if (!isNaN(num) && num >= 100 && /^[0-9,원\s]+$/.test(val)) {
-                                    amountIdx = i;
-                                    parsedAmount = num;
-                                    break;
-                                }
-                            }
-                            if (amountIdx === -1 || parsedAmount <= 0) return null;
-
-                            // 시간(날짜) 셀 탐색
-                            let timeIdx = -1;
-                            for (let i = validCells.length - 1; i >= 0; i--) {
-                                if (i === amountIdx) continue;
-                                const cellStr = String(validCells[i]).trim();
-                                if (!cellStr.startsWith('{') && (/(\d{1,2}:\d{2})|(\d{4}[-./]\s*\d{1,2})|(GMT|오전|오후|AM|PM|T\d{2}:)/i.test(cellStr))) {
-                                    timeIdx = i;
-                                    break;
-                                }
-                            }
-
-                            // 금액 바로 앞 칸을 최우선으로 입금자명으로 선택
-                            let nameIdx = -1;
-                            if (amountIdx > 0 && !String(validCells[amountIdx - 1]).trim().startsWith('{') && (amountIdx - 1) !== timeIdx) {
-                                nameIdx = amountIdx - 1;
-                            } else {
-                                for (let i = 0; i < validCells.length; i++) {
-                                    const cStr = String(validCells[i]).trim();
-                                    if (i !== amountIdx && i !== timeIdx && !cStr.startsWith('{') && !cStr.includes('모임통장 입금')) {
-                                        nameIdx = i;
-                                        break;
-                                    }
-                                }
-                            }
-                            if (nameIdx === -1) nameIdx = amountIdx > 0 ? amountIdx - 1 : amountIdx + 1;
-
-                            let rawName = String(validCells[nameIdx] || '').trim();
-                            let name = rawName.replace(/^[:"'\-\s]+/, '').replace(/^입\s+/, '').trim();
-                            let rawTime = timeIdx !== -1 ? String(validCells[timeIdx]).trim() : String(validCells[validCells.length - 1] || '').trim();
-                            let time = formatTimeOnly(rawTime);
-                            const baseSig = `${rawTime}_${name}_${parsedAmount}`;
-                            contentKeyCountMap[baseSig] = (contentKeyCountMap[baseSig] || 0) + 1;
-                            const contentId = `c_${baseSig}_${contentKeyCountMap[baseSig]}`;
-                            return {
-                                id: sheetRowTag ? `r_${stableIdx}_${rawTime}_${name}_${parsedAmount}` : contentId,
-                                contentId,
-                                legacyId: `d_${idx}_${rawTime}_${name}_${parsedAmount}`,
-                                time,
-                                rawTime,
-                                name,
-                                amount: parsedAmount
-                            };
-                        }).filter(d => d !== null && d.name && d.amount > 0).reverse();
-                        
+                        const newDeps = parseRawDepositRowsToObjects(res.deposits);
                         const depIds = newDeps.map(d => d.id + '_' + d.time).join(',');
                         if(depIds !== prevDepsStr.current) {
                             if (newDeps.length > prevDepCount.current && prevDepCount.current !== 0) playCoinSound();
@@ -3110,9 +3182,9 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
         }, [addresses]);
 
         // 자동 입금 매칭 로직 (닉네임 + 수령인 실명 + 찐고객사전 실명 + 한글 이름 완벽 매칭)
-        // ※ 단, 마감된 [이전 방송]을 불러와 열람 중일 때(isViewingPastBroadcast === true)는 자동 매칭을 완전히 끄고 오직 수동 매칭만 허용!
+        // ※ 생방송 중(isLiveBroadcasting)일 때는 무조건 자동 입금 매칭이 작동하도록 보장!
         useEffect(() => {
-            if (isViewingPastBroadcast) return;
+            if (isViewingPastBroadcast && !isLiveBroadcasting) return;
             if (!allDeposits || allDeposits.length === 0 || !orders || orders.length === 0) return;
 
             const activeCustomerGroups = {};
