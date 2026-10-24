@@ -975,6 +975,7 @@ useEffect(() => {
             quickShipping, setQuickShipping, jejuShipping, setJejuShipping, freeShippingThreshold, setFreeShippingThreshold, cardFeeRate, setCardFeeRate,
             templateConfig, setTemplateConfig, bankAccount, setBankAccount, quickMessages, setQuickMessages, 
             addressStartDate, setAddressStartDate, soundVolume, setSoundVolume,
+            staffAccessPasscode, setStaffAccessPasscode,
             setIsSettingsOpen
         }) => {
             return (
@@ -983,6 +984,13 @@ useEffect(() => {
                     <div className="mb-4 space-y-4">
                         <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg space-y-2">
                             <SettingsField label="💡 방송명 (엑셀 제목용)" value={broadcastName} onChange={setBroadcastName} placeholder="예: 5월24일 오전방송" />
+                        </div>
+
+                        <div className="p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg space-y-1.5">
+                            <SettingsField label="🔒 직원용 시스템 접속 비밀번호 (퇴사자 차단용)" value={staffAccessPasscode} onChange={setStaffAccessPasscode} placeholder="예: 1234 (변경 시 직원 화면 즉시 잠금)" />
+                            <p className="text-[10px] text-emerald-700 dark:text-emerald-300 font-bold leading-snug">
+                                * 직원이 퇴사/이직했을 때 여기서 비밀번호만 바꾸면 주소를 안 바꿔도 즉시 접속이 차단됩니다!
+                            </p>
                         </div>
                         
                         <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg space-y-2">
@@ -6021,6 +6029,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             
             const [soundEnabled, setSoundEnabled] = useState(false);
             const [soundVolume, setSoundVolume] = useLocalStorage('soundVolume', 50);
+            const [staffAccessPasscode, setStaffAccessPasscode] = useLocalStorage('staffAccessPasscode', '1234');
             
             const [addressStartDate, setAddressStartDate] = useLocalStorage('addressStartDate', '');
 
@@ -6030,6 +6039,20 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     setGoogleScriptUrl(NEW_SCRIPT_URL);
                 }
             }, [setGoogleScriptUrl]);
+
+            // ✨ 사장님 주문서에 등록된 유튜브 API 키를 파이어베이스 보안 설정에 백업하여, 직원용 라이브 주문작성 탭에서도 복잡한 키 입력 없이 유튜브 주소만 넣으면 채팅이 뜨도록 공유!
+            useEffect(() => {
+                if (window.emberRealtimeDb && youtubeApiKey && String(youtubeApiKey).trim()) {
+                    window.emberRealtimeDb.ref('ember_live_data/_global_config/sharedYtApiKey').set(String(youtubeApiKey).trim()).catch(() => {});
+                }
+            }, [youtubeApiKey]);
+
+            // ✨ 사장님이 설정한 직원용 시스템 접속 비밀번호를 파이어베이스에 실시간 동기화 (변경 즉시 퇴사 직원 차단)
+            useEffect(() => {
+                if (window.emberRealtimeDb && staffAccessPasscode && String(staffAccessPasscode).trim()) {
+                    window.emberRealtimeDb.ref('ember_live_data/_global_config/staffAccessPasscode').set(String(staffAccessPasscode).trim()).catch(() => {});
+                }
+            }, [staffAccessPasscode]);
 
             const [quickShipping, setQuickShipping] = useLocalStorage('quickShipping', 4000); 
             const [jejuShipping, setJejuShipping] = useLocalStorage('jejuShipping', 7000);
@@ -6496,7 +6519,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                 </div>
             </div>
 
-            {isSettingsOpen && <SettingsModalContent youtubeApiKey={youtubeApiKey} setYoutubeApiKey={setYoutubeApiKey} youtubeVideoId={youtubeVideoId} setYoutubeVideoId={setYoutubeVideoId} googleScriptUrl={googleScriptUrl} setGoogleScriptUrl={setGoogleScriptUrl} depSheetId={depSheetId} setDepSheetId={setDepSheetId} addrSheetId={addrSheetId} setAddrSheetId={setAddrSheetId} masterSheetId={masterSheetId} setMasterSheetId={setMasterSheetId} broadcastName={broadcastName} setBroadcastName={setBroadcastName} quickShipping={quickShipping} setQuickShipping={setQuickShipping} jejuShipping={jejuShipping} setJejuShipping={setJejuShipping} freeShippingThreshold={freeShippingThreshold} setFreeShippingThreshold={setFreeShippingThreshold} cardFeeRate={cardFeeRate} setCardFeeRate={setCardFeeRate} templateConfig={templateConfig} setTemplateConfig={setTemplateConfig} bankAccount={bankAccount} setBankAccount={setBankAccount} quickMessages={quickMessages} setQuickMessages={setQuickMessages} addressStartDate={addressStartDate} setAddressStartDate={setAddressStartDate} soundVolume={soundVolume} setSoundVolume={setSoundVolume} setIsSettingsOpen={setIsSettingsOpen} />}
+            {isSettingsOpen && <SettingsModalContent youtubeApiKey={youtubeApiKey} setYoutubeApiKey={setYoutubeApiKey} youtubeVideoId={youtubeVideoId} setYoutubeVideoId={setYoutubeVideoId} googleScriptUrl={googleScriptUrl} setGoogleScriptUrl={setGoogleScriptUrl} depSheetId={depSheetId} setDepSheetId={setDepSheetId} addrSheetId={addrSheetId} setAddrSheetId={setAddrSheetId} masterSheetId={masterSheetId} setMasterSheetId={setMasterSheetId} broadcastName={broadcastName} setBroadcastName={setBroadcastName} quickShipping={quickShipping} setQuickShipping={setQuickShipping} jejuShipping={jejuShipping} setJejuShipping={setJejuShipping} freeShippingThreshold={freeShippingThreshold} setFreeShippingThreshold={setFreeShippingThreshold} cardFeeRate={cardFeeRate} setCardFeeRate={setCardFeeRate} templateConfig={templateConfig} setTemplateConfig={setTemplateConfig} bankAccount={bankAccount} setBankAccount={setBankAccount} quickMessages={quickMessages} setQuickMessages={setQuickMessages} addressStartDate={addressStartDate} setAddressStartDate={setAddressStartDate} soundVolume={soundVolume} setSoundVolume={setSoundVolume} staffAccessPasscode={staffAccessPasscode} setStaffAccessPasscode={setStaffAccessPasscode} setIsSettingsOpen={setIsSettingsOpen} />}
 
             <div className="flex-1 overflow-hidden flex flex-col">
                 <div className={`flex-1 overflow-hidden ${activeTab === 'live' ? 'flex' : 'hidden'}`}>
