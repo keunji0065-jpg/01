@@ -46,6 +46,36 @@
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
     <script>
+        // 🛡️ [보안 가드] 무단 소스코드 열람·복제·개발자도구 원천 차단 및 스크립트 태그 자동 소거
+        (function() {
+            const blockEvent = (e) => { e.preventDefault(); e.stopPropagation(); return false; };
+            window.addEventListener('contextmenu', blockEvent, true);
+            window.addEventListener('dragstart', blockEvent, true);
+            window.addEventListener('keydown', (e) => {
+                const k = String(e.key || '').toLowerCase();
+                if (
+                    e.key === 'F12' ||
+                    (e.ctrlKey && e.shiftKey && (k === 'i' || k === 'j' || k === 'c')) ||
+                    (e.ctrlKey && (k === 'u' || k === 'p')) ||
+                    (e.metaKey && e.altKey && (k === 'i' || k === 'j' || k === 'u' || k === 'c'))
+                ) {
+                    return blockEvent(e);
+                }
+            }, true);
+            setInterval(() => {
+                const wDiff = window.outerWidth - window.innerWidth > 180;
+                const hDiff = window.outerHeight - window.innerHeight > 180;
+                if (wDiff || hDiff) {
+                    try { console.clear(); } catch (err) {}
+                }
+            }, 1500);
+            window.addEventListener('DOMContentLoaded', () => {
+                setTimeout(() => {
+                    document.querySelectorAll('script[type="text/babel"]').forEach(el => el.remove());
+                }, 800);
+            });
+        })();
+
         try {
             const emberFbConfig = {
                 apiKey: "AIzaSyDgdH34cDnp2S9akHfFLYBSpHzzamHFuoc",
@@ -2070,8 +2100,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             const [syncStatus, setSyncStatus] = useState("대기중");
             const [broadcastAddresses, setBroadcastAddresses] = useLocalStorage('broadcastAddresses', {});
             const [isViewingPastBroadcast, setIsViewingPastBroadcast] = useLocalStorage('isViewingPastBroadcast', false);
-            // 기본 시작 상태를 무조건 '방송마감(false)'으로 시작하여, 사장님이 직접 버튼을 눌러 방송명을 지정하고 생방송을 켜도록 설정!
-            const [isLiveBroadcasting, setIsLiveBroadcasting] = useState(false);
+            const [isLiveBroadcasting, setIsLiveBroadcasting] = useLocalStorage('isLiveBroadcasting', false);
 
             // 🔴 생방송 시작 버튼 핸들러 (켜는 순간 고객 포털이 사장님 실시간 주문서 + 직원용 시트를 함께 조회)
             const handleStartLiveBroadcast = useCallback(() => {
@@ -2087,6 +2116,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         if (window.emberRealtimeDb) {
                             window.emberRealtimeDb.ref('ember_live_data/_portal_live_mode').set({
                                 isLive: true,
+                                liveOwner: 'boss',
                                 activeBroadcastName: nextTitle,
                                 updatedAt: Date.now()
                             }).catch(() => {});
@@ -2424,6 +2454,18 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         if (data.items && data.items.length > 0 && data.items[0].liveStreamingDetails) {
                             setLiveChatId(data.items[0].liveStreamingDetails.activeLiveChatId);
                             setGlobalError('');
+                            // ✨ 유튜브 라이브가 연결되면 깜빡하고 생방송 버튼을 안 눌렀더라도 자동으로 [🔴 생방송중] 활성화!
+                            if (!isViewingPastBroadcast) {
+                                setIsLiveBroadcasting(true);
+                                if (window.emberRealtimeDb) {
+                                    window.emberRealtimeDb.ref('ember_live_data/_portal_live_mode').set({
+                                        isLive: true,
+                                        liveOwner: 'boss',
+                                        activeBroadcastName: String(broadcastName || '오늘의방송').replace(/^주문_/, '').trim(),
+                                        updatedAt: Date.now()
+                                    }).catch(() => {});
+                                }
+                            }
                         } else {
                             setLiveChatId(null);
                             chatNextPageTokenRef.current = '';
@@ -2436,7 +2478,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     }
                 };
                 getChatId();
-            }, [activeApiKey, youtubeVideoId, setGlobalError, handleKeySwitch]);
+            }, [activeApiKey, youtubeVideoId, setGlobalError, handleKeySwitch, isViewingPastBroadcast, setIsLiveBroadcasting, broadcastName]);
 
         const [youtubeStatus, setYoutubeStatus] = useState("채팅(대기)");
         const [gasStatus, setGasStatus] = useState("입금(대기)");
@@ -4043,6 +4085,12 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                         updatedBy: 'boss',
                                         customers: portalCustomers
                                     };
+                                    window.emberRealtimeDb.ref('ember_live_data/_portal_live_mode').set({
+                                        isLive: true,
+                                        liveOwner: 'boss',
+                                        activeBroadcastName: cleanBName,
+                                        updatedAt: Date.now()
+                                    }).catch(() => {});
                                     window.emberRealtimeDb.ref(`ember_live_data/_portal_orders/__MAIN_LIVE__`).set(livePayload).catch(() => {});
                                 } catch (fbErr) {}
                             }
@@ -4181,6 +4229,12 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                             };
                         });
 
+                        window.emberRealtimeDb.ref('ember_live_data/_portal_live_mode').set({
+                            isLive: true,
+                            liveOwner: 'boss',
+                            activeBroadcastName: cleanBName,
+                            updatedAt: Date.now()
+                        }).catch(() => {});
                         window.emberRealtimeDb.ref(`ember_live_data/_portal_orders/__MAIN_LIVE__`).set({
                             broadcastName: cleanBName,
                             updatedAt: Date.now(),
@@ -4571,6 +4625,18 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                 // 새 주문이 추가되면(채팅 클릭 포함) 무조건 주문확인 체크를 풀어서 고객이 다시 확인 버튼을 누를 수 있게 활성화
                 resetCustomerConfirmation(cNick);
                 if (!isAuto) { setSelectedNick(cNick); }
+                // ✨ 사장님이 현재 방송에서 주문을 입력하기 시작하면 자동으로 [🔴 생방송중] 모드를 켜서 고객 포털에 즉시 노출 보장!
+                if (!isViewingPastBroadcast && !isLiveBroadcasting) {
+                    setIsLiveBroadcasting(true);
+                    if (window.emberRealtimeDb) {
+                        window.emberRealtimeDb.ref('ember_live_data/_portal_live_mode').set({
+                            isLive: true,
+                            liveOwner: 'boss',
+                            activeBroadcastName: String(broadcastName || '오늘의방송').replace(/^주문_/, '').trim(),
+                            updatedAt: Date.now()
+                        }).catch(() => {});
+                    }
+                }
                 
                 const newOrder = { id: Date.now() + Math.random(), customer: cNick, product: cContent, quantity: qty, price: Number(price) * qty, deposit: 0, isCancelled: false, isUnmodified: !markAsModified, isSentToEmp: false };
                 setOrders(prev => {
