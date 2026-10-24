@@ -6014,7 +6014,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             const [orders, setOrders] = useLocalStorage('youtubeOrders', []);
             const [activeTab, setActiveTab] = useState('live');
             
-            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzrMczblUPLxqGESdkZks8osdL-CihDenW94Ae3ODL8u_QhVAZGKrsVI_KchtHjCTFg/exec';
+            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx_kCIKu48TAyTmxSv0lu_DUk-rPeth_v0dDf9QCDC03cHEX43Zd3inDJ3Q6cFv87Q/exec';
             const STAFF_SHEET_ID = '1sM5bkDqEjD6Kpxu2yoJe2aiMuqpcWLMAIGpY3iL5_x8';
             const [googleScriptUrl, setGoogleScriptUrl] = useLocalStorage('googleScriptUrl', NEW_SCRIPT_URL);
         
@@ -6035,7 +6035,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
 
             useEffect(() => {
                 const currentUrl = window.localStorage.getItem(getLsKey('googleScriptUrl'));
-                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbzrMczblUPLxqGESdkZks8osdL-CihDenW94Ae3ODL8u_QhVAZGKrsVI_KchtHjCTFg')) {
+                if (!currentUrl || currentUrl === '""' || currentUrl === 'null' || !currentUrl.includes('AKfycbx_kCIKu48TAyTmxSv0lu_DUk-rPeth_v0dDf9QCDC03cHEX43Zd3inDJ3Q6cFv87Q')) {
                     setGoogleScriptUrl(NEW_SCRIPT_URL);
                 }
             }, [setGoogleScriptUrl]);
