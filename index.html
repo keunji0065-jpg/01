@@ -1781,7 +1781,7 @@ useEffect(() => {
             );
         };
 
-const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHistory, setProductHistory, quickShipping, jejuShipping, freeShippingThreshold, cardFeeRate, shippingOverrides, setShippingOverrides, bankAccount, googleScriptUrl, setGoogleScriptUrl, depSheetId, masterSheetId, addresses, setAddresses, cardPayments, setCardPayments, manualDeposits, setManualDeposits, matchedDeposits, setMatchedDeposits, depositorNames, setDepositorNames, clickedChats, setClickedChats, openModal, keywords, setKeywords, sentAddressRequests, setSentAddressRequests, deletedDepositIds, setDeletedDepositIds, checkedOrders, setCheckedOrders, addressMapping, setAddressMapping, templateConfig, specialCustomers, setSpecialCustomers, inventory, setInventory, quickMessages, handleResetAllData, broadcastName, setBroadcastName, setGlobalError, cashReceipts, setCashReceipts, soundEnabled, soundVolume, depositLinks, setDepositLinks, customerDepositLogs, setCustomerDepositLogs, noShowCustomers, setNoShowCustomers, waitlistCustomers, setWaitlistCustomers, customerPasswords, setCustomerPasswords, trackingNumbers, setTrackingNumbers, customerCredits, setCustomerCredits }) => {
+const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHistory, setProductHistory, quickShipping, jejuShipping, freeShippingThreshold, cardFeeRate, shippingOverrides, setShippingOverrides, bankAccount, googleScriptUrl, setGoogleScriptUrl, depSheetId, masterSheetId, addresses, setAddresses, cardPayments, setCardPayments, manualDeposits, setManualDeposits, matchedDeposits, setMatchedDeposits, depositorNames, setDepositorNames, clickedChats, setClickedChats, openModal, keywords, setKeywords, sentAddressRequests, setSentAddressRequests, deletedDepositIds, setDeletedDepositIds, checkedOrders, setCheckedOrders, addressMapping, setAddressMapping, templateConfig, specialCustomers, setSpecialCustomers, inventory, setInventory, quickMessages, handleResetAllData, broadcastName, setBroadcastName, setGlobalError, cashReceipts, setCashReceipts, soundEnabled, soundVolume, depositLinks, setDepositLinks, customerDepositLogs, setCustomerDepositLogs, noShowCustomers, setNoShowCustomers, waitlistCustomers, setWaitlistCustomers, customerPasswords, setCustomerPasswords, trackingNumbers, setTrackingNumbers, customerCredits, setCustomerCredits, isLiveBroadcasting, setIsLiveBroadcasting }) => {
             const [serverDeposits, setServerDeposits] = useState([]);
             const [selectedNick, setSelectedNick] = useState(null);
             const feeRateNum = (cardFeeRate !== undefined && cardFeeRate !== '' && Number(cardFeeRate) > 0) ? Number(cardFeeRate) : 10;
@@ -2139,8 +2139,6 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             const [quickAddrModal, setQuickAddrModal] = useState({ isOpen: false, nick: '', editData: null });
             const [broadcastAddresses, setBroadcastAddresses] = useLocalStorage('broadcastAddresses', {});
             const [isViewingPastBroadcast, setIsViewingPastBroadcast] = useLocalStorage('isViewingPastBroadcast', false);
-            // 생방송 상태를 로컬스토리지에 기억하여 방송 도중 새로고침(F5)을 해도 풀리지 않도록 유지!
-            const [isLiveBroadcasting, setIsLiveBroadcasting] = useLocalStorage('isLiveBroadcasting', true);
 
             // 🔴 생방송 시작 버튼 핸들러 (켜는 순간 고객 포털이 사장님 실시간 주문서 + 직원용 시트를 함께 조회)
             const handleStartLiveBroadcast = useCallback(() => {
@@ -5913,6 +5911,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             const [addrSheetId, setAddrSheetId] = useLocalStorage('addrSheetId', '1ywl4gRvswQpvIYtPVbSROzz7a5elbLieYhqMZmt191U');
             const [masterSheetId, setMasterSheetId] = useLocalStorage('masterSheetId', '1B8SBMX18_Px1CpRHuDTxqodqudiTrf6NfVoptjHtnGQ');
             const [broadcastName, setBroadcastName] = useLocalStorage('broadcastName', '오늘의방송');
+            const [isLiveBroadcasting, setIsLiveBroadcasting] = useLocalStorage('isLiveBroadcasting', true);
             const [bankAccount, setBankAccount] = useLocalStorage('bankAccount', FIXED_BANK_ACCOUNT);
             
             const [soundEnabled, setSoundEnabled] = useState(false);
@@ -6172,85 +6171,15 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                 });
                             }
 
-                            // 생방송 모드 OFF 및 임시 생방송 노드(__MAIN_LIVE__) 정리
-                            setIsLiveBroadcasting(false);
-                            try {
-                                localStorage.setItem(getLsKey('isLiveBroadcasting'), JSON.stringify(false));
-                            } catch (e) {}
-                            if (window.emberRealtimeDb) {
-                                window.emberRealtimeDb.ref('ember_live_data/_portal_live_mode').set({
-                                    isLive: false,
-                                    liveOwner: 'none',
-                                    lastClosedBroadcastName: prevBroadcastTitle,
-                                    updatedAt: Date.now()
-                                }).catch(() => {});
-                                window.emberRealtimeDb.ref('ember_live_data/_portal_orders/__MAIN_LIVE__').remove().catch(() => {});
-                            }
-
                             const nextTitle = (newBroadcastTitle && newBroadcastTitle.trim()) ? newBroadcastTitle.trim() : '오늘의방송';
-                            setBroadcastName(nextTitle);
-
-                            let mergedArchived = [];
-                            try {
-                                const prevArchivedStr = localStorage.getItem(getLsKey('archivedDepositIds'));
-                                const prevArchived = prevArchivedStr ? JSON.parse(prevArchivedStr) : [];
-                                mergedArchived = Array.from(new Set([...prevArchived, ...matchedDeposits]));
-                                localStorage.setItem(getLsKey('archivedDepositIds'), JSON.stringify(mergedArchived));
-                            } catch (e) {}
-
                             const lockedItems = Array.isArray(inventory) ? inventory.filter(i => i.isLocked) : [];
 
-                            try {
-                                localStorage.setItem(getLsKey('broadcastName'), JSON.stringify(nextTitle));
-                                localStorage.setItem(getLsKey('youtubeOrders'), JSON.stringify([]));
-                                localStorage.setItem(getLsKey('productHistory'), JSON.stringify({}));
-                                localStorage.setItem(getLsKey('shippingOverrides'), JSON.stringify({}));
-                                localStorage.setItem(getLsKey('cardPayments'), JSON.stringify({}));
-                                localStorage.setItem(getLsKey('matchedDeposits'), JSON.stringify(mergedArchived));
-                                localStorage.setItem(getLsKey('depositLinks'), JSON.stringify({}));
-                                localStorage.setItem(getLsKey('customerDepositLogs'), JSON.stringify({}));
-                                localStorage.setItem(getLsKey('depositorNames'), JSON.stringify({}));
-                                localStorage.setItem(getLsKey('clickedChats'), JSON.stringify([]));
-                                localStorage.setItem(getLsKey('chatKeywords'), JSON.stringify([]));
-                                localStorage.setItem(getLsKey('sentAddressRequests'), JSON.stringify([]));
-                                localStorage.setItem(getLsKey('deletedDepositIds'), JSON.stringify([]));
-                                localStorage.setItem(getLsKey('checkedOrders'), JSON.stringify([]));
-                                localStorage.setItem(getLsKey('addressMapping'), JSON.stringify({}));
-                                localStorage.setItem(getLsKey('cashReceipts'), JSON.stringify({}));
-                                localStorage.setItem(getLsKey('inventory'), JSON.stringify(lockedItems));
-                                localStorage.setItem(getLsKey('manualDeposits'), JSON.stringify([]));
-                                localStorage.setItem(getLsKey('noShowCustomers'), JSON.stringify({}));
-                                localStorage.setItem(getLsKey('waitlistCustomers'), JSON.stringify({}));
-                                localStorage.setItem(getLsKey('trackingNumbers'), JSON.stringify({}));
-                                localStorage.removeItem(getLsKey('ignoredAutoMatch'));
-                                localStorage.removeItem(getLsKey('savedChats'));
-                            } catch (e) {}
-
-                            setOrders([]); setProductHistory({}); setShippingOverrides({}); setCardPayments({}); 
-                            setMatchedDeposits(new Set(mergedArchived)); setDepositLinks({}); setCustomerDepositLogs({}); 
-                            setDepositorNames({}); setClickedChats(new Set()); setKeywords([]); 
-                            setSentAddressRequests(new Set()); setDeletedDepositIds(new Set()); setCheckedOrders(new Set()); 
-                            setAddressMapping({}); setCashReceipts({}); setInventory(lockedItems); 
-                            setManualDeposits([]); setNoShowCustomers({}); setWaitlistCustomers({}); setTrackingNumbers({});
-                            window.dispatchEvent(new CustomEvent('clear-chats'));
-
-                            // ✨ 방송 마감 시 고객용 라이브 제품 목록(live_catalog.html)도 즉시 마감 잠금 처리 및 비우기!
-                            if (window.emberRealtimeDb) {
-                                window.emberRealtimeDb.ref('ember_live_data').update({
-                                    '_global_config/catalogClosedLock': true,
-                                    '_global_config/isStoreClosed': true,
-                                    '_global_config/currentPinnedId': null,
-                                    '_live_catalog': {
-                                        items: [],
-                                        rawCount: 0,
-                                        updatedAt: Date.now()
-                                    }
-                                }).catch(() => {});
-                            }
-
+                            // 1순위: 가장 먼저 구글 시트에 '주문_방송이름' 마감 시트를 생성 및 저장합니다!
                             if (googleScriptUrl && masterSheetId) {
                                 const cleanMaster = getCleanSheetId(masterSheetId);
-                                const invPayload = lockedItems.map(i => ({ name: i.name, price: i.price, stock: i.stock !== undefined ? i.stock : '', status: i.isSoldOut ? '품절' : '', isLocked: Boolean(i.isLocked) }));
+                                const invPayload = lockedItems.length > 0
+                                    ? lockedItems.map(i => ({ name: i.name, price: i.price, stock: i.stock !== undefined ? i.stock : '', status: i.isSoldOut ? '품절' : '', isLocked: Boolean(i.isLocked) }))
+                                    : [{ name: '__EMPTY__', price: 0, stock: '', status: '품절', isLocked: false }];
                                 const emptyOrderList = [{
                                     '닉네임': '___WORKSPACE_META___',
                                     '주문자': '___WORKSPACE_META___',
@@ -6282,7 +6211,6 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                     '송장번호': ''
                                 }];
                                 try {
-                                    // 1) 사장님 본인 시트에 '주문_방송이름' 탭으로 마감 주문서 저장!
                                     if (prevBroadcastTitle && activePrevOrders.length > 0) {
                                         await fetchGas(googleScriptUrl, {
                                             action: 'save_orders',
@@ -6293,14 +6221,91 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                             data: prevArchiveRows
                                         });
                                     }
-                                    // 2) 사장님 시트의 '실시간재고'와 '메인주문'은 깨끗하게 비움!
-                                    await Promise.all([
-                                        fetchGas(googleScriptUrl, { action: 'save_inventory', masterId: cleanMaster, forceClear: true, data: invPayload }),
-                                        fetchGas(googleScriptUrl, { action: 'save_orders', masterId: cleanMaster, targetSheetName: '메인주문', broadcastName: nextTitle, onlyMainOrder: true, data: emptyOrderList, nicknames: [], confirmedNicknames: [] })
-                                    ]);
-                                    openModal(`✅ 내 시트에 [${archiveSheetName}] 시트로 저장이 완료되었습니다!\n\n해당 시트 내용을 복사해서 직원용 시트('메인주문' 탭)에 붙여넣으시면 됩니다.`, 'alert');
+                                    await fetchGas(googleScriptUrl, { action: 'save_inventory', masterId: cleanMaster, forceClear: true, data: invPayload });
+                                    await fetchGas(googleScriptUrl, { action: 'save_orders', masterId: cleanMaster, targetSheetName: '메인주문', broadcastName: nextTitle, onlyMainOrder: true, data: emptyOrderList, nicknames: [], confirmedNicknames: [] });
                                 } catch (e) {}
                             }
+
+                            // 2순위: 생방송 모드 OFF 및 파이어베이스 마감 상태 반영
+                            setIsLiveBroadcasting(false);
+                            try {
+                                localStorage.setItem(getLsKey('isLiveBroadcasting'), JSON.stringify(false));
+                            } catch (e) {}
+                            if (window.emberRealtimeDb) {
+                                const safePrevKey = prevBroadcastTitle.replace(/[.#$\[\]\/]/g, '_');
+                                if (safePrevKey && closedPortalCustomers.length > 0) {
+                                    window.emberRealtimeDb.ref(`ember_live_data/_portal_orders/${safePrevKey}`).set({
+                                        broadcastName: prevBroadcastTitle,
+                                        updatedAt: Date.now(),
+                                        updatedBy: 'boss_closed',
+                                        customers: closedPortalCustomers
+                                    }).catch(() => {});
+                                }
+                                window.emberRealtimeDb.ref('ember_live_data/_portal_live_mode').set({
+                                    isLive: false,
+                                    liveOwner: 'none',
+                                    lastClosedBroadcastName: prevBroadcastTitle,
+                                    updatedAt: Date.now()
+                                }).catch(() => {});
+                                window.emberRealtimeDb.ref('ember_live_data/_portal_orders/__MAIN_LIVE__').remove().catch(() => {});
+                                window.emberRealtimeDb.ref('ember_live_data').update({
+                                    '_global_config/catalogClosedLock': true,
+                                    '_global_config/isStoreClosed': true,
+                                    '_global_config/currentPinnedId': null,
+                                    '_live_catalog': {
+                                        items: [],
+                                        rawCount: 0,
+                                        explicitClear: true,
+                                        updatedAt: Date.now()
+                                    }
+                                }).catch(() => {});
+                            }
+
+                            setBroadcastName(nextTitle);
+
+                            let mergedArchived = [];
+                            try {
+                                const prevArchivedStr = localStorage.getItem(getLsKey('archivedDepositIds'));
+                                const prevArchived = prevArchivedStr ? JSON.parse(prevArchivedStr) : [];
+                                mergedArchived = Array.from(new Set([...prevArchived, ...matchedDeposits]));
+                                localStorage.setItem(getLsKey('archivedDepositIds'), JSON.stringify(mergedArchived));
+                            } catch (e) {}
+
+                            try {
+                                localStorage.setItem(getLsKey('broadcastName'), JSON.stringify(nextTitle));
+                                localStorage.setItem(getLsKey('youtubeOrders'), JSON.stringify([]));
+                                localStorage.setItem(getLsKey('productHistory'), JSON.stringify({}));
+                                localStorage.setItem(getLsKey('shippingOverrides'), JSON.stringify([]));
+                                localStorage.setItem(getLsKey('cardPayments'), JSON.stringify({}));
+                                localStorage.setItem(getLsKey('matchedDeposits'), JSON.stringify(mergedArchived));
+                                localStorage.setItem(getLsKey('depositLinks'), JSON.stringify({}));
+                                localStorage.setItem(getLsKey('customerDepositLogs'), JSON.stringify({}));
+                                localStorage.setItem(getLsKey('depositorNames'), JSON.stringify({}));
+                                localStorage.setItem(getLsKey('clickedChats'), JSON.stringify([]));
+                                localStorage.setItem(getLsKey('chatKeywords'), JSON.stringify([]));
+                                localStorage.setItem(getLsKey('sentAddressRequests'), JSON.stringify([]));
+                                localStorage.setItem(getLsKey('deletedDepositIds'), JSON.stringify([]));
+                                localStorage.setItem(getLsKey('checkedOrders'), JSON.stringify([]));
+                                localStorage.setItem(getLsKey('addressMapping'), JSON.stringify({}));
+                                localStorage.setItem(getLsKey('cashReceipts'), JSON.stringify({}));
+                                localStorage.setItem(getLsKey('inventory'), JSON.stringify(lockedItems));
+                                localStorage.setItem(getLsKey('manualDeposits'), JSON.stringify([]));
+                                localStorage.setItem(getLsKey('noShowCustomers'), JSON.stringify({}));
+                                localStorage.setItem(getLsKey('waitlistCustomers'), JSON.stringify({}));
+                                localStorage.setItem(getLsKey('trackingNumbers'), JSON.stringify({}));
+                                localStorage.removeItem(getLsKey('ignoredAutoMatch'));
+                                localStorage.removeItem(getLsKey('savedChats'));
+                            } catch (e) {}
+
+                            setOrders([]); setProductHistory({}); setShippingOverrides({}); setCardPayments({}); 
+                            setMatchedDeposits(new Set(mergedArchived)); setDepositLinks({}); setCustomerDepositLogs({}); 
+                            setDepositorNames({}); setClickedChats(new Set()); setKeywords([]); 
+                            setSentAddressRequests(new Set()); setDeletedDepositIds(new Set()); setCheckedOrders(new Set()); 
+                            setAddressMapping({}); setCashReceipts({}); setInventory(lockedItems); 
+                            setManualDeposits([]); setNoShowCustomers({}); setWaitlistCustomers({}); setTrackingNumbers({});
+                            window.dispatchEvent(new CustomEvent('clear-chats'));
+
+                            openModal(`✅ 내 시트에 [${archiveSheetName}] 시트로 저장 및 방송 마감이 완료되었습니다!\n\n해당 시트 내용을 복사해서 직원용 시트('메인주문' 탭)에 붙여넣으시면 됩니다.`, 'alert');
                         }, null, '');
                     }, 150);
                 });
@@ -6413,7 +6418,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
 
             <div className="flex-1 overflow-hidden flex flex-col">
                 <div className={`flex-1 overflow-hidden ${activeTab === 'live' ? 'flex' : 'hidden'}`}>
-                    <LiveTab youtubeApiKey={youtubeApiKey} youtubeVideoId={youtubeVideoId} orders={orders} setOrders={setOrders} productHistory={productHistory} setProductHistory={setProductHistory} quickShipping={quickShipping} jejuShipping={jejuShipping} freeShippingThreshold={freeShippingThreshold} cardFeeRate={cardFeeRate} shippingOverrides={shippingOverrides} setShippingOverrides={setShippingOverrides} bankAccount={bankAccount} googleScriptUrl={googleScriptUrl} setGoogleScriptUrl={setGoogleScriptUrl} depSheetId={depSheetId} masterSheetId={masterSheetId} addresses={addresses} setAddresses={setAddresses} cardPayments={cardPayments} setCardPayments={setCardPayments} manualDeposits={manualDeposits} setManualDeposits={setManualDeposits} matchedDeposits={matchedDeposits} setMatchedDeposits={setMatchedDeposits} depositLinks={depositLinks} setDepositLinks={setDepositLinks} customerDepositLogs={customerDepositLogs} setCustomerDepositLogs={setCustomerDepositLogs} depositorNames={depositorNames} setDepositorNames={setDepositorNames} clickedChats={clickedChats} setClickedChats={setClickedChats} openModal={openModal} keywords={keywords} setKeywords={setKeywords} sentAddressRequests={sentAddressRequests} setSentAddressRequests={setSentAddressRequests} deletedDepositIds={deletedDepositIds} setDeletedDepositIds={setDeletedDepositIds} checkedOrders={checkedOrders} setCheckedOrders={setCheckedOrders} addressMapping={addressMapping} setAddressMapping={setAddressMapping} templateConfig={templateConfig} specialCustomers={specialCustomers} setSpecialCustomers={setSpecialCustomers} inventory={inventory} setInventory={setInventory} quickMessages={quickMessages} handleResetAllData={handleResetAllData} broadcastName={broadcastName} setBroadcastName={setBroadcastName} setGlobalError={setGlobalError} cashReceipts={cashReceipts} setCashReceipts={setCashReceipts} soundEnabled={soundEnabled} soundVolume={soundVolume} noShowCustomers={noShowCustomers} setNoShowCustomers={setNoShowCustomers} waitlistCustomers={waitlistCustomers} setWaitlistCustomers={setWaitlistCustomers} customerPasswords={customerPasswords} setCustomerPasswords={setCustomerPasswords} trackingNumbers={trackingNumbers} setTrackingNumbers={setTrackingNumbers} customerCredits={customerCredits} setCustomerCredits={setCustomerCredits} />
+                    <LiveTab youtubeApiKey={youtubeApiKey} youtubeVideoId={youtubeVideoId} orders={orders} setOrders={setOrders} productHistory={productHistory} setProductHistory={setProductHistory} quickShipping={quickShipping} jejuShipping={jejuShipping} freeShippingThreshold={freeShippingThreshold} cardFeeRate={cardFeeRate} shippingOverrides={shippingOverrides} setShippingOverrides={setShippingOverrides} bankAccount={bankAccount} googleScriptUrl={googleScriptUrl} setGoogleScriptUrl={setGoogleScriptUrl} depSheetId={depSheetId} masterSheetId={masterSheetId} addresses={addresses} setAddresses={setAddresses} cardPayments={cardPayments} setCardPayments={setCardPayments} manualDeposits={manualDeposits} setManualDeposits={setManualDeposits} matchedDeposits={matchedDeposits} setMatchedDeposits={setMatchedDeposits} depositLinks={depositLinks} setDepositLinks={setDepositLinks} customerDepositLogs={customerDepositLogs} setCustomerDepositLogs={setCustomerDepositLogs} depositorNames={depositorNames} setDepositorNames={setDepositorNames} clickedChats={clickedChats} setClickedChats={setClickedChats} openModal={openModal} keywords={keywords} setKeywords={setKeywords} sentAddressRequests={sentAddressRequests} setSentAddressRequests={setSentAddressRequests} deletedDepositIds={deletedDepositIds} setDeletedDepositIds={setDeletedDepositIds} checkedOrders={checkedOrders} setCheckedOrders={setCheckedOrders} addressMapping={addressMapping} setAddressMapping={setAddressMapping} templateConfig={templateConfig} specialCustomers={specialCustomers} setSpecialCustomers={setSpecialCustomers} inventory={inventory} setInventory={setInventory} quickMessages={quickMessages} handleResetAllData={handleResetAllData} broadcastName={broadcastName} setBroadcastName={setBroadcastName} setGlobalError={setGlobalError} cashReceipts={cashReceipts} setCashReceipts={setCashReceipts} soundEnabled={soundEnabled} soundVolume={soundVolume} noShowCustomers={noShowCustomers} setNoShowCustomers={setNoShowCustomers} waitlistCustomers={waitlistCustomers} setWaitlistCustomers={setWaitlistCustomers} customerPasswords={customerPasswords} setCustomerPasswords={setCustomerPasswords} trackingNumbers={trackingNumbers} setTrackingNumbers={setTrackingNumbers} customerCredits={customerCredits} setCustomerCredits={setCustomerCredits} isLiveBroadcasting={isLiveBroadcasting} setIsLiveBroadcasting={setIsLiveBroadcasting} />
                 </div>
                 <div className={`flex-1 overflow-y-auto ${activeTab === 'management' ? 'block' : 'hidden'}`}>
                     <OrderManagementTab orders={orders} shippingOverrides={shippingOverrides} quickShipping={quickShipping} jejuShipping={jejuShipping} freeShippingThreshold={freeShippingThreshold} cardFeeRate={cardFeeRate} broadcastName={broadcastName} addresses={addresses} handleExportBackup={handleExportBackup} handleImportBackup={handleImportBackup} addressMapping={addressMapping} cardPayments={cardPayments} specialCustomers={specialCustomers} openModal={openModal} cashReceipts={cashReceipts} inventory={inventory} productHistory={productHistory} noShowCustomers={noShowCustomers} waitlistCustomers={waitlistCustomers} trackingNumbers={trackingNumbers} setTrackingNumbers={setTrackingNumbers} googleScriptUrl={googleScriptUrl} masterSheetId={masterSheetId} />
