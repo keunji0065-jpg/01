@@ -2090,8 +2090,8 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             const [quickAddrModal, setQuickAddrModal] = useState({ isOpen: false, nick: '', editData: null });
             const [broadcastAddresses, setBroadcastAddresses] = useLocalStorage('broadcastAddresses', {});
             const [isViewingPastBroadcast, setIsViewingPastBroadcast] = useLocalStorage('isViewingPastBroadcast', false);
-            // 기본 시작 상태를 무조건 '방송마감(false)'으로 시작하여, 사장님이 직접 버튼을 눌러 방송명을 지정하고 생방송을 켜도록 설정!
-            const [isLiveBroadcasting, setIsLiveBroadcasting] = useState(false);
+            // 생방송 상태를 로컬스토리지에 기억하여 방송 도중 새로고침(F5)을 해도 풀리지 않도록 유지!
+            const [isLiveBroadcasting, setIsLiveBroadcasting] = useLocalStorage('isLiveBroadcasting', true);
 
             // 🔴 생방송 시작 버튼 핸들러 (켜는 순간 고객 포털이 사장님 실시간 주문서 + 직원용 시트를 함께 조회)
             const handleStartLiveBroadcast = useCallback(() => {
@@ -3797,9 +3797,18 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         if(actualSheetId) { 
                             const confirmedNicknames = uniqueNicknames.filter(n => checkedOrders && checkedOrders.has(n));
 
-                            // ✨ 오직 사장님이 [🔴 생방송중]을 켠 상태일 때만 고객 포털 클라우드(__MAIN_LIVE__)에 실시간 미러링!
-                            if (isLiveBroadcasting && window.emberRealtimeDb) {
+                            // ✨ 생방송 중이거나 수동 저장(Ctrl+S)을 눌렀을 때 고객 포털 클라우드(__MAIN_LIVE__)에 즉시 미러링!
+                            if ((isLiveBroadcasting || isManual) && window.emberRealtimeDb) {
                                 try {
+                                    if (!isLiveBroadcasting && isManual && activeOrders.length > 0) {
+                                        setIsLiveBroadcasting(true);
+                                    }
+                                    window.emberRealtimeDb.ref('ember_live_data/_portal_live_mode').update({
+                                        isLive: true,
+                                        liveOwner: 'boss',
+                                        activeBroadcastName: cleanBName,
+                                        updatedAt: Date.now()
+                                    }).catch(() => {});
                                     const safeBKey = cleanBName.replace(/[.#$\[\]\/]/g, '_');
                                     const portalCustomers = uniqueNicknames.map(nick => {
                                         const custOrders = orders.filter(o => !o.isCancelled && o.customer === nick);
