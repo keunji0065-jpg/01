@@ -5911,9 +5911,17 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             const [addrSheetId, setAddrSheetId] = useLocalStorage('addrSheetId', '1ywl4gRvswQpvIYtPVbSROzz7a5elbLieYhqMZmt191U');
             const [masterSheetId, setMasterSheetId] = useLocalStorage('masterSheetId', '1B8SBMX18_Px1CpRHuDTxqodqudiTrf6NfVoptjHtnGQ');
             const [broadcastName, setBroadcastName] = useLocalStorage('broadcastName', '오늘의방송');
-            const [isLiveBroadcasting, setIsLiveBroadcasting] = useLocalStorage('isLiveBroadcasting', true);
+            const [isLiveBroadcasting, setIsLiveBroadcasting] = useLocalStorage('isLiveBroadcasting', false);
             const [bankAccount, setBankAccount] = useLocalStorage('bankAccount', FIXED_BANK_ACCOUNT);
             
+            // 처음 주문서를 열었을 때 현재 진행 중인 주문이 비어있다면 무조건 '🔒 방송마감' 상태에서 시작하도록 보장
+            useEffect(() => {
+                const activeCount = (Array.isArray(orders) ? orders : []).filter(o => !o.isCancelled).length;
+                if (activeCount === 0 && isLiveBroadcasting) {
+                    setIsLiveBroadcasting(false);
+                }
+            }, []);
+
             const [soundEnabled, setSoundEnabled] = useState(false);
             const [soundVolume, setSoundVolume] = useLocalStorage('soundVolume', 50);
             const [addressStartDate, setAddressStartDate] = useLocalStorage('addressStartDate', '');
