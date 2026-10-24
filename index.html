@@ -1500,16 +1500,30 @@ useEffect(() => {
                                     )}
                                 </>
                             )}
-                            {Number(customerCredit) > 0 && (
-                                <div className="flex items-center gap-1 mt-0.5">
-                                    <div className="text-[10px] font-extrabold text-teal-700 bg-teal-50 border border-teal-200 px-1.5 py-0.5 rounded">
-                                        💰 보유적립금: {Number(customerCredit).toLocaleString()}원
-                                    </div>
-                                    {balance > 0 && handleApplyCustomerCreditToOrder && (
-                                        <button type="button" onClick={(e) => { e.stopPropagation(); handleApplyCustomerCreditToOrder(nick, customerCredit, balance); }} className="text-[10px] font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white px-1.5 py-0.5 rounded shadow-sm transition-colors" title="보유 적립금을 현재 주문에서 즉시 차감합니다">⚡적립금차감</button>
-                                    )}
-                                </div>
-                            )}
+                            {(() => {
+                                const usedCreditAmt = items
+                                    .filter(i => !i.isCancelled && String(i.product || '').trim().includes('적립금') && Number(i.price) < 0)
+                                    .reduce((s, i) => s + Math.abs(Number(i.price) || 0), 0);
+                                return (
+                                    <>
+                                        {Number(customerCredit) > 0 && (
+                                            <div className="flex items-center gap-1 mt-0.5">
+                                                <div className="text-[10px] font-extrabold text-teal-700 bg-teal-50 border border-teal-200 px-1.5 py-0.5 rounded">
+                                                    💰 보유적립금: {Number(customerCredit).toLocaleString()}원
+                                                </div>
+                                                {balance > 0 && handleApplyCustomerCreditToOrder && (
+                                                    <button type="button" onClick={(e) => { e.stopPropagation(); handleApplyCustomerCreditToOrder(nick, customerCredit, balance); }} className="text-[10px] font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white px-1.5 py-0.5 rounded shadow-sm transition-colors" title="보유 적립금을 현재 주문에서 즉시 차감합니다">⚡적립금차감</button>
+                                                )}
+                                            </div>
+                                        )}
+                                        {usedCreditAmt > 0 && (
+                                            <div className="text-[10px] font-bold text-rose-600 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded mt-0.5">
+                                                📉 이번주문 적립금 -{usedCreditAmt.toLocaleString()}원 사용됨
+                                            </div>
+                                        )}
+                                    </>
+                                );
+                            })()}
                         </div>
                     </div>
                     <div className="p-0.5 space-y-0.5 bg-white dark:bg-slate-800">
@@ -2649,7 +2663,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     
                     // ✨ 수동으로 주소를 방금 입력/수정한 경우 12초 동안은 서버의 이전 캐시가 로컬 최신 주소를 덮어쓰지 못하도록 완벽 보호!
                     if (Date.now() - addressSyncLock.current > 12000) {
-                        const addrKeys = mergedAddr.map(a => a.nickname + (a.address||'') + (a.phone||'')).join(',');
+                        const addrKeys = mergedAddr.map(a => a.nickname + (a.address||'') + (a.phone||'') + (a.memo||'')).join(',');
                         if (addrKeys !== prevAddrsStr.current) {
                             if (mergedAddr.length > prevAddrCount.current && prevAddrCount.current !== 0) playBellSound();
                             if (mergedAddr.length > 0) {
@@ -2672,8 +2686,35 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         prevAddrCount.current = mergedAddr.length;
                     }
 
-                    // 🧟‍♂️ 구버전 앱스 스크립트가 '방송별상품보관함'에서 옛날 악세사리(E 423 등)를 몰래 꺼내 보내주더라도,
-                    // 사장님이 현재 주문서에서 직접 등록한 재고만 유지되도록 외부 시트 역류를 원천 차단합니다!
+                    // ✨ 고객상태관리(VIP/관리자/노쇼, 비밀번호, 적립금) 시트 데이터도 실시간 동기화하여 직원용·사장님용 적립금이 100% 일치하도록 연결!
+                    if (Array.isArray(res.customerDb)) {
+                        const serverCredits = {};
+                        const serverPins = {};
+                        const serverSpecial = {};
+                        res.customerDb.forEach(c => {
+                            const cNick = String(c['닉네임'] || c.col_0 || '').trim();
+                            if (!cNick || cNick === '닉네임') return;
+                            const cStatus = String(c['고객상태'] || c.col_1 || '').trim().toLowerCase();
+                            const cPin = String(c['비밀번호'] || c.col_2 || '').replace(/[^0-9]/g, '').slice(-4);
+                            const cCred = Number(String(c['적립금'] || c.col_5 || '0').replace(/[^0-9.-]/g, '')) || 0;
+                            const cTime = String(c['저장시간'] || c.col_4 || '').trim();
+                            if (cStatus === 'vip' || cStatus === 'manager' || cStatus === 'noshow') {
+                                serverSpecial[normalizeString(cNick)] = { type: cStatus, originalName: cNick, timestamp: cTime };
+                            }
+                            if (cPin) serverPins[cNick] = cPin;
+                            if (cCred >= 0) serverCredits[cNick] = cCred;
+                        });
+                        if (Object.keys(serverSpecial).length > 0) {
+                            setSpecialCustomers(prev => ({ ...prev, ...serverSpecial }));
+                        }
+                        if (Object.keys(serverPins).length > 0) {
+                            setCustomerPasswords(prev => ({ ...serverPins, ...prev }));
+                        }
+                        if (Date.now() - creditSyncLock.current > 10000 && Object.keys(serverCredits).length > 0) {
+                            setCustomerCredits(prev => ({ ...serverCredits, ...prev }));
+                        }
+                    }
+
                     setGasStatus(prev => prev === gasMsg.trim() ? prev : gasMsg.trim());
                 } else {
                     setGasStatus("시트 응답오류");
@@ -2856,6 +2897,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             const handlePortalCred = (snap) => {
                 const val = snap.val();
                 if (!val || typeof val !== 'object') return;
+                if (Date.now() - creditSyncLock.current < 5000) return;
                 setCustomerCredits(prev => {
                     let changed = false;
                     const next = { ...prev };
@@ -3284,19 +3326,18 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                 if (filterStatus === 'no-address' && (addrInfo && addrInfo.address)) return false;
                 if (filterStatus === 'no-kakao' && checkedOrders.has(nick)) return false;
                 if (filterStatus === 'noshow' && !noShowCustomers[nick]) return false;
-                if (filterStatus === 'waitlist' && waitItems.length === 0 && !waitlistCustomers[nick]) return false;
+                if (filterStatus === 'waitlist' && !(waitItems.length > 0 || waitlistCustomers[nick])) return false;
 
                 if (!search) return true;
-                const chosungNick = getChosung(nick).toLowerCase();
-                const realName = String(addrInfo?.realname || depositorNames[nick] || '').toLowerCase();
-                const phone = String(addrInfo?.phone || '');
-                const prodMatch = items.some(i => String(i.product || '').toLowerCase().includes(search) || getChosung(i.product || '').toLowerCase().includes(search));
-                return nick.toLowerCase().includes(search) || chosungNick.includes(search) || realName.includes(search) || phone.includes(search) || prodMatch;
+                if (nick.toLowerCase().includes(search) || getChosung(nick).toLowerCase().includes(search)) return true;
+                if (addrInfo && ((addrInfo.realname && addrInfo.realname.toLowerCase().includes(search)) || (addrInfo.phone && addrInfo.phone.includes(search)) || (addrInfo.address && addrInfo.address.toLowerCase().includes(search)))) return true;
+                if (depositorNames[nick] && depositorNames[nick].toLowerCase().includes(search)) return true;
+                return items.some(i => String(i.product || '').toLowerCase().includes(search));
             });
         }, [groupedOrders, deferredOrderSearch, filterStatus, getCalculatedShipping, cardPayments, addressLookup, checkedOrders, noShowCustomers, waitlistCustomers, depositorNames]);
 
         const totalItemsCount = useMemo(() => {
-            return filteredGroupedOrders.reduce((acc, [_, items]) => acc + items.filter(i => !i.isCancelled && !i.isWaitlist).reduce((s, i) => s + (Number(i.quantity) || 0), 0), 0);
+            return filteredGroupedOrders.reduce((acc, [_, items]) => acc + items.filter(i => !i.isCancelled).length, 0);
         }, [filteredGroupedOrders]);
 
         const displayedOrders = useMemo(() => {
@@ -3319,47 +3360,65 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
         }, []);
 
         const handleSetCustomerPassword = useCallback((nick, currentPin) => {
-            openModal(`'${nick}' 고객님의 주문서 조회 비밀번호(숫자 4자리)를 설정하세요.`, 'prompt', (val) => {
+            openModal(`'${nick}' 고객님의 주문서 조회용 비밀번호(핸드폰 뒤 4자리)를 입력하세요.`, 'prompt', (val) => {
                 if (val === null) return;
-                const cleanPin = String(val).replace(/[^0-9]/g, '').slice(-4);
-                setCustomerPasswords(prev => ({ ...prev, [nick]: cleanPin }));
+                const clean = String(val).replace(/[^0-9]/g, '').slice(-4);
+                setCustomerPasswords(prev => ({ ...prev, [nick]: clean }));
                 if (googleScriptUrl && masterSheetId) {
                     fetchGas(googleScriptUrl, {
                         action: 'save_customer_password',
                         masterId: getCleanSheetId(masterSheetId),
-                        data: { nickname: nick, password: cleanPin }
+                        data: { nickname: nick, password: clean }
                     }).catch(() => {});
                 }
             }, null, currentPin || '');
         }, [openModal, setCustomerPasswords, googleScriptUrl, masterSheetId]);
 
         const handleSetTrackingNumber = useCallback((nick, currentTrk) => {
-            openModal(`'${nick}' 고객님의 롯데택배 송장번호를 입력하세요.\n(비우려면 빈칸으로 확인)`, 'prompt', (val) => {
+            openModal(`'${nick}' 고객님의 롯데택배 송장번호를 입력하세요.\n(비우고 확인을 누르면 송장번호가 삭제됩니다)`, 'prompt', (val) => {
                 if (val === null) return;
-                const cleanTrk = String(val).replace(/[^0-9,-]/g, '').trim();
+                const clean = String(val).replace(/[^0-9,-]/g, '').trim();
                 trackingSyncLock.current = Date.now();
-                setTrackingNumbers(prev => ({ ...prev, [nick]: cleanTrk === '' ? '__CLEAR__' : cleanTrk }));
+                setTrackingNumbers(prev => ({ ...prev, [nick]: clean || '__CLEAR__' }));
                 if (googleScriptUrl && masterSheetId) {
                     fetchGas(googleScriptUrl, {
                         action: 'save_tracking_numbers',
                         masterId: getCleanSheetId(masterSheetId),
                         broadcastName: broadcastName,
-                        data: [{ nickname: nick, trackingNumber: cleanTrk === '' ? '__CLEAR__' : cleanTrk }]
+                        data: [{ nickname: nick, trackingNumber: clean || '__CLEAR__' }]
                     }).catch(() => {});
                 }
             }, null, currentTrk || '');
         }, [openModal, setTrackingNumbers, googleScriptUrl, masterSheetId, broadcastName]);
 
-        const saveCreditToCloudAndSheet = useCallback((nick, nextCreditAmt) => {
+        const saveCreditToCloudAndSheet = useCallback((nick, nextCreditAmt, reasonMemo = '직접 입력/수정') => {
             const cleanAmt = Math.max(0, Number(nextCreditAmt) || 0);
+            const prevAmt = Math.max(0, Number(customerCredits?.[nick]) || 0);
+            const diffAmt = cleanAmt - prevAmt;
+            const nowKst = formatDepositFullDateTime(new Date().toISOString());
             creditSyncLock.current = Date.now();
             setCustomerCredits(prev => ({ ...prev, [nick]: cleanAmt }));
             if (window.emberRealtimeDb) {
                 const safeKey = String(nick).replace(/[.#$\[\]\/]/g, '_');
-                window.emberRealtimeDb.ref(`ember_live_data/_portal_credits/${safeKey}`).set({
-                    nickname: nick,
-                    credit: cleanAmt,
-                    updatedAt: Date.now()
+                const credRef = window.emberRealtimeDb.ref(`ember_live_data/_portal_credits/${safeKey}`);
+                credRef.once('value').then(snap => {
+                    const prevVal = snap.val() || {};
+                    const prevLogs = Array.isArray(prevVal.logs) ? prevVal.logs : [];
+                    const newEntry = {
+                        id: `cred_${Date.now()}`,
+                        date: nowKst,
+                        type: diffAmt >= 0 ? 'add' : 'use',
+                        diff: diffAmt,
+                        balance: cleanAmt,
+                        reason: reasonMemo
+                    };
+                    credRef.set({
+                        nickname: nick,
+                        credit: cleanAmt,
+                        updatedAt: Date.now(),
+                        updatedAtStr: nowKst,
+                        logs: [newEntry, ...prevLogs].slice(0, 30)
+                    }).catch(() => {});
                 }).catch(() => {});
             }
             if (googleScriptUrl && masterSheetId) {
@@ -3369,15 +3428,15 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     data: { nickname: nick, credit: cleanAmt }
                 }).catch(() => {});
             }
-        }, [setCustomerCredits, googleScriptUrl, masterSheetId]);
+        }, [customerCredits, setCustomerCredits, googleScriptUrl, masterSheetId]);
 
         const handleSetCustomerCredit = useCallback((nick, currentCredit) => {
-            openModal(`'${nick}' 고객님의 보유 적립금(원)을 입력하세요.\n(입력한 적립금은 고객 포털에서도 실시간으로 표시됩니다)`, 'prompt', (val) => {
+            openModal(`'${nick}' 고객님의 보유 적립금(원)을 입력하세요.\n(입력한 적립금은 직원용 시트와 고객 포털에 적립일시와 함께 실시간 반영됩니다)`, 'prompt', (val) => {
                 if (val === null) return;
                 const num = Number(String(val).replace(/[^0-9]/g, '')) || 0;
-                saveCreditToCloudAndSheet(nick, num);
+                saveCreditToCloudAndSheet(nick, num, `[${broadcastName || '주문서'}] 적립금 직접 입력/수정`);
             }, null, currentCredit ? String(currentCredit) : '');
-        }, [openModal, saveCreditToCloudAndSheet]);
+        }, [openModal, saveCreditToCloudAndSheet, broadcastName]);
 
         const handleConvertOverpaidToCredit = useCallback((nick, overpaidAmt, currentDepTotal) => {
             const amt = Math.max(0, Number(overpaidAmt) || 0);
@@ -3385,7 +3444,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             const prevCredit = Number(customerCredits?.[nick]) || 0;
             const nextCredit = prevCredit + amt;
             openModal(`'${nick}' 고객님의 과납금 ${amt.toLocaleString()}원을 적립금으로 전환하시겠습니까?\n\n• 전환 후 보유 적립금: ${nextCredit.toLocaleString()}원\n• 현재 주문서는 과납 없이 '완납' 상태로 깔끔하게 정리됩니다.`, 'confirm', () => {
-                saveCreditToCloudAndSheet(nick, nextCredit);
+                saveCreditToCloudAndSheet(nick, nextCredit, `[${broadcastName || '주문서'}] 과납금 적립전환 (+${amt.toLocaleString()}원)`);
                 const targetNewDeposit = Math.max(0, (Number(currentDepTotal) || 0) - amt);
                 setOrders(prev => {
                     let applied = false;
@@ -3401,7 +3460,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     });
                 });
             });
-        }, [customerCredits, openModal, saveCreditToCloudAndSheet, setOrders]);
+        }, [customerCredits, openModal, saveCreditToCloudAndSheet, setOrders, broadcastName]);
 
         const handleApplyCustomerCreditToOrder = useCallback((nick, availableCredit, currentBalance) => {
             const avail = Math.max(0, Number(availableCredit) || 0);
@@ -3410,7 +3469,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             const useAmt = Math.min(avail, bal);
             const remainCredit = avail - useAmt;
             openModal(`'${nick}' 고객님의 보유 적립금 ${avail.toLocaleString()}원 중 ${useAmt.toLocaleString()}원을 이번 주문에 차감하시겠습니까?\n\n• 차감 후 남은 보유 적립금: ${remainCredit.toLocaleString()}원\n• 주문서에 '적립금 (-${useAmt.toLocaleString()}원)' 항목이 자동 추가됩니다.`, 'confirm', () => {
-                saveCreditToCloudAndSheet(nick, remainCredit);
+                saveCreditToCloudAndSheet(nick, remainCredit, `[${broadcastName || '주문서'}] 주문 차감 사용 (-${useAmt.toLocaleString()}원)`);
                 resetCustomerConfirmation(nick);
                 setOrders(prev => [
                     ...prev,
@@ -3427,7 +3486,57 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     }
                 ]);
             });
-        }, [openModal, saveCreditToCloudAndSheet, resetCustomerConfirmation, setOrders]);
+        }, [openModal, saveCreditToCloudAndSheet, resetCustomerConfirmation, setOrders, broadcastName]);
+
+        const handleClearCurrentOrdersOnly = useCallback(() => {
+            openModal(`현재 화면의 주문 목록을 모두 비우시겠습니까?\n(메인시트의 '메인주문' 탭도 함께 깨끗하게 비워집니다)`, 'confirm', () => {
+                setOrders([]);
+                setShippingOverrides({});
+                setCardPayments({});
+                setCashReceipts({});
+                setNoShowCustomers({});
+                setWaitlistCustomers({});
+                setCheckedOrders(new Set());
+                setCustomerDepositLogs({});
+                setTrackingNumbers({});
+                if (window.emberRealtimeDb) {
+                    window.emberRealtimeDb.ref('ember_live_data/_portal_orders/__MAIN_LIVE__').remove().catch(() => {});
+                }
+                if (googleScriptUrl && masterSheetId) {
+                    const cleanBName = String(broadcastName || '오늘의방송').replace(/^주문_/, '').trim();
+                    const emptyRow = [{
+                        '닉네임': '___WORKSPACE_META___',
+                        '주문자': '___WORKSPACE_META___',
+                        customer: '___WORKSPACE_META___',
+                        nickname: '___WORKSPACE_META___',
+                        name: '___WORKSPACE_META___',
+                        '상품명': cleanBName,
+                        product: cleanBName,
+                        '수량': Number(freeShippingThreshold) || 70000,
+                        quantity: Number(freeShippingThreshold) || 70000,
+                        qty: Number(freeShippingThreshold) || 70000,
+                        '단가(제품금액)': Number(quickShipping) || 4000,
+                        price: Number(quickShipping) || 4000,
+                        '배송비': feeRateNum,
+                        shipping: feeRateNum,
+                        '입금액': 0,
+                        deposit: 0,
+                        '카드결제': '', '수령인명': '', '연락처': '', '주소': '', '요청사항': '',
+                        'VIP여부': '', '노쇼여부': '', '대기여부': '', '비밀번호': '', '주문확인': '', '입금내역JSON': '', '송장번호': ''
+                    }];
+                    fetchGas(googleScriptUrl, {
+                        action: 'save_orders',
+                        masterId: getCleanSheetId(masterSheetId),
+                        targetSheetName: '메인주문',
+                        broadcastName: cleanBName,
+                        onlyMainOrder: true,
+                        data: emptyRow,
+                        nicknames: [],
+                        confirmedNicknames: []
+                    }).catch(() => {});
+                }
+            });
+        }, [openModal, setOrders, setShippingOverrides, setCardPayments, setCashReceipts, setNoShowCustomers, setWaitlistCustomers, setCheckedOrders, setCustomerDepositLogs, setTrackingNumbers, googleScriptUrl, masterSheetId, broadcastName, freeShippingThreshold, quickShipping, feeRateNum]);
 
         const [focusedChatId, setFocusedChatId] = useState(null);
 
@@ -5018,6 +5127,14 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                     </button>
                                     <button
                                         type="button"
+                                        onClick={handleClearCurrentOrdersOnly}
+                                        className="px-2 py-1 rounded text-[11px] font-bold flex items-center gap-1 shadow-sm transition-colors bg-red-500 hover:bg-red-600 text-white"
+                                        title="현재 화면의 주문 목록과 메인주문 시트 비우기"
+                                    >
+                                        <Icon name="trash" weight="bold" /> 비우기
+                                    </button>
+                                    <button
+                                        type="button"
                                         onClick={() => {
                                             if (isLiveBroadcasting) {
                                                 handleResetAllData();
@@ -5175,13 +5292,18 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     <div ref={panelInv.ref} className="flex flex-col bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg shadow-sm resizable-panel" style={{ width: panelInv.width, minWidth: '160px' }}>
                         <div className="p-2 bg-slate-100 dark:bg-slate-800 border-b dark:border-slate-700 flex flex-col gap-2 shrink-0">
                             <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between shrink-0 gap-1 flex-wrap">
-                                <span className="flex items-center gap-1"><Icon name="package" weight="fill"/> 실시간 재고 <span className="text-xs text-slate-500 dark:text-slate-400 font-normal">({inventory.length})</span></span>
-                                <div className="flex items-center gap-1">
-                                    <button type="button" onClick={handleForcePushInventory} className="px-1.5 py-0.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-[10px] font-bold shadow-sm transition-colors" title="현재 실시간 재고를 메인 시트와 고객 라인업에 즉시 강제 전송">⚡라인업전송</button>
-                                    {inventory.length > 0 && (
-                                        <button type="button" onClick={handleClearAllInventory} className="px-1.5 py-0.5 bg-red-500 hover:bg-red-600 text-white rounded text-[10px] font-bold shadow-sm transition-colors" title="실시간 재고 전체 비우기">비우기</button>
-                                    )}
-                                </div>
+                                {(() => {
+                                    const validInvList = (Array.isArray(inventory) ? inventory : []).filter(i => i && String(i.name || '').trim() && String(i.name).toLowerCase() !== 'name' && i.name !== '__EMPTY__');
+                                    return (
+                                        <>
+                                            <span className="flex items-center gap-1"><Icon name="package" weight="fill"/> 실시간 재고 <span className="text-xs text-slate-500 dark:text-slate-400 font-normal">({validInvList.length})</span></span>
+                                            <div className="flex items-center gap-1">
+                                                <button type="button" onClick={handleForcePushInventory} className="px-1.5 py-0.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-[10px] font-bold shadow-sm transition-colors" title="현재 실시간 재고를 메인 시트와 고객 라인업에 즉시 강제 전송">⚡라인업전송</button>
+                                                <button type="button" onClick={handleClearAllInventory} className="px-1.5 py-0.5 bg-red-500 hover:bg-red-600 text-white rounded text-[10px] font-bold shadow-sm transition-colors" title="실시간 재고 전체 비우기">비우기</button>
+                                            </div>
+                                        </>
+                                    );
+                                })()}
                             </div>
                             <div className="flex flex-col gap-1.5 shrink-0">
                                 <div className="relative w-full"><Icon name="magnifying-glass" className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-[10px]"/><input type="text" placeholder="검색" value={currentSearchTerm} onChange={e => setCurrentSearchTerm(e.target.value)} className="w-full text-[10px] pl-6 pr-2 py-1.5 border dark:border-slate-600 rounded outline-none bg-white dark:bg-slate-900 dark:text-white shadow-sm" /></div>
@@ -5189,7 +5311,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         </div>
                         <div className="flex-1 overflow-y-auto bg-white dark:bg-slate-800">
                             {(Array.isArray(inventory) ? inventory : [])
-                                .filter(i => i && String(i.name || '').trim() && String(i.name).toLowerCase() !== 'name' && (!deferredSearchTerm || String(i.name).toLowerCase().includes(String(deferredSearchTerm).toLowerCase())))
+                                .filter(i => i && String(i.name || '').trim() && String(i.name).toLowerCase() !== 'name' && i.name !== '__EMPTY__' && (!deferredSearchTerm || String(i.name).toLowerCase().includes(String(deferredSearchTerm).toLowerCase())))
                                 .sort((a, b) => String(b.name).localeCompare(String(a.name), 'ko', { numeric: true }))
                                 .map(item => (
                                     <InventoryItemRow 
