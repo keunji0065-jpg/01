@@ -1488,7 +1488,19 @@ useEffect(() => {
                                             return (
                                                 <div key={agg.customer} className="inline-flex items-center bg-slate-50 dark:bg-slate-900 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">
                                                     <span className={`truncate max-w-[90px] ${textColor}`}>{agg.customer}{agg.quantity > 1 ? `(${agg.quantity})` : ''}</span>
-                                                    <button onClick={() => openModal(`'${agg.customer}'님의 '${item.name}' 주문을 삭제하시겠습니까?`, 'confirm', () => setOrders(prev => prev.filter(o => !agg.orderIds.includes(o.id))))} className="text-slate-400 hover:text-red-500 ml-1 font-bold leading-none" title="이 주문 삭제">×</button>
+                                                    <button onClick={() => openModal(`'${agg.customer}'님의 '${item.name}' 주문을 삭제하시겠습니까?`, 'confirm', () => setOrders(prev => {
+                                                        const depositToPreserve = prev
+                                                            .filter(o => agg.orderIds.includes(o.id))
+                                                            .reduce((s, o) => s + (Number(o.deposit) || 0), 0);
+                                                        let shifted = false;
+                                                        return prev.filter(o => !agg.orderIds.includes(o.id)).map(o => {
+                                                            if (!shifted && depositToPreserve > 0 && o.customer === agg.customer && !o.isCancelled) {
+                                                                shifted = true;
+                                                                return { ...o, deposit: (Number(o.deposit) || 0) + depositToPreserve };
+                                                            }
+                                                            return o;
+                                                        });
+                                                    }))} className="text-slate-400 hover:text-red-500 ml-1 font-bold leading-none" title="이 주문 삭제">×</button>
                                                 </div>
                                             );
                                         })}
@@ -1504,7 +1516,19 @@ useEffect(() => {
                                             <div key={agg.customer} className="inline-flex items-center bg-orange-50 dark:bg-orange-900/20 px-1.5 py-0.5 rounded border border-orange-200 dark:border-orange-800">
                                                 <span className="bg-orange-500 text-white text-[8px] font-black px-1 rounded mr-1">{agg.rank || (wIdx + 1)}번</span>
                                                 <span className="truncate max-w-[90px] text-orange-700 dark:text-orange-400 font-bold">{agg.customer}{agg.quantity > 1 ? `(${agg.quantity})` : ''}</span>
-                                                <button onClick={() => openModal(`'${agg.customer}'님의 '${item.name}' 대기를 삭제하시겠습니까?`, 'confirm', () => setOrders(prev => prev.filter(o => !agg.orderIds.includes(o.id))))} className="text-orange-400 hover:text-red-600 ml-1 font-bold leading-none" title="이 대기 삭제">×</button>
+                                                <button onClick={() => openModal(`'${agg.customer}'님의 '${item.name}' 대기를 삭제하시겠습니까?`, 'confirm', () => setOrders(prev => {
+                                                    const depositToPreserve = prev
+                                                        .filter(o => agg.orderIds.includes(o.id))
+                                                        .reduce((s, o) => s + (Number(o.deposit) || 0), 0);
+                                                    let shifted = false;
+                                                    return prev.filter(o => !agg.orderIds.includes(o.id)).map(o => {
+                                                        if (!shifted && depositToPreserve > 0 && o.customer === agg.customer && !o.isCancelled) {
+                                                            shifted = true;
+                                                            return { ...o, deposit: (Number(o.deposit) || 0) + depositToPreserve };
+                                                        }
+                                                        return o;
+                                                    });
+                                                }))} className="text-orange-400 hover:text-red-600 ml-1 font-bold leading-none" title="이 대기 삭제">×</button>
                                             </div>
                                         ))}
                                     </div>
@@ -3581,6 +3605,36 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         return o;
                     });
                 });
+            } else {
+                // ✨ 대기 상품 삭제나 품목 취소로 인해 입금액이 묶여 있던 줄이 사라졌을 때, 영구 입금 장부(customerDepositLogs)의 합계 금액을 남은 정상 주문 줄로 즉시 자동 복구!
+                let needsRecovery = false;
+                const recoveryMap = {};
+                Object.keys(activeCustomerGroups).forEach(nick => {
+                    const logs = customerDepositLogs?.[nick];
+                    if (!Array.isArray(logs) || logs.length === 0) return;
+                    const expectedDepSum = logs.reduce((s, item) => s + (Number(item.amount) || 0), 0);
+                    if (expectedDepSum <= 0) return;
+                    const currentActiveDepSum = (activeCustomerGroups[nick] || []).reduce((s, o) => s + (Number(o.deposit) || 0), 0);
+                    if (currentActiveDepSum !== expectedDepSum) {
+                        needsRecovery = true;
+                        recoveryMap[nick] = expectedDepSum;
+                    }
+                });
+                if (needsRecovery) {
+                    setOrders(prev => {
+                        const recovered = {};
+                        return prev.map(o => {
+                            if (recoveryMap[o.customer] !== undefined && !o.isCancelled) {
+                                if (!recovered[o.customer]) {
+                                    recovered[o.customer] = true;
+                                    return { ...o, deposit: recoveryMap[o.customer] };
+                                }
+                                return o.deposit ? { ...o, deposit: 0 } : o;
+                            }
+                            return o;
+                        });
+                    });
+                }
             }
         }, [isViewingPastBroadcast, isLiveBroadcasting, allDeposits, orders, matchedDeposits, depositLinks, customerDepositLogs, ignoredAutoMatch, archivedDepositIds, depositorNames, addressLookup, masterRealnameMap, getCalculatedShipping, setMatchedDeposits, setDepositLinks, setCustomerDepositLogs, setOrders]);
 
@@ -3613,6 +3667,60 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             return finalOrder.map(nick => [nick, map[nick]]);
         }, [orders]);
 
+        // ✨ 대기 품목을 삭제하거나 취소했을 때 그 줄에 들어있던 입금액이 날아가지 않도록, 영구 입금 장부(customerDepositLogs)의 합계와 활성 주문 줄의 입금액을 항상 일치시키는 자동 복구 가드!
+        useEffect(() => {
+            if (!orders || orders.length === 0) return;
+            let needsFix = false;
+            const byCust = {};
+            orders.forEach(o => {
+                if (!byCust[o.customer]) byCust[o.customer] = [];
+                byCust[o.customer].push(o);
+            });
+
+            Object.keys(byCust).forEach(nick => {
+                const custOrders = byCust[nick];
+                const activeRows = custOrders.filter(o => !o.isCancelled);
+                const cancelledDep = custOrders.filter(o => o.isCancelled).reduce((s, o) => s + (Number(o.deposit) || 0), 0);
+                const activeDep = activeRows.reduce((s, o) => s + (Number(o.deposit) || 0), 0);
+                const logs = customerDepositLogs?.[nick];
+                const logSum = Array.isArray(logs) && logs.length > 0
+                    ? logs.reduce((s, d) => s + (Number(d.amount) || 0), 0)
+                    : 0;
+
+                if (activeRows.length > 0 && (cancelledDep > 0 || (logSum > 0 && activeDep !== logSum))) {
+                    needsFix = true;
+                }
+            });
+
+            if (needsFix) {
+                setOrders(prev => {
+                    const custHandled = {};
+                    return prev.map(o => {
+                        const nick = o.customer;
+                        const custAll = prev.filter(x => x.customer === nick);
+                        const activeRows = custAll.filter(x => !x.isCancelled);
+                        if (activeRows.length === 0) return o;
+
+                        const totalCurrentDep = custAll.reduce((s, x) => s + (Number(x.deposit) || 0), 0);
+                        const logs = customerDepositLogs?.[nick];
+                        const logSum = Array.isArray(logs) && logs.length > 0
+                            ? logs.reduce((s, d) => s + (Number(d.amount) || 0), 0)
+                            : 0;
+                        const targetDeposit = logSum > 0 ? Math.max(totalCurrentDep, logSum) : totalCurrentDep;
+
+                        if (o.isCancelled) {
+                            return o.deposit ? { ...o, deposit: 0 } : o;
+                        }
+                        if (!custHandled[nick]) {
+                            custHandled[nick] = true;
+                            return o.deposit !== targetDeposit ? { ...o, deposit: targetDeposit } : o;
+                        }
+                        return o.deposit ? { ...o, deposit: 0 } : o;
+                    });
+                });
+            }
+        }, [orders, customerDepositLogs, setOrders]);
+
         const customerPaidStatus = useMemo(() => {
             const status = {};
             groupedOrders.forEach(([nick, items]) => {
@@ -3624,16 +3732,17 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                 const prodSum = activeItems.reduce((s, i) => s + Number(i.price), 0);
                 const prodSumForShip = activeItems.reduce((s, i) => s + (Number(i.price) > 0 ? Number(i.price) : 0), 0);
                 const ship = getCalculatedShipping(nick, prodSumForShip);
-                const depSum = items.reduce((s, i) => s + (i.deposit || 0), 0);
+                const logs = customerDepositLogs?.[nick];
+                const logSum = Array.isArray(logs) && logs.length > 0 ? logs.reduce((s, d) => s + (Number(d.amount) || 0), 0) : 0;
+                const depSum = Math.max(items.reduce((s, i) => s + (Number(i.deposit) || 0), 0), logSum);
                 status[nick] = depSum >= (prodSum + ship);
             });
             return status;
-        }, [groupedOrders, getCalculatedShipping]);
+        }, [groupedOrders, getCalculatedShipping, customerDepositLogs]);
 
         const dashboardStats = useMemo(() => {
             let totalSales = 0, totalDeposit = 0, totalUnpaid = 0, totalOverpaid = 0, totalCardExpected = 0, missingAddressCount = 0, waitlistCount = 0;
             groupedOrders.forEach(([nick, items]) => {
-                if (noShowCustomers[nick]) return;
                 const activeItems = items.filter(i => !i.isCancelled && !i.isWaitlist);
                 const waitItems = items.filter(i => !i.isCancelled && i.isWaitlist);
                 if (waitItems.length > 0 || waitlistCustomers[nick]) waitlistCount++;
@@ -3642,36 +3751,35 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                 const prodSum = activeItems.reduce((s, i) => s + Number(i.price), 0);
                 const prodSumForShip = activeItems.reduce((s, i) => s + (Number(i.price) > 0 ? Number(i.price) : 0), 0);
                 const ship = getCalculatedShipping(nick, prodSumForShip);
-                const depSum = items.reduce((s, i) => s + (i.deposit || 0), 0);
+                const depSum = items.reduce((s, i) => s + (Number(i.deposit) || 0), 0);
                 const baseGrand = prodSum + ship;
                 const baseBal = baseGrand - depSum;
                 const isCard = Boolean(cardPayments[nick]);
                 const cardFee = (isCard && baseBal > 0) ? Math.round(baseBal * feeMultiplier) : 0;
                 const grand = baseGrand + cardFee;
-                const bal = baseBal + cardFee;
 
                 totalSales += grand;
                 totalDeposit += depSum;
 
                 if (isCard) {
-                    if (bal > 0) totalCardExpected += bal;
+                    if (baseBal > 0) totalCardExpected += (baseBal + cardFee);
                 } else {
-                    if (bal > 0) totalUnpaid += bal;
-                    else if (bal < 0) totalOverpaid += Math.abs(bal);
+                    if (baseBal > 0) totalUnpaid += baseBal;
+                    else if (baseBal < 0) totalOverpaid += Math.abs(baseBal);
                 }
 
                 const addrInfo = addressLookup.get(nick)?.data;
                 if (!addrInfo || !addrInfo.address) missingAddressCount++;
             });
             return { totalSales, totalDeposit, totalUnpaid, totalOverpaid, totalCardExpected, missingAddressCount, waitlistCount };
-        }, [groupedOrders, noShowCustomers, waitlistCustomers, getCalculatedShipping, cardPayments, feeMultiplier, addressLookup]);
+        }, [groupedOrders, getCalculatedShipping, cardPayments, feeMultiplier, addressLookup, waitlistCustomers]);
 
         const noKakaoCount = useMemo(() => {
             return groupedOrders.filter(([nick, items]) => {
-                const active = items.filter(i => !i.isCancelled);
-                return active.length > 0 && !checkedOrders.has(nick) && !noShowCustomers[nick];
+                const active = items.filter(i => !i.isCancelled && !i.isWaitlist);
+                return active.length > 0 && !checkedOrders.has(nick);
             }).length;
-        }, [groupedOrders, checkedOrders, noShowCustomers]);
+        }, [groupedOrders, checkedOrders]);
 
         const filteredGroupedOrders = useMemo(() => {
             const search = deferredOrderSearch.trim().toLowerCase();
@@ -3681,7 +3789,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                 const prodSum = activeItems.reduce((s, i) => s + Number(i.price), 0);
                 const prodSumForShip = activeItems.reduce((s, i) => s + (Number(i.price) > 0 ? Number(i.price) : 0), 0);
                 const ship = getCalculatedShipping(nick, prodSumForShip);
-                const depSum = items.reduce((s, i) => s + (i.deposit || 0), 0);
+                const depSum = items.reduce((s, i) => s + (Number(i.deposit) || 0), 0);
                 const baseGrand = prodSum + (activeItems.length > 0 ? ship : 0);
                 const baseBal = baseGrand - depSum;
                 const isCard = Boolean(cardPayments[nick]);
@@ -4603,26 +4711,16 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                             }
                         } 
                         if (field === 'price' && o.product && String(o.product).trim() !== '') { 
-                            const cleanProd = String(o.product).trim(); let valNum = Number(String(value).replace(/,/g, ''));
-                            if (isDiscount(cleanProd) && valNum > 0) valNum = -Math.abs(valNum);
-                            newOrder.price = valNum;
-                            
-                            const effQty = (o.quantity && o.quantity > 0) ? o.quantity : 1;
-                            const uPrice = valNum / effQty; 
-                            if (uPrice >= 1 || cleanProd.includes('사은품')) {
-                                setInventory(prevInv => {
-                                    if (!Array.isArray(prevInv)) return prevInv;
-                                    const exists = prevInv.find(i => String(i.name).trim() === cleanProd);
-                                    if (!exists) {
-                                        const newInv = [{ id: `inv_${Date.now()}_${Math.random()}`, name: cleanProd, price: uPrice, stock: '', isSoldOut: false, isLocked: false }, ...prevInv];
-                                        saveInventoryToServer(newInv); 
-                                        if (uPrice > 0) setProductHistory(h => ({ ...h, [cleanProd]: uPrice }));
-                                        return newInv;
-                                    }
-                                    return prevInv;
-                                });
+                            const cleanProd = String(o.product).trim();
+                            const numVal = Number(String(value).replace(/,/g, '')) || 0;
+                            const finalVal = (isDiscount(cleanProd) && numVal > 0) ? -Math.abs(numVal) : numVal;
+                            newOrder.price = finalVal;
+                            const qty = Number(o.quantity) || 1;
+                            const unitP = Math.round(finalVal / qty);
+                            if (unitP > 0) {
+                                setProductHistory(h => ({ ...h, [cleanProd]: unitP }));
                             }
-                        } 
+                        }
                         return newOrder; 
                     } 
                     return o; 
@@ -4645,30 +4743,50 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                 })); 
             }, [setOrders, resetCustomerConfirmation]);
 
-            const handleOrderCancel = useCallback((id) => setOrders(prev => prev.map(o => {
-                if (o.id === id) {
-                    resetCustomerConfirmation(o.customer);
-                    return { ...o, isCancelled: !o.isCancelled };
-                }
-                return o;
-            })), [setOrders, resetCustomerConfirmation]);
+            const handleOrderCancel = useCallback((id) => setOrders(prev => {
+                const target = prev.find(o => o.id === id);
+                if (!target) return prev;
+                resetCustomerConfirmation(target.customer);
+                const nextCancelled = !target.isCancelled;
+                const depositToShift = nextCancelled ? (Number(target.deposit) || 0) : 0;
+                let shifted = false;
+                return prev.map(o => {
+                    if (o.id === id) {
+                        return { ...o, isCancelled: nextCancelled, deposit: depositToShift > 0 ? 0 : o.deposit };
+                    }
+                    if (!shifted && depositToShift > 0 && o.customer === target.customer && !o.isCancelled) {
+                        shifted = true;
+                        return { ...o, deposit: (Number(o.deposit) || 0) + depositToShift };
+                    }
+                    return o;
+                });
+            }), [setOrders, resetCustomerConfirmation]);
             const handleOrderDelete = useCallback((id) => {
                 openModal("주문 삭제하시겠습니까?", 'confirm', () => {
                     setOrders(prev => {
                         const orderToDelete = prev.find(o => o.id === id);
                         if (!orderToDelete) return prev;
                         resetCustomerConfirmation(orderToDelete.customer);
-                        const depositToShift = orderToDelete.deposit || 0;
+                        const depositToShift = Number(orderToDelete.deposit) || 0;
                         
                         let shifted = false;
-                        const next = prev.filter(o => o.id !== id).map(o => {
-                            // 삭제하는 줄에 묶여있던 입금액이 있다면, 동일 고객의 다른 줄로 안전하게 이관
-                            if (!shifted && o.customer === orderToDelete.customer) {
+                        const filtered = prev.filter(o => o.id !== id);
+                        const next = filtered.map(o => {
+                            if (!shifted && depositToShift > 0 && o.customer === orderToDelete.customer && !o.isCancelled) {
                                 shifted = true;
-                                return { ...o, deposit: (o.deposit || 0) + depositToShift };
+                                return { ...o, deposit: (Number(o.deposit) || 0) + depositToShift };
                             }
                             return o;
                         });
+                        if (!shifted && depositToShift > 0) {
+                            return next.map(o => {
+                                if (!shifted && o.customer === orderToDelete.customer) {
+                                    shifted = true;
+                                    return { ...o, deposit: (Number(o.deposit) || 0) + depositToShift };
+                                }
+                                return o;
+                            });
+                        }
                         return next;
                     });
                 });
@@ -6355,6 +6473,39 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             const [modalConfig, setModalConfig] = useState({ isOpen: false, type: 'alert', message: '', onConfirm: null, onCancel: null, initialValue: '' });
             const [isSettingsOpen, setIsSettingsOpen] = useState(false);
             const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
+            const [isNoticeModalOpen, setIsNoticeModalOpen] = useState(false);
+            const [customerNotice, setCustomerNotice] = useState({ enabled: false, title: '📢 엠버언니 공지사항', content: '' });
+
+            useEffect(() => {
+                if (!window.emberRealtimeDb) return;
+                const ref = window.emberRealtimeDb.ref('ember_live_data/_global_config/customerNotice');
+                const handler = (snap) => {
+                    const val = snap.val();
+                    if (val && typeof val === 'object') {
+                        setCustomerNotice({
+                            enabled: Boolean(val.enabled),
+                            title: val.title || '📢 엠버언니 공지사항',
+                            content: val.content || ''
+                        });
+                    }
+                };
+                ref.on('value', handler);
+                return () => ref.off('value', handler);
+            }, []);
+
+            const handleSaveCustomerNotice = async (e) => {
+                if (e && e.preventDefault) e.preventDefault();
+                if (!window.emberRealtimeDb) return;
+                const payload = {
+                    enabled: Boolean(customerNotice.enabled),
+                    title: String(customerNotice.title || '📢 엠버언니 공지사항').trim(),
+                    content: String(customerNotice.content || '').trim(),
+                    updatedAt: Date.now()
+                };
+                await window.emberRealtimeDb.ref('ember_live_data/_global_config/customerNotice').set(payload);
+                setIsNoticeModalOpen(false);
+                openModal(payload.enabled ? '📢 고객용 공지사항 팝업이 즉시 활성화되었습니다!' : '고객용 공지사항 팝업이 숨김(OFF) 처리되었습니다.', 'alert');
+            };
 
             useEffect(() => {
                 setTemplateConfig(prev => {
@@ -6768,12 +6919,65 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                             </div>
                         </div>
                         <div className="flex items-center gap-2">
+                            <button onClick={() => setIsNoticeModalOpen(true)} className={`px-2.5 py-1.5 rounded-full transition-colors flex items-center gap-1 border shadow-sm text-xs font-extrabold ${customerNotice.enabled ? 'bg-amber-400 border-amber-500 text-slate-900' : 'bg-slate-100 border-slate-200 text-slate-600 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300'}`} title="고객용 포털 & 라인업 공지사항 팝업 설정">
+                                <Icon name="megaphone" weight="fill" size={15} />
+                                <span>공지 {customerNotice.enabled ? 'ON' : 'OFF'}</span>
+                            </button>
                             <button onClick={() => setSoundEnabled(!soundEnabled)} className={`p-2 rounded-full transition-colors flex items-center justify-center border shadow-sm ${soundEnabled ? 'bg-blue-50 border-blue-200 text-blue-600 dark:bg-blue-900/30 dark:border-blue-700/50 dark:text-blue-400' : 'bg-slate-100 border-slate-200 text-slate-400 dark:bg-slate-800 dark:border-slate-700'}`} title={soundEnabled ? "알림음 켜짐" : "알림음 꺼짐"}><Icon name={soundEnabled ? "speaker-high" : "speaker-slash"} weight="fill" size={18} /></button>
                             <button onClick={() => setIsStatusModalOpen(true)} className="p-2 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800/50 hover:bg-blue-100 dark:hover:bg-blue-900/40 rounded-full transition-colors flex items-center justify-center shadow-sm" title="통합 고객상태 관리 (VIP, 노쇼, 관리자)"><Icon name="users-three" weight="fill" size={18} /></button>
                     <button onClick={() => setIsSettingsOpen(!isSettingsOpen)} className="p-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors flex items-center justify-center shadow-sm" title="환경설정"><Icon name="gear" weight="fill" size={18} /></button>
                     <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors flex items-center justify-center shadow-sm" title={isDarkMode ? "라이트 모드로 전환" : "다크 모드로 전환"}><Icon name={isDarkMode ? "sun" : "moon"} weight="fill" size={18} /></button>
                 </div>
             </div>
+
+            {isNoticeModalOpen && (
+                <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[9999]" onClick={() => setIsNoticeModalOpen(false)}>
+                    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl p-5 w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
+                        <div className="mb-3 border-b dark:border-slate-700 pb-2.5 flex justify-between items-center">
+                            <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                                <Icon name="megaphone" weight="fill" className="text-amber-500" /> 고객용 공지사항 팝업 관리
+                            </h3>
+                            <button onClick={() => setIsNoticeModalOpen(false)} className="text-slate-400 hover:text-slate-600"><Icon name="x" weight="bold" size={20}/></button>
+                        </div>
+                        <form onSubmit={handleSaveCustomerNotice} className="space-y-3 text-xs">
+                            <div className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-900 rounded-lg border dark:border-slate-700">
+                                <span className="font-bold text-slate-700 dark:text-slate-200">고객 포털 & 라인업 접속 시 팝업 띄우기</span>
+                                <button
+                                    type="button"
+                                    onClick={() => setCustomerNotice(p => ({ ...p, enabled: !p.enabled }))}
+                                    className={`px-3 py-1 rounded font-extrabold transition ${customerNotice.enabled ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300'}`}
+                                >
+                                    {customerNotice.enabled ? '🟢 팝업 켜짐 (ON)' : '⚫ 팝업 꺼짐 (OFF)'}
+                                </button>
+                            </div>
+                            <div>
+                                <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">공지 제목</label>
+                                <input
+                                    type="text"
+                                    value={customerNotice.title}
+                                    onChange={e => setCustomerNotice(p => ({ ...p, title: e.target.value }))}
+                                    placeholder="📢 엠버언니 공지사항"
+                                    className="w-full border dark:border-slate-600 rounded px-3 py-2 bg-slate-50 dark:bg-slate-900 dark:text-white font-bold outline-none"
+                                />
+                            </div>
+                            <div>
+                                <label className="block font-bold text-slate-600 dark:text-slate-300 mb-1">공지 내용 (줄바꿈 지원)</label>
+                                <textarea
+                                    value={customerNotice.content}
+                                    onChange={e => setCustomerNotice(p => ({ ...p, content: e.target.value }))}
+                                    placeholder="고객분들께 안내할 배송 일정, 휴무, 이벤트 등의 공지 내용을 입력해 주세요."
+                                    rows={6}
+                                    className="w-full border dark:border-slate-600 rounded px-3 py-2 bg-slate-50 dark:bg-slate-900 dark:text-white font-semibold outline-none resize-y leading-relaxed"
+                                />
+                            </div>
+                            <div className="flex gap-2 pt-2">
+                                <button type="button" onClick={() => setIsNoticeModalOpen(false)} className="flex-1 py-2.5 rounded font-bold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">취소</button>
+                                <button type="submit" className="flex-1 py-2.5 rounded font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-sm">저장 및 즉시 반영</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
 
             {isSettingsOpen && <SettingsModalContent youtubeApiKey={youtubeApiKey} setYoutubeApiKey={setYoutubeApiKey} youtubeVideoId={youtubeVideoId} setYoutubeVideoId={setYoutubeVideoId} googleScriptUrl={googleScriptUrl} setGoogleScriptUrl={setGoogleScriptUrl} depSheetId={depSheetId} setDepSheetId={setDepSheetId} addrSheetId={addrSheetId} setAddrSheetId={setAddrSheetId} masterSheetId={masterSheetId} setMasterSheetId={setMasterSheetId} broadcastName={broadcastName} setBroadcastName={setBroadcastName} quickShipping={quickShipping} setQuickShipping={setQuickShipping} jejuShipping={jejuShipping} setJejuShipping={setJejuShipping} freeShippingThreshold={freeShippingThreshold} setFreeShippingThreshold={setFreeShippingThreshold} cardFeeRate={cardFeeRate} setCardFeeRate={setCardFeeRate} templateConfig={templateConfig} setTemplateConfig={setTemplateConfig} bankAccount={bankAccount} setBankAccount={setBankAccount} quickMessages={quickMessages} setQuickMessages={setQuickMessages} addressStartDate={addressStartDate} setAddressStartDate={setAddressStartDate} soundVolume={soundVolume} setSoundVolume={setSoundVolume} staffAccessPasscode={staffAccessPasscode} setStaffAccessPasscode={setStaffAccessPasscode} setIsSettingsOpen={setIsSettingsOpen} />}
 
