@@ -526,55 +526,6 @@
             }
         };
 
-        // ⚡ 앱스 스크립트(GAS)가 바쁘거나 타임아웃이 걸려도 입금 시트에서 0.3초 만에 직접 입금 내역을 긁어오는 직통 JSONP 리더
-        const fetchDepositSheetDirectGviz = (sheetId) => {
-            return new Promise((resolve) => {
-                const cleanId = getCleanSheetId(sheetId);
-                if (!cleanId) { resolve(null); return; }
-                let settled = false;
-                const cbName = `dep_gviz_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
-                const timer = setTimeout(() => {
-                    if (!settled) { settled = true; window[cbName] = () => {}; resolve(null); }
-                }, 4500);
-
-                window[cbName] = (res) => {
-                    if (settled) return;
-                    settled = true;
-                    clearTimeout(timer);
-                    window[cbName] = () => {};
-                    if (!res || res.status === 'error' || !res.table || !Array.isArray(res.table.rows)) {
-                        resolve(null);
-                        return;
-                    }
-                    const totalRows = res.table.rows.length;
-                    const startIdx = Math.max(0, totalRows - 250);
-                    const sliced = res.table.rows.slice(startIdx);
-                    const rawRows = sliced.map((r, i) => {
-                        const cells = (r.c || []).map(cell => {
-                            if (!cell) return '';
-                            if (cell.f !== undefined && cell.f !== null) return String(cell.f);
-                            if (cell.v !== undefined && cell.v !== null) return String(cell.v);
-                            return '';
-                        });
-                        return cells;
-                    });
-                    resolve(rawRows);
-                };
-
-                try {
-                    const script = document.createElement('script');
-                    script.src = `https://docs.google.com/spreadsheets/d/${cleanId}/gviz/tq?tqx=responseHandler:${cbName}&gid=0&t=${Date.now()}`;
-                    script.onerror = () => {
-                        if (!settled) { settled = true; clearTimeout(timer); window[cbName] = () => {}; resolve(null); }
-                    };
-                    document.body.appendChild(script);
-                    setTimeout(() => { try { if (script.parentNode) script.parentNode.removeChild(script); } catch (e) {} }, 5000);
-                } catch (e) {
-                    if (!settled) { settled = true; clearTimeout(timer); resolve(null); }
-                }
-            });
-        };
-
         const generateSmartGroups = (inventory) => {
             const available = (inventory || []).filter(i => !i.isSoldOut);
             const byPrice = {};
@@ -2498,13 +2449,19 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     }
                 });
 
-                const pickLatestAddr = (list) => {
+                const pickLatestAddr = (list, pinHint = '') => {
                     if (!list || list.length === 0) return null;
+                    if (pinHint) {
+                        const cleanPin = String(pinHint).replace(/[^0-9]/g, '').slice(-4);
+                        if (cleanPin) {
+                            const pinFiltered = list.filter(item => fixPhoneNumber(item.phone).slice(-4) === cleanPin);
+                            if (pinFiltered.length > 0) list = pinFiltered;
+                        }
+                    }
                     const sorted = [...list].sort((a, b) => {
                         const tsA = parseSafeDate(a.timestamp).getTime();
                         const tsB = parseSafeDate(b.timestamp).getTime();
                         if (tsA !== tsB && tsA > 0 && tsB > 0) return tsB - tsA;
-                        // 시트 아래쪽(나중에 추가된 행) 또는 방금 업데이트된 항목을 최우선으로 선택!
                         return (b._rowOrder || 0) - (a._rowOrder || 0);
                     });
                     return sorted[0];
@@ -2515,14 +2472,15 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         if (!nick) return { data: null, conflict: null, type: 'none' };
                         const cleanNick = normalizeString(nick);
                         const handleNick = normalizeHandleNick(nick);
+                        const custPin = customerPasswords?.[nick] || '';
                         const mappedTarget = addressMapping[nick] || addressMapping[cleanNick];
                         if (mappedTarget === '__UNMAPPED__') return { data: null, conflict: null, type: 'none' };
 
-                        // 0순위: 현재 방송(broadcastName) 전용으로 고객이 포털에서 변경했거나 이 방송 시트에 기록된 배송지 최우선 적용 (예전 주소로 되돌아감 완벽 방지!)
+                        // 0순위: 현재 방송(broadcastName) 전용으로 고객이 포털에서 변경했거나 이 방송 시트에 기록된 배송지 최우선 적용
                         const cleanCurB = String(broadcastName || '').replace(/^주문_/, '').trim();
                         if (cleanCurB && broadcastAddresses && broadcastAddresses[cleanCurB]) {
                             const bMap = broadcastAddresses[cleanCurB];
-                            const bOverride = bMap[nick] || bMap[cleanNick] || (handleNick ? bMap[handleNick] : null);
+                            const bOverride = bMap[nick] || bMap[cleanNick];
                             if (bOverride && bOverride.address) {
                                 return { data: bOverride, conflict: null, type: 'broadcast' };
                             }
@@ -2532,19 +2490,40 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         if (mappedTarget) {
                             const mClean = normalizeString(mappedTarget);
                             const mHandle = normalizeHandleNick(mappedTarget);
-                            const mAddr = pickLatestAddr(exactNickMap[mClean]) || pickLatestAddr(handleNickMap[mHandle]);
+                            const mAddr = pickLatestAddr(exactNickMap[mClean], custPin) || pickLatestAddr(handleNickMap[mHandle], custPin);
                             if (mAddr) return { data: mAddr, conflict: null, type: mAddr._source || 'mapped' };
                         }
 
-                        // 2순위: 닉네임 100% 완전 일치
-                        let matched = pickLatestAddr(exactNickMap[cleanNick]);
+                        // 2순위: 전체 닉네임(홍당무1, 홍당무2, 홍당무-3k4 등) 100% 완전 일치
+                        const exactList = exactNickMap[cleanNick] || [];
+                        let matched = null;
+                        if (exactList.length === 1) {
+                            matched = exactList[0];
+                        } else if (exactList.length > 1) {
+                            const distinctPhones = new Set(exactList.map(x => fixPhoneNumber(x.phone)).filter(Boolean));
+                            if (distinctPhones.size <= 1 || custPin) {
+                                matched = pickLatestAddr(exactList, custPin);
+                            }
+                        }
 
-                        // 3순위: 유튜브 핸들 꼬리표(-e4g 등)만 뗀 고유 닉네임이 100% 일치하는 경우 (단, 부분 포함은 절대 허용하지 않음!)
-                        // 3순위: 유튜브 핸들 꼬리표(-e4g 등)만 뗀 고유 닉네임이 100% 일치하는 경우 (찐고객사전에 여러 번 등록되어 있어도 최신 행을 즉시 매칭!)
+                        // 3순위: 유튜브 핸들 꼬리표(-e4g 등)만 뗀 기본 닉네임 매칭 (단, 홍당무-3k4와 홍당무-5kj처럼 서로 다른 핸들 동명이인이 있을 때는 비밀번호가 일치할 때만 매칭!)
+                        const orderHasExplicitHandle = /-[a-zA-Z0-9_]{1,10}$/.test(String(nick).trim());
                         if (!matched && handleNick && handleNick.length >= 2) {
                             const candidates = handleNickMap[handleNick] || [];
                             if (candidates.length > 0) {
-                                matched = pickLatestAddr(candidates);
+                                if (custPin) {
+                                    const byPin = candidates.filter(c => fixPhoneNumber(c.phone).slice(-4) === custPin);
+                                    if (byPin.length === 1) matched = byPin[0];
+                                } else {
+                                    const distinctNicks = new Set(candidates.map(c => normalizeString(c.nickname)));
+                                    const distinctPhones = new Set(candidates.map(c => fixPhoneNumber(c.phone)).filter(Boolean));
+                                    if (distinctNicks.size === 1 && distinctPhones.size <= 1) {
+                                        const candHasHandle = /-[a-zA-Z0-9_]{1,10}$/.test(String(candidates[0].nickname || '').trim());
+                                        if (!(orderHasExplicitHandle && candHasHandle)) {
+                                            matched = pickLatestAddr(candidates);
+                                        }
+                                    }
+                                }
                             }
                         }
 
@@ -2554,7 +2533,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         return { data: null, conflict: null, type: 'none' };
                     }
                 };
-            }, [addresses, addressMapping, broadcastName, broadcastAddresses]);
+            }, [addresses, addressMapping, broadcastName, broadcastAddresses, customerPasswords]);
 
             const getCalculatedShipping = useCallback((nick, productTotal) => {
                 // ✨ 0순위: 아직 상품 금액이 입력되지 않았을 때(0원 이하)는 배송비를 미리 부과하지 않음!
@@ -2712,35 +2691,63 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                 } else {
                     for (let i = 0; i < validCells.length; i++) {
                         const cStr = String(validCells[i]).trim();
-                        if (i !== amountIdx && i !== timeIdx && !cStr.startsWith('{') && !cStr.includes('모임통장 입금')) {
+                        if (i !== amountIdx && i !== timeIdx && !cStr.startsWith('{') && isNaN(Number(cStr))) {
                             nameIdx = i;
                             break;
                         }
                     }
                 }
-                if (nameIdx === -1) nameIdx = amountIdx > 0 ? amountIdx - 1 : amountIdx + 1;
+                if (nameIdx === -1) return null;
 
-                let rawName = String(validCells[nameIdx] || '').trim();
-                let name = rawName.replace(/^[:"'\-\s]+/, '').replace(/^입\s+/, '').trim();
-                let rawTime = timeIdx !== -1 ? String(validCells[timeIdx]).trim() : String(validCells[validCells.length - 1] || '').trim();
-                let time = formatTimeOnly(rawTime);
-                let fullTime = formatDepositFullDateTime(rawTime) || time;
-                const normName = normalizeString(name);
+                let rawTime = timeIdx !== -1 ? String(validCells[timeIdx]).trim() : findAnyTimeInRow(validCells, amountIdx);
+                const time = formatTimeOnly(rawTime);
+                const fullTime = formatDepositFullDateTime(rawTime) || time;
+                const cleanName = String(validCells[nameIdx]).trim().replace(/^[:"'\-\s]+/, '').replace(/^입\s+/, '').trim();
+                if (!cleanName) return null;
+
+                const normName = normalizeString(cleanName);
                 const baseSig = `${fullTime || time}_${normName}_${parsedAmount}`;
                 contentKeyCountMap[baseSig] = (contentKeyCountMap[baseSig] || 0) + 1;
                 const canonicalId = `dep_${baseSig}_${contentKeyCountMap[baseSig]}`;
-                const legacyContentId = `c_${rawTime}_${name}_${parsedAmount}_${contentKeyCountMap[baseSig]}`;
+                const legacyContentId = `c_${rawTime}_${cleanName}_${parsedAmount}_${contentKeyCountMap[baseSig]}`;
+
                 return {
                     id: canonicalId,
                     contentId: legacyContentId,
-                    legacyId: `d_${idx}_${rawTime}_${name}_${parsedAmount}`,
+                    legacyId: `d_${idx}_${rawTime}_${cleanName}_${parsedAmount}`,
                     time,
                     fullTime,
                     rawTime,
-                    name,
+                    name: cleanName,
                     amount: parsedAmount
                 };
-            }).filter(d => d !== null && d.name && d.amount > 0).reverse();
+            }).filter(d => d !== null && d.name && d.amount > 0).reverse().slice(0, 1000);
+        }, []);
+
+        const fetchDepositSheetDirect = useCallback(async (sheetId) => {
+            if (!sheetId) return null;
+            try {
+                const controller = new AbortController();
+                const timer = setTimeout(() => controller.abort(), 6000);
+                const url = `https://docs.google.com/spreadsheets/d/${getCleanSheetId(sheetId)}/gviz/tq?tqx=out:json&headers=0&t=${Date.now()}`;
+                const response = await fetch(url, { signal: controller.signal });
+                clearTimeout(timer);
+                if (!response.ok) return null;
+                const text = await response.text();
+                const jsonStart = text.indexOf('{');
+                const jsonEnd = text.lastIndexOf('}');
+                if (jsonStart === -1 || jsonEnd === -1) return null;
+                const res = JSON.parse(text.substring(jsonStart, jsonEnd + 1));
+                if (!res || res.status === 'error' || !res.table || !Array.isArray(res.table.rows)) return null;
+                const allRows = res.table.rows;
+                const startIdx = Math.max(0, allRows.length - 1000);
+                return allRows.slice(startIdx).map((r, i) => {
+                    const cells = (r.c || []).map(cell => cell ? (cell.f !== undefined && cell.f !== null ? String(cell.f) : (cell.v !== undefined && cell.v !== null ? String(cell.v) : '')) : '');
+                    return [...cells, `__ROW_${startIdx + i + 1}__`];
+                });
+            } catch (e) {
+                return null;
+            }
         }, []);
 
         const fetchYoutubeData = useCallback(async () => {
@@ -2801,28 +2808,6 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                 setIsViewingPastBroadcast(false);
             }
 
-            // ⚡ 입금 시트 직통 리더(JSONP)로 입금 내역을 가져왔다면, 같은 턴에서 GAS 응답이 또 덮어써서 ID가 흔들리지 않도록 보호!
-            let directDepsLoaded = false;
-            if (depSheetId) {
-                try {
-                    const directRows = await fetchDepositSheetDirectGviz(depSheetId);
-                    if (Array.isArray(directRows) && directRows.length > 0) {
-                        const directDeps = parseRawDepositRowsToObjects(directRows);
-                        if (directDeps.length > 0) {
-                            directDepsLoaded = true;
-                            const depIds = directDeps.map(d => d.id).join(',');
-                            if (depIds !== prevDepsStr.current) {
-                                if (directDeps.length > prevDepCount.current && prevDepCount.current !== 0) playCoinSound();
-                                setServerDeposits(directDeps);
-                                prevDepsStr.current = depIds;
-                            }
-                            prevDepCount.current = directDeps.length;
-                            setGasStatus(prev => prev.includes('주소(') ? prev : `입금(${directDeps.length}) `);
-                        }
-                    }
-                } catch (e) {}
-            }
-
             if (!googleScriptUrl) {
                 setGasStatus(prev => prev === "설정 ⚙️: 스크립트 URL 입력!" ? prev : "설정 ⚙️: 스크립트 URL 입력!");
                 return;
@@ -2841,14 +2826,21 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                 let gasMsg = "";
                 heavyScanCountRef.current = (heavyScanCountRef.current + 1) % 3;
                 const shouldSkipHeavy = !force && prevAddrsStr.current !== '' && heavyScanCountRef.current !== 1;
-                const fetchUrl = `${googleScriptUrl}?action=get_all&depId=${directDepsLoaded ? '' : getCleanSheetId(depSheetId)}&masterId=${getCleanSheetId(masterSheetId)}&broadcastName=${encodeURIComponent(broadcastName || '')}&skipHeavy=${shouldSkipHeavy}&t=${Date.now()}`;
-                const res = await fetchGas(fetchUrl, null, 14000);
+                const fetchUrl = `${googleScriptUrl}?action=get_all&depId=${getCleanSheetId(depSheetId)}&masterId=${getCleanSheetId(masterSheetId)}&broadcastName=${encodeURIComponent(broadcastName || '')}&skipHeavy=${shouldSkipHeavy}& depLimit=1000&t=${Date.now()}`;
+                const [res, directDepRows] = await Promise.all([
+                    fetchGas(fetchUrl, null, 15000),
+                    fetchDepositSheetDirect(depSheetId)
+                ]);
                 
                 clearTimeout(slowWarningTimer);
                 
                 if (res && res.status === 'success') {
-                    if (!directDepsLoaded && res.deposits && Array.isArray(res.deposits)) {
-                        const newDeps = parseRawDepositRowsToObjects(res.deposits);
+                    const rawDepositsSource = (Array.isArray(directDepRows) && directDepRows.length > (Array.isArray(res.deposits) ? res.deposits.length : 0))
+                        ? directDepRows
+                        : res.deposits;
+
+                    if (rawDepositsSource && Array.isArray(rawDepositsSource)) {
+                        const newDeps = parseRawDepositRowsToObjects(rawDepositsSource);
                         const depIds = newDeps.map(d => d.id).join(',');
                         if(depIds !== prevDepsStr.current) {
                             if (newDeps.length > prevDepCount.current && prevDepCount.current !== 0) playCoinSound();
@@ -2858,8 +2850,6 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         prevDepCount.current = newDeps.length;
                         if(newDeps.length > 0) gasMsg += `입금(${newDeps.length}) `; 
                         else gasMsg += `입금(없음) `;
-                    } else if (directDepsLoaded) {
-                        gasMsg += `입금(${prevDepCount.current}) `;
                     } else { gasMsg += `입금(연결실패) `; }
 
                     let mergedAddr = [];
@@ -2896,15 +2886,15 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         if (addrKeys !== prevAddrsStr.current) {
                             if (mergedAddr.length > prevAddrCount.current && prevAddrCount.current !== 0) playBellSound();
                             if (mergedAddr.length > 0) {
-                                // 로컬에서 방금 입력했거나 포털에서 실시간 수신된 주소가 누락되지 않도록 병합!
+                                // 동명이인(홍당무-3k4 vs 홍당무-5kj 또는 같은 닉네임 다른 전화번호)이 모두 보존되도록 [닉네임 + 전화번호 뒷4자리]를 고유 키로 병합!
                                 setAddresses(prev => {
                                     const map = new Map();
                                     prev.forEach((item, i) => {
-                                        const k = normalizeString(item.nickname);
+                                        const k = `${normalizeString(item.nickname)}___${fixPhoneNumber(item.phone).slice(-4)}`;
                                         if (k && item.address) map.set(k, { ...item, _rowOrder: i });
                                     });
                                     mergedAddr.forEach((item, i) => {
-                                        const k = normalizeString(item.nickname);
+                                        const k = `${normalizeString(item.nickname)}___${fixPhoneNumber(item.phone).slice(-4)}`;
                                         if (k && item.address) map.set(k, { ...item, _rowOrder: 1000 + i });
                                     });
                                     return Array.from(map.values());
@@ -6140,9 +6130,15 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             const [orders, setOrders] = useLocalStorage('youtubeOrders', []);
             const [activeTab, setActiveTab] = useState('live');
             
-            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx_kCIKu48TAyTmxSv0lu_DUk-rPeth_v0dDf9QCDC03cHEX43Zd3inDJ3Q6cFv87Q/exec';
+            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyVKpxs5-zeLVKZ3cBXrma01YbGZUYdubGeeo6m-LoXnoE810HUc1lNJUBnJfz4Kgqg/exec';
             const STAFF_SHEET_ID = '1sM5bkDqEjD6Kpxu2yoJe2aiMuqpcWLMAIGpY3iL5_x8';
             const [googleScriptUrl, setGoogleScriptUrl] = useLocalStorage('googleScriptUrl', NEW_SCRIPT_URL);
+
+            useEffect(() => {
+                if (googleScriptUrl !== NEW_SCRIPT_URL) {
+                    setGoogleScriptUrl(NEW_SCRIPT_URL);
+                }
+            }, [googleScriptUrl, setGoogleScriptUrl]);
         
         const [youtubeApiKey, setYoutubeApiKey] = useLocalStorage('youtubeApiKey', '');
         const [youtubeVideoId, setYoutubeVideoId] = useLocalStorage('youtubeVideoId', '');
