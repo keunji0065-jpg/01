@@ -932,34 +932,70 @@ useEffect(() => {
         const CustomerStatusModal = ({ isOpen, onClose, specialCustomers, setSpecialCustomers, googleScriptUrl, masterSheetId, openModal }) => {
             const [newNick, setNewNick] = useState('');
             const [newStatus, setNewStatus] = useState('vip');
+            const [newNoShowCount, setNewNoShowCount] = useState(1);
+            const [filterType, setFilterType] = useState('all');
             
             if (!isOpen) return null;
+
+            const syncStatusToSheet = (nick, typeStr) => {
+                if (googleScriptUrl && masterSheetId) {
+                    fetchGas(googleScriptUrl, {
+                        action: 'save_customer_management',
+                        masterId: getCleanSheetId(masterSheetId),
+                        data: { nickname: nick, type: typeStr }
+                    }).catch(() => {});
+                }
+            };
             
             const handleAdd = async (e) => {
                 e.preventDefault();
                 if(!newNick.trim()) return;
-                const norm = normalizeString(newNick);
+                const cleanN = newNick.trim();
+                const norm = normalizeString(cleanN);
                 const currentTime = new Date().toISOString();
+                const countVal = newStatus === 'noshow' ? Math.max(1, Number(newNoShowCount) || 1) : 0;
+                const sheetTypeStr = newStatus === 'noshow' ? `noshow:${countVal}` : newStatus;
                 
                 setSpecialCustomers(prev => ({
                     ...prev, 
-                    [norm]: { type: newStatus, originalName: newNick.trim(), timestamp: currentTime }
+                    [norm]: {
+                        type: newStatus,
+                        count: countVal,
+                        originalName: cleanN,
+                        timestamp: currentTime
+                    }
                 }));
                 
-                if (googleScriptUrl && masterSheetId) {
-                    try {
-                        const payload = {
-                            nickname: newNick.trim(),
-                            type: newStatus // 스크립트의 targetType 변수에 맞춤
-                        };
-                        // 구글 시트에 상태 저장 (앱스 스크립트의 save_customer_management 액션 호출)
-                        fetchGas(googleScriptUrl, { action: 'save_customer_management', masterId: getCleanSheetId(masterSheetId), data: payload }).catch(()=>{});
-                    } catch (err) {
-                        console.error("고객 상태 동기화 실패:", err);
-                    }
-                }
-                
+                syncStatusToSheet(cleanN, sheetTypeStr);
                 setNewNick('');
+                setNewNoShowCount(1);
+            };
+
+            const handleAdjustNoShowCount = (key, delta) => {
+                setSpecialCustomers(prev => {
+                    const cur = prev[key];
+                    if (!cur) return prev;
+                    const nextCount = Math.max(1, (Number(cur.count) || 1) + delta);
+                    const targetNick = cur.originalName || key;
+                    syncStatusToSheet(targetNick, `noshow:${nextCount}`);
+                    return {
+                        ...prev,
+                        [key]: { ...cur, type: 'noshow', count: nextCount, timestamp: new Date().toISOString() }
+                    };
+                });
+            };
+
+            const handlePromoteToBlacklist = (key) => {
+                const cur = specialCustomers[key];
+                if (!cur) return;
+                const targetNick = cur.originalName || key;
+                openModal(`'${targetNick}' 님을 💀블랙리스트(주문금지)로 전환하시겠습니까?`, 'confirm', () => {
+                    setSpecialCustomers(prev => ({
+                        ...prev,
+                        [key]: { ...prev[key], type: 'blacklist', timestamp: new Date().toISOString() }
+                    }));
+                    syncStatusToSheet(targetNick, 'blacklist');
+                });
             };
             
             const handleRemove = (key) => {
@@ -969,70 +1005,149 @@ useEffect(() => {
                     delete next[key]; 
                     return next; 
                 });
-                
-                if (googleScriptUrl && masterSheetId) {
-                    try {
-                        const payload = {
-                            nickname: targetNick,
-                            type: '' // 빈 값으로 보내서 상태 해제
-                        };
-                        fetchGas(googleScriptUrl, { action: 'save_customer_management', masterId: getCleanSheetId(masterSheetId), data: payload }).catch(()=>{});
-                    } catch (err) {}
-                }
+                syncStatusToSheet(targetNick, '');
             };
+
+            const entriesList = Object.entries(specialCustomers || {}).filter(([_, val]) => {
+                if (!val || !val.type) return false;
+                if (filterType === 'all') return true;
+                return val.type === filterType;
+            });
             
             return (
                 <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[9999] animate-pop">
-                    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl p-6 w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
-                        <div className="mb-4 border-b dark:border-slate-700 pb-3 flex justify-between items-center">
-                            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2"><Icon name="users-three" weight="fill" className="text-blue-500" /> 통합 고객상태 관리대장</h3>
+                    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl p-6 w-full max-w-lg mx-4" onClick={e => e.stopPropagation()}>
+                        <div className="mb-3 border-b dark:border-slate-700 pb-3 flex justify-between items-center">
+                            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                                <Icon name="users-three" weight="fill" className="text-blue-500" /> 통합 고객상태 & 블랙리스트 관리대장
+                            </h3>
                             <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><Icon name="x" weight="bold" size={20}/></button>
                         </div>
-                        <form onSubmit={handleAdd} className="flex gap-2 mb-4">
+
+                        <div className="flex gap-1 mb-3 bg-slate-100 dark:bg-slate-900 p-1 rounded-lg text-xs font-bold">
+                            {[
+                                { id: 'all', label: `전체 (${Object.keys(specialCustomers || {}).length})` },
+                                { id: 'blacklist', label: `💀 블랙리스트 (${Object.values(specialCustomers || {}).filter(v => v?.type === 'blacklist').length})` },
+                                { id: 'noshow', label: `🚫 노쇼 (${Object.values(specialCustomers || {}).filter(v => v?.type === 'noshow').length})` },
+                                { id: 'vip', label: `👑 VIP (${Object.values(specialCustomers || {}).filter(v => v?.type === 'vip').length})` },
+                                { id: 'manager', label: `🛡️ 관리자 (${Object.values(specialCustomers || {}).filter(v => v?.type === 'manager').length})` }
+                            ].map(tab => (
+                                <button
+                                    key={tab.id}
+                                    type="button"
+                                    onClick={() => setFilterType(tab.id)}
+                                    className={`flex-1 py-1.5 rounded text-[11px] transition-colors ${
+                                        filterType === tab.id
+                                            ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm font-extrabold'
+                                            : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'
+                                    }`}
+                                >
+                                    {tab.label}
+                                </button>
+                            ))}
+                        </div>
+
+                        <form onSubmit={handleAdd} className="flex gap-1.5 mb-4 items-center">
                             <select 
                                 value={newStatus} 
                                 onChange={(e) => setNewStatus(e.target.value)}
-                                className="border dark:border-slate-600 rounded px-2 py-2 text-sm bg-slate-50 dark:bg-slate-900 dark:text-slate-100 outline-none font-bold"
+                                className="border dark:border-slate-600 rounded px-2 py-2 text-xs bg-slate-50 dark:bg-slate-900 dark:text-slate-100 outline-none font-bold shrink-0"
                             >
-                                <option value="vip">👑 VIP</option>
-                                <option value="noshow">🚫 노쇼</option>
+                                <option value="blacklist">💀 블랙리스트(주문차단)</option>
+                                <option value="noshow">🚫 노쇼(횟수관리)</option>
+                                <option value="vip">👑 VIP(무료배송)</option>
                                 <option value="manager">🛡️ 관리자</option>
                             </select>
-                            <input type="text" value={newNick} onChange={e=>setNewNick(e.target.value)} placeholder="닉네임 입력" className="flex-1 border dark:border-slate-600 rounded px-3 py-2 text-sm bg-slate-50 dark:bg-slate-900 dark:text-slate-100 outline-none" autoFocus />
-                            <button type="submit" className="bg-slate-700 text-white px-3 py-2 rounded text-sm font-bold whitespace-nowrap shadow-sm hover:bg-slate-800">등록</button>
+                            {newStatus === 'noshow' && (
+                                <div className="flex items-center border dark:border-slate-600 rounded px-1.5 py-1.5 bg-slate-50 dark:bg-slate-900 shrink-0">
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        max="99"
+                                        value={newNoShowCount}
+                                        onChange={e => setNewNoShowCount(e.target.value)}
+                                        className="w-8 text-center text-xs font-extrabold bg-transparent outline-none dark:text-white"
+                                    />
+                                    <span className="text-[11px] font-bold text-slate-500">회</span>
+                                </div>
+                            )}
+                            <input type="text" value={newNick} onChange={e=>setNewNick(e.target.value)} placeholder="닉네임 입력" className="flex-1 min-w-0 border dark:border-slate-600 rounded px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900 dark:text-slate-100 outline-none font-bold" autoFocus />
+                            <button type="submit" className="bg-slate-800 text-white px-3.5 py-2 rounded text-xs font-bold whitespace-nowrap shadow-sm hover:bg-slate-900 shrink-0">등록</button>
                         </form>
-                        <div className="max-h-80 overflow-y-auto space-y-1 pr-1">
-                            {Object.entries(specialCustomers || {}).map(([key, val]) => {
+                        <div className="max-h-80 overflow-y-auto space-y-1.5 pr-1">
+                            {entriesList.map(([key, val]) => {
                                 let statusIcon = <Icon name="crown" weight="fill" className="text-amber-500 mr-1" />;
                                 let statusLabel = "VIP";
-                                let bgClass = "bg-amber-50 dark:bg-amber-900/10";
+                                let bgClass = "bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800/40";
+                                const nsCount = Math.max(1, Number(val.count) || 1);
                                 
-                                if (val.type === 'noshow') {
+                                if (val.type === 'blacklist') {
+                                    statusIcon = <Icon name="skull" weight="fill" className="text-red-500 mr-1" />;
+                                    statusLabel = "블랙리스트";
+                                    bgClass = "bg-slate-900 text-white border-red-600 ring-1 ring-red-500";
+                                } else if (val.type === 'noshow') {
                                     statusIcon = <Icon name="user-minus" weight="fill" className="text-red-500 mr-1" />;
-                                    statusLabel = "노쇼";
-                                    bgClass = "bg-red-50 dark:bg-red-900/10";
+                                    statusLabel = `노쇼 ${nsCount}회`;
+                                    bgClass = "bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-800/40";
                                 } else if (val.type === 'manager') {
                                     statusIcon = <Icon name="shield-check" weight="fill" className="text-blue-500 mr-1" />;
                                     statusLabel = "관리자";
-                                    bgClass = "bg-blue-50 dark:bg-blue-900/10";
+                                    bgClass = "bg-blue-50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-800/40";
                                 }
 
                                 return (
-                                    <div key={key} className={`flex justify-between items-center ${bgClass} p-2 rounded border dark:border-slate-600`}>
+                                    <div key={key} className={`flex justify-between items-center ${bgClass} p-2 rounded border`}>
                                         <div className="flex flex-col min-w-0 pr-2">
-                                            <div className="flex items-center">
-                                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-white dark:bg-slate-700 border dark:border-slate-600 shadow-sm mr-2 flex items-center">
+                                            <div className="flex items-center flex-wrap gap-1">
+                                                <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded shadow-sm flex items-center ${
+                                                    val.type === 'blacklist'
+                                                        ? 'bg-red-600 text-white'
+                                                        : 'bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 border dark:border-slate-600'
+                                                }`}>
                                                     {statusIcon} {statusLabel}
                                                 </span>
-                                                <span className="font-bold text-sm text-slate-800 dark:text-slate-200 truncate">{val.originalName || key}</span>
+                                                <span className={`font-extrabold text-sm truncate ${val.type === 'blacklist' ? 'text-red-200' : 'text-slate-800 dark:text-slate-200'}`}>
+                                                    {val.originalName || key}
+                                                </span>
                                             </div>
                                             {val.timestamp && <span className="text-[9px] text-slate-400 mt-0.5 pl-1">{formatTimeOnly(val.timestamp)} 등록</span>}
                                         </div>
-                                        <button onClick={()=>handleRemove(key)} className="text-red-500 hover:text-red-700 text-xs font-bold px-2 py-1 bg-white dark:bg-slate-800 rounded transition-colors shadow-sm shrink-0 border border-red-100 dark:border-red-900/30">삭제</button>
+                                        <div className="flex items-center gap-1 shrink-0">
+                                            {val.type === 'noshow' && (
+                                                <>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleAdjustNoShowCount(key, -1)}
+                                                        className="w-6 h-6 rounded bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 font-black text-xs hover:bg-slate-100"
+                                                        title="노쇼 횟수 -1 감소"
+                                                    >
+                                                        -
+                                                    </button>
+                                                    <span className="text-xs font-black text-red-600 dark:text-red-400 px-1 tabular-nums">{nsCount}회</span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleAdjustNoShowCount(key, 1)}
+                                                        className="w-6 h-6 rounded bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-red-600 font-black text-xs hover:bg-red-50"
+                                                        title="노쇼 횟수 +1 증가"
+                                                    >
+                                                        +
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handlePromoteToBlacklist(key)}
+                                                        className="px-1.5 py-1 bg-slate-900 hover:bg-black text-amber-300 rounded text-[10px] font-extrabold ml-0.5"
+                                                        title="이 노쇼 고객을 블랙리스트로 전환"
+                                                    >
+                                                        💀블랙전환
+                                                    </button>
+                                                </>
+                                            )}
+                                            <button onClick={()=>handleRemove(key)} className="text-red-500 hover:text-red-700 text-xs font-bold px-2 py-1 bg-white dark:bg-slate-800 rounded transition-colors shadow-sm shrink-0 border border-red-100 dark:border-red-900/30">해제</button>
+                                        </div>
                                     </div>
                                 );
                             })}
-                            {Object.keys(specialCustomers || {}).length === 0 && <div className="text-center text-slate-500 text-sm py-8 bg-slate-50 dark:bg-slate-800/50 rounded border border-dashed dark:border-slate-600">등록된 고객상태가 없습니다.</div>}
+                            {entriesList.length === 0 && <div className="text-center text-slate-500 text-sm py-8 bg-slate-50 dark:bg-slate-800/50 rounded border border-dashed dark:border-slate-600">등록된 고객상태가 없습니다.</div>}
                         </div>
                     </div>
                 </div>
@@ -1468,20 +1583,38 @@ useEffect(() => {
                             onBlur={() => { setIsPriceFocused(false); const val = String(localPrice).replace(/,/g, ''); if (!isNaN(val) && Number(val) !== Number(item.price)) { handleProductChange(item.id, 'price', val); } }} 
                             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const val = String(localPrice).replace(/,/g, ''); if (!isNaN(val) && Number(val) !== Number(item.price)) { handleProductChange(item.id, 'price', val); } if (!isLast && nextItemId) { setTimeout(() => document.getElementById(`prod-input-${nextItemId}`)?.focus(), 10); } else { addOrderLogic(nick, '', 1, true, item.id); } } }} 
                             className={`w-16 text-right bg-transparent outline-none px-1 rounded font-bold ${item.isCancelled ? 'line-through text-slate-400 cursor-not-allowed' : (item.isWaitlist ? 'text-orange-600 dark:text-orange-400' : (item.isUnmodified ? 'text-blue-700 dark:text-blue-300' : 'text-slate-700 hover:bg-slate-100'))} ${Number(item.price) === 0 && !item.isCancelled ? 'bg-red-50 border-b border-red-300' : ''}`} disabled={item.isCancelled} />
-                        
-                        {/* ✨ 모래시계(대기) 버튼 탑재 */}
-                        <button onClick={(e)=>{e.stopPropagation(); if(!item.isCancelled) { handleProductChange(item.id, 'isWaitlist', !item.isWaitlist); setSelectedNick(nick); }}} className={`ml-1 ${item.isWaitlist ? "text-orange-500" : "text-slate-300 hover:text-orange-500"}`} title={item.isWaitlist ? "구매 대기 해제" : "품절 상품 대기"} disabled={item.isCancelled}><Icon name="hourglass" weight={item.isWaitlist ? "fill" : "bold"}/></button>
-
-                        <button onClick={(e)=>{e.stopPropagation(); handleOrderCancel(item.id); setSelectedNick(nick);}} className={`ml-1 ${item.isCancelled ? "text-slate-500" : "text-slate-300 hover:text-red-500"}`} title={item.isCancelled ? "취소 철회" : "주문 취소"}><Icon name={item.isCancelled ? "arrow-u-up-left" : "prohibit"} weight="bold"/></button>
-                        <button onClick={(e)=>{e.stopPropagation(); handleOrderDelete(item.id); setSelectedNick(nick);}} className="text-slate-300 hover:text-red-500 ml-1"><Icon name="trash" weight="bold"/></button>
+                        <button onClick={(e) => { e.stopPropagation(); handleProductChange(item.id, 'isWaitlist', !item.isWaitlist); }} className={`px-1 rounded text-[10px] transition-colors ${item.isWaitlist ? 'bg-orange-500 text-white font-bold' : 'text-slate-300 hover:text-orange-500'}`} title="거파 대기 전환"><Icon name="hourglass" weight="fill" size={11}/></button>
+                        <button onClick={(e) => { e.stopPropagation(); handleOrderCancel(item.id); }} className={`px-1 rounded text-[10px] ${item.isCancelled ? 'bg-slate-200 text-slate-600 font-bold' : 'text-slate-300 hover:text-orange-500'}`} title={item.isCancelled ? "복구" : "취소"}>{item.isCancelled ? '복구' : <Icon name="prohibit" weight="bold" size={11}/>}</button>
+                        <button onClick={(e) => { e.stopPropagation(); handleOrderDelete(item.id); }} className="text-slate-300 hover:text-red-600 px-0.5 transition-colors" title="완전 삭제"><Icon name="trash" weight="bold" size={11}/></button>
                     </div>
                 </div>
             );
+        }, (prev, next) => {
+            return prev.item.id === next.item.id && prev.item.product === next.item.product && prev.item.quantity === next.item.quantity && prev.item.price === next.item.price && prev.item.isCancelled === next.item.isCancelled && prev.item.isUnmodified === next.item.isUnmodified && prev.item.isWaitlist === next.item.isWaitlist && prev.isLast === next.isLast && prev.nextItemId === next.nextItemId && prev.waitlistRank === next.waitlistRank;
         });
-        const CustomerBlock = memo(({ nick, items, isSelected, currentShipping, isCard, isCardCompleted, isPaidState, grandTotal, depositTotal, balance, baseGrandTotal, baseBalance, addr, addrType, addressMapping, autoDepositorName, displayDepositorName, isAutoDepositor, depositorNames, copyStatus, isOrderConfirmed, isEditingShipping, setSelectedNick, addOrderLogic, handleNicknameEdit, toggleCardPayment, handleShippingChange, setEditingShippingNick, openModal, setDepositorNames, handleFullDepositToggle, copyOrderSheet, handleOrderCheckToggle, handleAddressUnmapping, handleAddressMapping, handleProductChange, handleQuantityUpdate, handleOrderCancel, handleOrderDelete, toggleVIP, specialCustomers, handleOpenQuickAddress, findAddressSuggestions, cashReceiptStatus, toggleCashReceipt, inventory, productHistory, customerDeposits, handleDepositUnmatch, handleMultiAddOpen, toggleNoShow, toggleWaitlist, noShowStatus, waitlistStatus, customerPassword, handleSetCustomerPassword, waitlistRankMap, trackingNumber, handleSetTrackingNumber, customerCredit, handleSetCustomerCredit, handleConvertOverpaidToCredit, handleApplyCustomerCreditToOrder }) => {
+
+        const CustomerBlock = memo(({ nick, items, isSelected, currentShipping, isCard, isCardCompleted, isPaidState, grandTotal, depositTotal, balance, baseGrandTotal, baseBalance, addr, addrType, addressMapping, autoDepositorName, displayDepositorName, isAutoDepositor, depositorNames, copyStatus, isOrderConfirmed, isEditingShipping, setSelectedNick, addOrderLogic, handleNicknameEdit, toggleCardPayment, handleShippingChange, setEditingShippingNick, openModal, setDepositorNames, handleFullDepositToggle, copyOrderSheet, handleOrderCheckToggle, handleAddressUnmapping, handleAddressMapping, handleProductChange, handleQuantityUpdate, handleOrderCancel, handleOrderDelete, toggleVIP, specialCustomers, handleOpenQuickAddress, findAddressSuggestions, cashReceiptStatus, toggleCashReceipt, inventory, productHistory, customerDeposits, handleDepositUnmatch, handleMultiAddOpen, toggleNoShow, toggleBlacklist, toggleWaitlist, noShowStatus, waitlistStatus, customerPassword, handleSetCustomerPassword, waitlistRankMap, trackingNumber, handleSetTrackingNumber, customerCredit, handleSetCustomerCredit, handleConvertOverpaidToCredit, handleApplyCustomerCreditToOrder }) => {
             let borderClass = 'border-transparent', headerBgClass = 'bg-white dark:bg-slate-800';
             
-            if (isSelected) { 
+            const suggestions = useMemo(() => findAddressSuggestions ? findAddressSuggestions(nick) : [], [nick, findAddressSuggestions]);
+            const specialInfo = useMemo(() => { 
+                const nickNorm = normalizeString(nick); 
+                const direct = specialCustomers?.[nickNorm];
+                if (direct) return direct;
+                const key = Object.keys(specialCustomers || {}).find(k => normalizeString(k) === nickNorm); 
+                return key ? specialCustomers[key] : null; 
+            }, [specialCustomers, nick]);
+            const specialType = specialInfo?.type || null;
+            const noShowAccumulatedCount = specialType === 'noshow' ? Math.max(1, Number(specialInfo?.count) || 1) : 0;
+            const isBlacklist = specialType === 'blacklist';
+            const isVip = specialType === 'vip';
+            const isManager = specialType === 'manager';
+            const [showDeposits, setShowDeposits] = useState(false);
+
+            if (isBlacklist) {
+                headerBgClass = 'bg-red-950/90 text-white dark:bg-red-950';
+                borderClass = 'border-red-600 ring-2 ring-red-600 shadow-lg relative z-10';
+            } else if (isSelected) { 
                 headerBgClass = 'bg-slate-100 dark:bg-slate-700'; borderClass = 'border-slate-500 ring-2 ring-slate-500 shadow-lg relative z-10'; 
             } else if (isCard) { 
                 borderClass = isCardCompleted ? 'border-purple-300 ring-1 ring-purple-300' : 'border-amber-300 ring-1 ring-amber-300';
@@ -1493,18 +1626,6 @@ useEffect(() => {
             } else if (isPaidState) { 
                 borderClass = 'border-slate-200 dark:border-slate-700'; headerBgClass = 'bg-white dark:bg-slate-800'; 
             }
-            
-            const suggestions = useMemo(() => findAddressSuggestions ? findAddressSuggestions(nick) : [], [nick, findAddressSuggestions]);
-            const specialType = useMemo(() => { 
-                const nickNorm = normalizeString(nick); 
-                const direct = specialCustomers?.[nickNorm];
-                if (direct) return direct.type;
-                const key = Object.keys(specialCustomers || {}).find(k => normalizeString(k) === nickNorm); 
-                return key ? specialCustomers[key].type : null; 
-            }, [specialCustomers, nick]);
-            const isVip = specialType === 'vip';
-            const isManager = specialType === 'manager';
-            const [showDeposits, setShowDeposits] = useState(false);
 
             const cleanPhoneDisplay = addr && addr.phone ? fixPhoneNumber(addr.phone) : '';
             const effectivePin = customerPassword || (cleanPhoneDisplay.length >= 4 ? cleanPhoneDisplay.slice(-4) : '');
@@ -1514,7 +1635,9 @@ useEffect(() => {
                     <div className={`px-2 py-1 flex justify-between items-start border-b dark:border-slate-700 ${headerBgClass}`}>
                         <div className="flex flex-col gap-0.5 flex-1 min-w-[50%] pr-2">
                             <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
-                                <span onClick={(e) => { e.stopPropagation(); const textArea = document.createElement("textarea"); textArea.value = nick; document.body.appendChild(textArea); textArea.select(); try { document.execCommand('copy'); const el = e.currentTarget; el.classList.add('text-green-500'); setTimeout(() => el.classList.remove('text-green-500'), 500); } catch (err) {} document.body.removeChild(textArea); }} className={`font-bold text-[12px] text-slate-900 dark:text-slate-100 truncate max-w-[120px] sm:max-w-[150px] inline-block align-bottom cursor-pointer hover:text-slate-600`} title="클릭하여 닉네임 복사">{nick}</span>
+                                <span onClick={(e) => { e.stopPropagation(); const textArea = document.createElement("textarea"); textArea.value = nick; document.body.appendChild(textArea); textArea.select(); try { document.execCommand('copy'); const el = e.currentTarget; el.classList.add('text-green-500'); setTimeout(() => el.classList.remove('text-green-500'), 500); } catch (err) {} document.body.removeChild(textArea); }} className={`font-bold text-[12px] ${isBlacklist ? 'text-red-200 line-through decoration-red-400' : 'text-slate-900 dark:text-slate-100'} truncate max-w-[120px] sm:max-w-[150px] inline-block align-bottom cursor-pointer hover:text-slate-600`} title="클릭하여 닉네임 복사">{nick}</span>
+                                {isBlacklist && <span onClick={(e) => e.stopPropagation()} className="ml-1 text-[10px] px-1.5 py-0.5 rounded border border-red-400 bg-red-600 text-white font-extrabold shadow-sm shrink-0 flex items-center gap-0.5 animate-pulse"><Icon name="skull" weight="fill"/> 블랙리스트(주문금지)</span>}
+                                {noShowAccumulatedCount > 0 && <span onClick={(e) => e.stopPropagation()} className="ml-1 text-[10px] px-1.5 py-0.5 rounded border border-red-300 bg-red-100 text-red-700 font-extrabold shadow-sm shrink-0 flex items-center gap-0.5">🚫 노쇼누적 {noShowAccumulatedCount}회</span>}
                                 {isVip && <span onClick={(e) => e.stopPropagation()} className="ml-1 text-[10px] px-1.5 py-0.5 rounded border bg-slate-800 text-amber-400 font-bold shadow-sm shrink-0 flex items-center gap-0.5"><Icon name="crown" weight="fill"/> VIP</span>}
                                 {isManager && <span onClick={(e) => e.stopPropagation()} className="ml-1 text-[10px] px-1.5 py-0.5 rounded border bg-blue-600 border-blue-700 text-white font-bold shadow-sm shrink-0 flex items-center gap-0.5"><Icon name="shield-check" weight="fill"/> 관리자</span>}
                                 
@@ -1527,7 +1650,8 @@ useEffect(() => {
                                 <button onClick={(e) => { e.stopPropagation(); toggleCashReceipt(nick); }} className={`ml-1 text-[10px] px-1.5 py-0.5 rounded border transition-colors shrink-0 ${cashReceiptStatus === 'completed' ? 'bg-teal-600 border-teal-700 text-white font-bold shadow-inner' : cashReceiptStatus ? 'bg-indigo-600 border-indigo-700 text-white font-bold shadow-inner' : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-100'}`} title="클릭: 현영요청 ➔ 현영완료 ➔ 해제">{cashReceiptStatus === 'completed' ? '현영완료' : cashReceiptStatus ? '현영요청' : '현영'}</button>
                                 
                                 <button onClick={(e) => { e.stopPropagation(); toggleWaitlist(nick); }} className={`ml-1 text-[10px] px-1.5 py-0.5 rounded border transition-colors shrink-0 ${waitlistStatus ? 'bg-orange-500 border-orange-600 text-white font-bold shadow-inner' : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-100'}`} title="거래파기 대기">대기</button>
-                                <button onClick={(e) => { e.stopPropagation(); toggleNoShow(nick); }} className={`ml-1 text-[10px] px-1.5 py-0.5 rounded border transition-colors shrink-0 ${noShowStatus ? 'bg-red-600 border-red-700 text-white font-bold shadow-inner' : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-100'}`} title="노쇼">노쇼</button>
+                                <button onClick={(e) => { e.stopPropagation(); toggleNoShow(nick); }} className={`ml-1 text-[10px] px-1.5 py-0.5 rounded border transition-colors shrink-0 ${noShowStatus ? 'bg-red-600 border-red-700 text-white font-bold shadow-inner' : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-100'}`} title="클릭 시 이번 방송 노쇼 처리 및 누적 노쇼 횟수 +1회">{noShowStatus ? `노쇼(${Math.max(1, noShowAccumulatedCount)}회)` : '노쇼'}</button>
+                                <button onClick={(e) => { e.stopPropagation(); toggleBlacklist && toggleBlacklist(nick); }} className={`ml-1 text-[10px] px-1.5 py-0.5 rounded border transition-colors shrink-0 ${isBlacklist ? 'bg-slate-900 border-red-500 text-red-400 font-extrabold shadow-inner' : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-900 hover:text-white'}`} title="주문 금지 블랙리스트 지정/해제">{isBlacklist ? '💀블랙됨' : '블랙'}</button>
 
                                 <div onClick={(e) => e.stopPropagation()} className="ml-1 shrink-0">
                                     {isEditingShipping ? (
@@ -1662,9 +1786,9 @@ useEffect(() => {
             if (prev.customerCredit !== next.customerCredit) return false;
             if (prev.waitlistRankMap !== next.waitlistRankMap) return false;
             
-            const pType = prev.specialCustomers && prev.specialCustomers[normalizeString(prev.nick)]?.type;
-            const nType = next.specialCustomers && next.specialCustomers[normalizeString(next.nick)]?.type;
-            if (pType !== nType) return false;
+            const pSpec = prev.specialCustomers && prev.specialCustomers[normalizeString(prev.nick)];
+            const nSpec = next.specialCustomers && next.specialCustomers[normalizeString(next.nick)];
+            if (pSpec?.type !== nSpec?.type || pSpec?.count !== nSpec?.count) return false;
             
             if (prev.items.length !== next.items.length) return false;
             for (let i = 0; i < prev.items.length; i++) {
@@ -2791,20 +2915,27 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         prevAddrCount.current = mergedAddr.length;
                     }
 
-                    // ✨ 고객상태관리(VIP/관리자/노쇼, 비밀번호, 적립금) 시트 데이터도 실시간 동기화하여 직원용·사장님용 적립금이 100% 일치하도록 연결!
+                    // ✨ 고객상태관리(VIP/관리자/노쇼횟수/블랙리스트, 비밀번호, 적립금) 시트 데이터도 실시간 동기화!
                     if (Array.isArray(res.customerDb)) {
                         const serverCredits = {};
                         const serverPins = {};
                         const serverSpecial = {};
                         res.customerDb.forEach(c => {
                             const cNick = String(c['닉네임'] || c.col_0 || '').trim();
-                            if (!cNick || cNick === '닉네임') return;
-                            const cStatus = String(c['고객상태'] || c.col_1 || '').trim().toLowerCase();
+                            if (!cNick || cNick === '닉네임' || cNick === '___SYSTEM_YT_API_KEY___') return;
+                            const rawStatus = String(c['고객상태'] || c.col_1 || '').trim().toLowerCase();
                             const cPin = String(c['비밀번호'] || c.col_2 || '').replace(/[^0-9]/g, '').slice(-4);
                             const cCred = Number(String(c['적립금'] || c.col_5 || '0').replace(/[^0-9.-]/g, '')) || 0;
                             const cTime = String(c['저장시간'] || c.col_4 || '').trim();
-                            if (cStatus === 'vip' || cStatus === 'manager' || cStatus === 'noshow') {
-                                serverSpecial[normalizeString(cNick)] = { type: cStatus, originalName: cNick, timestamp: cTime };
+
+                            if (rawStatus === 'blacklist' || rawStatus === '블랙' || rawStatus === '블랙리스트') {
+                                serverSpecial[normalizeString(cNick)] = { type: 'blacklist', count: 0, originalName: cNick, timestamp: cTime };
+                            } else if (rawStatus.startsWith('noshow') || rawStatus.startsWith('노쇼')) {
+                                const m = rawStatus.match(/(\d+)/);
+                                const cnt = m ? Math.max(1, parseInt(m[1], 10)) : 1;
+                                serverSpecial[normalizeString(cNick)] = { type: 'noshow', count: cnt, originalName: cNick, timestamp: cTime };
+                            } else if (rawStatus === 'vip' || rawStatus === 'manager' || rawStatus === '관리자') {
+                                serverSpecial[normalizeString(cNick)] = { type: rawStatus === '관리자' ? 'manager' : rawStatus, count: 0, originalName: cNick, timestamp: cTime };
                             }
                             if (cPin) serverPins[cNick] = cPin;
                             if (cCred >= 0) serverCredits[cNick] = cCred;
@@ -3741,16 +3872,31 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
         const addOrderLogicRef = useRef(null);
 
         const handleChatClick = useCallback((chat) => {
-            setClickedChats(prev => new Set(prev).add(chat.id));
-            bringToTopAndScroll(chat.nickname);
-            if (addOrderLogicRef.current) {
-                if (isFixedProductMode && manualProduct) {
-                    addOrderLogicRef.current(chat.nickname, manualProduct, 1, false, null, manualPrice, true);
-                } else {
-                    addOrderLogicRef.current(chat.nickname, chat.content, 1, false, null, null, false);
+            const cNick = String(chat.nickname || '').replace(/@/g, '').trim();
+            const normN = normalizeString(cNick);
+            const specInfo = specialCustomers?.[normN] || (() => {
+                const k = Object.keys(specialCustomers || {}).find(key => normalizeString(key) === normN);
+                return k ? specialCustomers[k] : null;
+            })();
+
+            const executeAddFromChat = () => {
+                setClickedChats(prev => new Set(prev).add(chat.id));
+                bringToTopAndScroll(chat.nickname);
+                if (addOrderLogicRef.current) {
+                    if (isFixedProductMode && manualProduct) {
+                        addOrderLogicRef.current(chat.nickname, manualProduct, 1, false, null, manualPrice, true);
+                    } else {
+                        addOrderLogicRef.current(chat.nickname, chat.content, 1, false, null, null, false);
+                    }
                 }
+            };
+
+            if (specInfo?.type === 'blacklist') {
+                openModal(`🚨 [블랙리스트 경고]\n'${cNick}' 님은 주문 금지(블랙리스트) 고객입니다!\n\n그래도 주문을 추가하시겠습니까?`, 'confirm', executeAddFromChat);
+                return;
             }
-        }, [setClickedChats, bringToTopAndScroll, isFixedProductMode, manualProduct, manualPrice]);
+            executeAddFromChat();
+        }, [specialCustomers, openModal, setClickedChats, bringToTopAndScroll, isFixedProductMode, manualProduct, manualPrice]);
 
         const nicknameSuggestions = useMemo(() => {
             const term = deferredManualNick.trim().toLowerCase();
@@ -4176,26 +4322,96 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                 return { ...prev, [nick]: nextState };
             }), [setCashReceipts]);
             
-            // [수정 5] 노쇼 및 대기 버튼 클릭 시 로컬뿐만 아니라 구글 시트(앱스 스크립트)로도 즉시 전송
+            // 노쇼 버튼 클릭 시: 이번 방송 노쇼 처리 + 통합 고객상태 관리대장의 누적 노쇼 횟수(+1회) 자동 카운트 및 구글 시트 저장!
             const toggleNoShow = useCallback((nick) => {
-                setNoShowCustomers(prev => {
-                    const nextStatus = !prev[nick];
+                const norm = normalizeString(nick);
+                const isCurrentlyNoShow = Boolean(noShowCustomers[nick]);
+                const nextStatus = !isCurrentlyNoShow;
+
+                setNoShowCustomers(prev => ({ ...prev, [nick]: nextStatus }));
+
+                setSpecialCustomers(prevSpec => {
+                    const curSpec = prevSpec[norm];
+                    const prevCount = (curSpec && curSpec.type === 'noshow') ? (Number(curSpec.count) || 0) : 0;
+                    const nextCount = nextStatus ? (prevCount + 1) : Math.max(0, prevCount - 1);
+                    const nextSpecMap = { ...prevSpec };
+
+                    if (nextCount > 0) {
+                        nextSpecMap[norm] = {
+                            type: 'noshow',
+                            count: nextCount,
+                            originalName: nick,
+                            timestamp: new Date().toISOString()
+                        };
+                    } else if (curSpec && curSpec.type === 'noshow') {
+                        delete nextSpecMap[norm];
+                    }
+
                     if (googleScriptUrl && masterSheetId) {
-                        fetchGas(googleScriptUrl, { action: 'save_customer_management', masterId: getCleanSheetId(masterSheetId), data: { nickname: nick, type: nextStatus ? 'noshow' : '' } }).catch(()=>{});
+                        const sheetTypeStr = nextCount > 0 ? `noshow:${nextCount}` : '';
+                        fetchGas(googleScriptUrl, {
+                            action: 'save_customer_management',
+                            masterId: getCleanSheetId(masterSheetId),
+                            data: { nickname: nick, type: sheetTypeStr }
+                        }).catch(() => {});
                     }
-                    
-                    // ✨ 노쇼 등록 시 해당 고객의 모든 주문을 자동으로 취소 처리
-                    if (nextStatus) {
-                        setTimeout(() => {
-                            setOrders(prevOrders => prevOrders.map(o => 
-                                o.customer === nick ? { ...o, isCancelled: true } : o
-                            ));
-                        }, 0);
-                    }
-                    
-                    return { ...prev, [nick]: nextStatus };
+                    return nextSpecMap;
                 });
-            }, [setNoShowCustomers, googleScriptUrl, masterSheetId, setOrders]);
+
+                if (nextStatus) {
+                    setTimeout(() => {
+                        setOrders(prevOrders => prevOrders.map(o => 
+                            o.customer === nick ? { ...o, isCancelled: true } : o
+                        ));
+                    }, 0);
+                }
+            }, [noShowCustomers, setNoShowCustomers, setSpecialCustomers, googleScriptUrl, masterSheetId, setOrders]);
+
+            // 💀 블랙리스트(주문금지) 지정/해제 토글
+            const toggleBlacklist = useCallback((nick) => {
+                const norm = normalizeString(nick);
+                const curSpec = specialCustomers?.[norm];
+                const isCurrentlyBlack = curSpec?.type === 'blacklist';
+
+                if (isCurrentlyBlack) {
+                    openModal(`'${nick}' 님의 💀블랙리스트(주문금지) 상태를 해제하시겠습니까?`, 'confirm', () => {
+                        setSpecialCustomers(prev => {
+                            const next = { ...prev };
+                            delete next[norm];
+                            return next;
+                        });
+                        if (googleScriptUrl && masterSheetId) {
+                            fetchGas(googleScriptUrl, {
+                                action: 'save_customer_management',
+                                masterId: getCleanSheetId(masterSheetId),
+                                data: { nickname: nick, type: '' }
+                            }).catch(() => {});
+                        }
+                    });
+                } else {
+                    openModal(`🚨 '${nick}' 님을 💀블랙리스트(주문금지)에 등록하고 현재 주문을 모두 취소하시겠습니까?`, 'confirm', () => {
+                        setSpecialCustomers(prev => ({
+                            ...prev,
+                            [norm]: {
+                                type: 'blacklist',
+                                count: 0,
+                                originalName: nick,
+                                timestamp: new Date().toISOString()
+                            }
+                        }));
+                        setOrders(prevOrders => prevOrders.map(o =>
+                            o.customer === nick ? { ...o, isCancelled: true } : o
+                        ));
+                        if (googleScriptUrl && masterSheetId) {
+                            fetchGas(googleScriptUrl, {
+                                action: 'save_customer_management',
+                                masterId: getCleanSheetId(masterSheetId),
+                                data: { nickname: nick, type: 'blacklist' }
+                            }).catch(() => {});
+                        }
+                    });
+                }
+            }, [specialCustomers, setSpecialCustomers, openModal, setOrders, googleScriptUrl, masterSheetId]);
             
             const toggleWaitlist = useCallback((nick) => {
                 setWaitlistCustomers(prev => {
@@ -4543,6 +4759,20 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     return;
                 }
                 
+                const cleanManualN = manualNick.trim().replace(/@/g, '');
+                const normManualN = normalizeString(cleanManualN);
+                const manualSpecInfo = specialCustomers?.[normManualN];
+                if (manualSpecInfo?.type === 'blacklist') {
+                    openModal(`🚨 [블랙리스트 경고]\n'${cleanManualN}' 님은 주문 금지(블랙리스트) 고객입니다!\n\n그래도 주문을 추가하시겠습니까?`, 'confirm', () => {
+                        bringToTopAndScroll(cleanManualN);
+                        addOrderLogic(cleanManualN, manualProduct, 1, true, null, manualPrice, true);
+                        setManualNick('');
+                        if (!isFixedProductMode) { setManualProduct(''); setManualPrice(''); }
+                        setShowNickSuggestions(false);
+                    });
+                    return;
+                }
+
                 bringToTopAndScroll(manualNick); 
                 addOrderLogic(manualNick, manualProduct, 1, true, null, manualPrice, true); 
                 setManualNick(''); 
@@ -4934,9 +5164,15 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                 const safeContent = String(c.content || ''); const isMatched = (keywords || []).some(k => safeContent.includes(k)); const isProcessed = clickedChats?.has(c.id);
                                 const isFocused = isFixedProductMode && focusedChatId === c.id;
                                 const shortTime = String(c.time || '').replace(/^(\d{2}:\d{2}):\d{2}$/, '$1');
+                                const chatNormNick = normalizeString(c.nickname);
+                                const chatSpec = specialCustomers?.[chatNormNick];
+                                const isChatBlack = chatSpec?.type === 'blacklist';
+                                const chatNoShowCnt = chatSpec?.type === 'noshow' ? Math.max(1, Number(chatSpec?.count) || 1) : 0;
                                 
                                 let chatClasses = '';
-                                if (isFocused) {
+                                if (isChatBlack) {
+                                    chatClasses = 'bg-red-950/90 text-red-100 border-2 border-red-600 shadow-sm';
+                                } else if (isFocused) {
                                     chatClasses = 'bg-blue-50/90 dark:bg-blue-900/40 border-2 border-blue-500 text-slate-900 dark:text-white shadow-sm';
                                 } else if (isProcessed) {
                                     chatClasses = 'bg-slate-100 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400';
@@ -4953,7 +5189,11 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                         className={`p-2 rounded-md text-xs cursor-pointer transition-all flex flex-col gap-0.5 relative group ${chatClasses}`}
                                     >
                                         <div className="flex items-center justify-between gap-1">
-                                            <span className={`font-extrabold text-[12px] truncate ${isProcessed ? 'text-slate-600 dark:text-slate-400' : 'text-slate-900 dark:text-slate-100'}`}>{c.nickname}</span>
+                                            <div className="flex items-center gap-1 min-w-0">
+                                                <span className={`font-extrabold text-[12px] truncate ${isChatBlack ? 'text-red-300 line-through' : (isProcessed ? 'text-slate-600 dark:text-slate-400' : 'text-slate-900 dark:text-slate-100')}`}>{c.nickname}</span>
+                                                {isChatBlack && <span className="bg-red-600 text-white text-[9px] font-black px-1 py-0.2 rounded shrink-0">💀블랙</span>}
+                                                {chatNoShowCnt > 0 && <span className="bg-red-100 text-red-700 border border-red-300 text-[9px] font-extrabold px-1 py-0.2 rounded shrink-0">🚫노쇼{chatNoShowCnt}회</span>}
+                                            </div>
                                             <div className="flex items-center gap-1 shrink-0">
                                                 <span className="text-[10px] text-slate-400 tabular-nums">{shortTime}</span>
                                                 <button
@@ -4966,7 +5206,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                                 </button>
                                             </div>
                                         </div>
-                                        <div className={`leading-relaxed break-words text-[12px] ${isProcessed ? 'text-slate-500 dark:text-slate-400' : 'text-slate-700 dark:text-slate-200'}`}>
+                                        <div className={`leading-relaxed break-words text-[12px] ${isChatBlack ? 'text-red-200' : (isProcessed ? 'text-slate-500 dark:text-slate-400' : 'text-slate-700 dark:text-slate-200')}`}>
                                             {renderChatContent(safeContent, keywords)}
                                         </div>
                                     </div>
@@ -5126,7 +5366,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                 liveDepsForNick.forEach(item => { if (!combinedDepsMap.has(item.id)) combinedDepsMap.set(item.id, item); });
                                 const customerDeps = Array.from(combinedDepsMap.values());
                                 
-                                return (<CustomerBlock key={nick} nick={nick} items={items} isSelected={selectedNick === nick} currentShipping={ship} isCard={isCard} isCardCompleted={isCardCompleted} isPaidState={bal <= 0 && activeItems.length > 0} grandTotal={grand} depositTotal={depSum} balance={bal} baseGrandTotal={baseGrand} baseBalance={baseBal} addr={addrData} addrType={addrType} addressMapping={addressMapping} autoDepositorName={addrData?.realname || ''} displayDepositorName={depositorNames[nick] || addrData?.realname || '입금자'} isAutoDepositor={!depositorNames[nick] && addrData?.realname} depositorNames={depositorNames} copyStatus={copyStatus} isOrderConfirmed={checkedOrders.has(nick)} isEditingShipping={editingShippingNick === nick} setSelectedNick={setSelectedNick} addOrderLogic={addOrderLogic} handleNicknameEdit={handleNicknameEdit} toggleCardPayment={toggleCardPayment} handleShippingChange={handleShippingChange} setEditingShippingNick={setEditingShippingNick} openModal={openModal} setDepositorNames={setDepositorNames} handleFullDepositToggle={handleFullDepositToggle} copyOrderSheet={copyOrderSheet} handleOrderCheckToggle={handleOrderCheckToggle} handleAddressUnmapping={handleAddressUnmapping} handleAddressMapping={handleAddressMapping} handleProductChange={handleProductChange} handleQuantityUpdate={handleQuantityUpdate} handleOrderCancel={handleOrderCancel} handleOrderDelete={handleOrderDelete} toggleVIP={specialCustomers} specialCustomers={specialCustomers} handleOpenQuickAddress={handleOpenQuickAddress} findAddressSuggestions={findAddressSuggestions} cashReceiptStatus={cashReceipts[nick]} toggleCashReceipt={toggleCashReceipt} inventory={inventory} productHistory={productHistory} customerDeposits={customerDeps} handleDepositUnmatch={handleDepositUnmatch} handleMultiAddOpen={setMultiAddNick} toggleNoShow={toggleNoShow} toggleWaitlist={toggleWaitlist} noShowStatus={noShowCustomers[nick]} waitlistStatus={waitlistCustomers[nick]} customerPassword={customerPasswords && customerPasswords[nick]} handleSetCustomerPassword={handleSetCustomerPassword} trackingNumber={trackingNumbers && trackingNumbers[nick]} handleSetTrackingNumber={handleSetTrackingNumber} customerCredit={customerCredits && customerCredits[nick]} handleSetCustomerCredit={handleSetCustomerCredit} handleConvertOverpaidToCredit={handleConvertOverpaidToCredit} handleApplyCustomerCreditToOrder={handleApplyCustomerCreditToOrder} waitlistRankMap={waitlistRankMap} />);
+                                return (<CustomerBlock key={nick} nick={nick} items={items} isSelected={selectedNick === nick} currentShipping={ship} isCard={isCard} isCardCompleted={isCardCompleted} isPaidState={bal <= 0 && activeItems.length > 0} grandTotal={grand} depositTotal={depSum} balance={bal} baseGrandTotal={baseGrand} baseBalance={baseBal} addr={addrData} addrType={addrType} addressMapping={addressMapping} autoDepositorName={addrData?.realname || ''} displayDepositorName={depositorNames[nick] || addrData?.realname || '입금자'} isAutoDepositor={!depositorNames[nick] && addrData?.realname} depositorNames={depositorNames} copyStatus={copyStatus} isOrderConfirmed={checkedOrders.has(nick)} isEditingShipping={editingShippingNick === nick} setSelectedNick={setSelectedNick} addOrderLogic={addOrderLogic} handleNicknameEdit={handleNicknameEdit} toggleCardPayment={toggleCardPayment} handleShippingChange={handleShippingChange} setEditingShippingNick={setEditingShippingNick} openModal={openModal} setDepositorNames={setDepositorNames} handleFullDepositToggle={handleFullDepositToggle} copyOrderSheet={copyOrderSheet} handleOrderCheckToggle={handleOrderCheckToggle} handleAddressUnmapping={handleAddressUnmapping} handleAddressMapping={handleAddressMapping} handleProductChange={handleProductChange} handleQuantityUpdate={handleQuantityUpdate} handleOrderCancel={handleOrderCancel} handleOrderDelete={handleOrderDelete} toggleVIP={specialCustomers} specialCustomers={specialCustomers} handleOpenQuickAddress={handleOpenQuickAddress} findAddressSuggestions={findAddressSuggestions} cashReceiptStatus={cashReceipts[nick]} toggleCashReceipt={toggleCashReceipt} inventory={inventory} productHistory={productHistory} customerDeposits={customerDeps} handleDepositUnmatch={handleDepositUnmatch} handleMultiAddOpen={setMultiAddNick} toggleNoShow={toggleNoShow} toggleBlacklist={toggleBlacklist} toggleWaitlist={toggleWaitlist} noShowStatus={noShowCustomers[nick]} waitlistStatus={waitlistCustomers[nick]} customerPassword={customerPasswords && customerPasswords[nick]} handleSetCustomerPassword={handleSetCustomerPassword} trackingNumber={trackingNumbers && trackingNumbers[nick]} handleSetTrackingNumber={handleSetTrackingNumber} customerCredit={customerCredits && customerCredits[nick]} handleSetCustomerCredit={handleSetCustomerCredit} handleConvertOverpaidToCredit={handleConvertOverpaidToCredit} handleApplyCustomerCreditToOrder={handleApplyCustomerCreditToOrder} waitlistRankMap={waitlistRankMap} />);
                             })}
                         </div>
                     </div>
