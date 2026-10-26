@@ -389,9 +389,54 @@
             let s = String(str).toLowerCase().replace(/\s/g, '');
             s = s.replace(/[—–−_]/g, '-');
             if (s.includes('-')) s = s.split('-')[0];
+            // 끝에 붙은 '42번', '7번' 같은 상품번호 꼬리표 제거
+            s = s.replace(/\d+번$/, '');
             s = s.replace(/[\(\)\[\]\{\}\.\,\/]/g, '');
             if (/[가-힣]/.test(s)) s = s.replace(/[a-z0-9]+$/, '');
             return s;
+        };
+
+        // ✨ 입금자명에서 가능한 모든 매칭 조각(괄호 안/밖 분리, 상품번호 제거, 한글 코어 추출)을 뽑아내는 스마트 분석 함수
+        const extractDepositTokens = (rawStr) => {
+            if (!rawStr) return { norms: [], cleans: [], kos: [] };
+            let s = String(rawStr).trim();
+            // 끝에 붙은 '42번', '11번' 등 상품번호 제거
+            const withoutItemNo = s.replace(/\s*\d+\s*번$/g, '').trim();
+
+            const parts = new Set([s, withoutItemNo]);
+
+            // 1) 괄호 분리: "드리머(한재은)", "이호정(밤송이야)" -> "드리머", "한재은" 각각 분리!
+            const parenMatch = withoutItemNo.match(/^([^\(\[\{]+)[\(\[\{]([^\)\]\}]+)[\)\]\}]$/);
+            if (parenMatch) {
+                if (parenMatch[1].trim()) parts.add(parenMatch[1].trim());
+                if (parenMatch[2].trim()) parts.add(parenMatch[2].trim());
+            }
+
+            // 2) 슬래시, 하이픈, 공백 분리
+            withoutItemNo.split(/[\/\,\-\s\(\)\[\]\{\}]+/).forEach(p => {
+                if (p && p.trim().length >= 2) parts.add(p.trim());
+            });
+
+            const norms = new Set();
+            const cleans = new Set();
+            const kos = new Set();
+
+            parts.forEach(p => {
+                const n = normalizeString(p);
+                const c = cleanForMatch(p);
+                const k = extractKo(p);
+                if (n && n.length >= 2) norms.add(n);
+                if (c && c.length >= 2) cleans.add(c);
+                if (k && k.length >= 2) kos.add(k);
+            });
+
+            return {
+                norms: Array.from(norms),
+                cleans: Array.from(cleans),
+                kos: Array.from(kos),
+                fullNorm: normalizeString(withoutItemNo),
+                fullKo: extractKo(withoutItemNo)
+            };
         };
 
     const extractKo = (str) => {
@@ -3360,27 +3405,71 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                 const depKo = extractKo(rawDepName);
                 if (!depClean && !depNorm) return;
 
-                // 1순위: 닉네임 / 지정 입금자명 / 주소록 실명과 정확히 일치하는 고객 탐색
+                const depTokens = extractDepositTokens(rawDepName);
+
+                // 1순위: 정확 일치 + 괄호 분리 일치(`드리머(한재은)`, `이호정(밤송이야)`) + 닉네임&실명 합체형 일치(`윤슬HAE고다해`, `니가조아이연홍`) + 번호제거 일치(`조용주42번`)
                 let matchedCands = customerNicks.filter(nick => {
                     const nickClean = cleanForMatch(nick);
                     const nickNorm = normalizeString(nick);
                     const nickHandle = normalizeHandleNick(nick);
-                    const customDep = depositorNames[nick] ? normalizeString(depositorNames[nick]) : '';
+                    const nickKo = extractKo(nickHandle || nick);
+                    const customDepRaw = depositorNames[nick] || '';
+                    const customDep = customDepRaw ? normalizeString(customDepRaw) : '';
+                    const customDepKo = customDepRaw ? extractKo(customDepRaw) : '';
                     const addrReal = addressLookup.get(nick)?.data?.realname || masterRealnameMap[nickNorm] || masterRealnameMap[nickHandle] || '';
                     const addrRealNorm = normalizeString(addrReal);
                     const addrRealClean = cleanForMatch(addrReal);
+                    const addrRealKo = extractKo(addrReal);
 
+                    // (A) 기존 전체 문자열 일치
                     if (depNorm && (depNorm === nickNorm || depNorm === nickHandle || (customDep && depNorm === customDep) || (addrRealNorm && depNorm === addrRealNorm))) {
                         return true;
                     }
                     if (depClean && (depClean === nickClean || (addrRealClean && depClean === addrRealClean))) {
                         return true;
                     }
+
+                    // (B) 괄호나 기호로 분리된 조각(`드리머`, `한재은`, `조용주` 등) 중 하나가 닉네임이나 실명과 정확히 일치하는 경우!
+                    // 예: "드리머(한재은)" -> 조각 "드리머"(드리머S2의 cleanForMatch인 '드리머'와 일치!) 또는 조각 "한재은"(실명과 일치!)
+                    for (const tNorm of depTokens.norms) {
+                        if (tNorm === nickNorm || tNorm === nickHandle || (customDep && tNorm === customDep) || (addrRealNorm && tNorm === addrRealNorm)) {
+                            return true;
+                        }
+                    }
+                    for (const tClean of depTokens.cleans) {
+                        if ((nickClean && nickClean.length >= 2 && tClean === nickClean) || (addrRealClean && addrRealClean.length >= 2 && tClean === addrRealClean)) {
+                            return true;
+                        }
+                    }
+
+                    // (C) "윤슬HAE고다해", "니가조아이연홍", "애플진유니" 처럼 [닉네임 + 실명] 또는 [실명 + 닉네임]을 붙여 쓴 경우!
+                    const realTargetNorm = addrRealNorm || customDep;
+                    const realTargetKo = addrRealKo || customDepKo;
+                    if (realTargetNorm && realTargetNorm.length >= 2) {
+                        const combo1 = nickNorm + realTargetNorm;
+                        const combo2 = realTargetNorm + nickNorm;
+                        const combo3 = nickHandle + realTargetNorm;
+                        const combo4 = realTargetNorm + nickHandle;
+                        const combo5 = nickClean + realTargetNorm;
+                        const combo6 = realTargetNorm + nickClean;
+                        if ([combo1, combo2, combo3, combo4, combo5, combo6].includes(depTokens.fullNorm) || [combo1, combo2, combo3, combo4, combo5, combo6].includes(depNorm)) {
+                            return true;
+                        }
+                        // 입금자명 안에 닉네임(2글자 이상)과 실명(2글자 이상)이 둘 다 포함되어 있는 경우
+                        if (nickHandle.length >= 2 && depTokens.fullNorm.includes(nickHandle) && depTokens.fullNorm.includes(realTargetNorm)) {
+                            return true;
+                        }
+                        if (nickKo.length >= 2 && realTargetKo.length >= 2 && depTokens.fullKo.includes(nickKo) && depTokens.fullKo.includes(realTargetKo)) {
+                            return true;
+                        }
+                    }
+
                     return false;
                 });
 
-                // 2순위: 입금자명(예: "홍길동", "김은지")이 2~4글자 한글 실명이고, 주문자 실명(또는 닉네임 한글 부분)과 일치하는 유일한 1명일 때 매칭
-                if (matchedCands.length === 0 && depKo && depKo.length >= 2) {
+                // 2순위: 입금자명(또는 괄호 안 조각)의 한글 부분이 주문자 실명이나 닉네임 한글 부분(2글자 이상)과 일치하거나,
+                // "니가조아이연홍"처럼 입금자명이 주문자 닉네임(3글자 이상)으로 시작/끝나는 유일한 1명일 때 매칭!
+                if (matchedCands.length === 0 && (depKo.length >= 2 || depTokens.kos.length > 0)) {
                     const koCands = customerNicks.filter(nick => {
                         const nickNorm = normalizeString(nick);
                         const nickHandle = normalizeHandleNick(nick);
@@ -3389,9 +3478,33 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         const addrRealKo = extractKo(addrReal);
                         const nickKo = extractKo(nickHandle || nick);
 
-                        return (customDepKo && customDepKo === depKo) || (addrRealKo && addrRealKo === depKo) || (nickKo && nickKo === depKo);
+                        // 괄호 등으로 쪼개진 한글 토큰("드리머", "한재은", "유찬희", "밤송이야", "조용주")과 일치 확인
+                        for (const tk of depTokens.kos) {
+                            if (tk.length >= 2) {
+                                if ((customDepKo && customDepKo === tk) || (addrRealKo && addrRealKo === tk) || (nickKo && nickKo.length >= 2 && nickKo === tk)) {
+                                    return true;
+                                }
+                            }
+                        }
+
+                        // 주소록에 아직 실명이 안 적혀있더라도 "니가조아이연홍"처럼 주문자 닉네임(3글자 이상, 예: "니가조아", "윤슬hae")으로 시작하거나 끝나는 경우!
+                        if (nickHandle.length >= 3 && (depTokens.fullNorm.startsWith(nickHandle) || depTokens.fullNorm.endsWith(nickHandle))) {
+                            return true;
+                        }
+                        if (nickKo.length >= 3 && (depTokens.fullKo.startsWith(nickKo) || depTokens.fullKo.endsWith(nickKo))) {
+                            return true;
+                        }
+                        // 반대로 주문서 닉네임이 "애플진유니"이고 입금자명이 "애플진유니"의 뒷부분/앞부분 실명과 결합된 경우
+                        if (addrRealKo && addrRealKo.length >= 2 && depTokens.fullKo.length >= 3 && (depTokens.fullKo.endsWith(addrRealKo) || depTokens.fullKo.startsWith(addrRealKo))) {
+                            return true;
+                        }
+
+                        return false;
                     });
                     if (koCands.length === 1) {
+                        matchedCands = koCands;
+                    } else if (koCands.length > 1) {
+                        // 여러 명일 경우 아래 금액 대조 로직에서 미납액이 정확히 일치하는 1명을 찾도록 넘김
                         matchedCands = koCands;
                     }
                 }
