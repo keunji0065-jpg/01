@@ -2165,6 +2165,61 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             const [liveChatId, setLiveChatId] = useState(null);
             const chatNextPageTokenRef = useRef('');
             const unsavedChatsRef = useRef([]);
+            const savedChatIdsRef = useRef(new Set());
+
+            // ✨ 모아둔 유튜브 라이브 채팅을 구글 시트('채팅기록' 탭)로 안전하게 전송하는 함수
+            const flushUnsavedChatsToSheet = useCallback(async (forceAllChats = false) => {
+                if (!googleScriptUrl || !masterSheetId) return;
+                let sourceList = [];
+                if (forceAllChats && Array.isArray(chats) && chats.length > 0) {
+                    sourceList = chats.filter(c => c && c.id && !savedChatIdsRef.current.has(c.id));
+                    unsavedChatsRef.current = [];
+                } else if (unsavedChatsRef.current.length > 0) {
+                    sourceList = [...unsavedChatsRef.current].filter(c => c && (!c.id || !savedChatIdsRef.current.has(c.id)));
+                    unsavedChatsRef.current = [];
+                }
+                if (sourceList.length === 0) return;
+
+                const cleanB = String(broadcastName || '오늘의방송').replace(/^주문_/, '').trim();
+                const rowsToSave = sourceList.map(c => [
+                    c.time ? `[${cleanB}] ${c.time}` : cleanB,
+                    c.nickname || '',
+                    c.content || ''
+                ]);
+                sourceList.forEach(c => { if (c && c.id) savedChatIdsRef.current.add(c.id); });
+
+                try {
+                    const res = await fetchGas(googleScriptUrl, {
+                        action: 'save_chats',
+                        masterId: getCleanSheetId(masterSheetId),
+                        broadcastName: cleanB,
+                        data: rowsToSave
+                    });
+                    if (!res || (res.status !== 'success' && !res.success)) {
+                        sourceList.forEach(c => { if (c && c.id) savedChatIdsRef.current.delete(c.id); });
+                        unsavedChatsRef.current.unshift(...sourceList);
+                    }
+                } catch (e) {
+                    sourceList.forEach(c => { if (c && c.id) savedChatIdsRef.current.delete(c.id); });
+                    unsavedChatsRef.current.unshift(...sourceList);
+                }
+            }, [googleScriptUrl, masterSheetId, broadcastName, chats]);
+
+            useEffect(() => {
+                const chatBackupTimer = setInterval(() => {
+                    if (unsavedChatsRef.current.length > 0) {
+                        flushUnsavedChatsToSheet(false);
+                    }
+                }, 15000);
+                const handleFlushAllChats = () => {
+                    flushUnsavedChatsToSheet(true);
+                };
+                window.addEventListener('flush-chats-to-sheet', handleFlushAllChats);
+                return () => {
+                    clearInterval(chatBackupTimer);
+                    window.removeEventListener('flush-chats-to-sheet', handleFlushAllChats);
+                };
+            }, [flushUnsavedChatsToSheet]);
 
             // ✨ 추가: 유튜브 요구 폴링 간격 및 GAS 중복 실행 방지 락
             const chatPollingIntervalRef = useRef(4000);
@@ -2858,8 +2913,12 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                             return Array.from(deduplicatedMap.values()); 
                         });
                         
-                        if (googleScriptUrl && masterSheetId && broadcastName) {
-                            unsavedChatsRef.current.push(...newChats);
+                        if (googleScriptUrl && masterSheetId) {
+                            newChats.forEach(nc => {
+                                if (!nc.id || !savedChatIdsRef.current.has(nc.id)) {
+                                    unsavedChatsRef.current.push(nc);
+                                }
+                            });
                         }
                         const okStr = `채팅(${newChats.length})`;
                         setYoutubeStatus(prev => prev === okStr ? prev : okStr);
@@ -4132,6 +4191,9 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
 
         const autoSaveToGoogleSheet = useCallback(async (isManual = false) => {
             if (!googleScriptUrl || !masterSheetId) return;
+            if (unsavedChatsRef.current.length > 0 || isManual) {
+                flushUnsavedChatsToSheet(isManual);
+            }
             // 🛡️ 이전 방송을 불러와 열람 중일 때는 자동 저장을 완전히 차단하고, 오직 사장님이 직접 [수동 저장(Ctrl+S)]을 눌렀을 때(isManual === true)만 저장!
             if (isViewingPastBroadcast && !isManual) return;
             const activeOrders = orders.filter(o => !o.isCancelled);
@@ -6684,6 +6746,16 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
 
                         const lockedItems = Array.isArray(inventory) ? inventory.filter(i => i.isLocked) : [];
 
+                        // ✨ 방송 마감 시 화면에서 채팅을 지우기 전에, 오늘 수집된 전체 채팅 내역을 구글 시트('채팅기록' 탭)에 먼저 백업 보장!
+                        let savedChatsSnapshot = [];
+                        try {
+                            const rawSavedChats = localStorage.getItem(getLsKey('savedChats'));
+                            if (rawSavedChats) {
+                                const parsedChats = JSON.parse(rawSavedChats);
+                                if (Array.isArray(parsedChats)) savedChatsSnapshot = parsedChats;
+                            }
+                        } catch (e) {}
+
                         // 1순위: 화면 상태부터 즉시 마감(🔒 방송마감)으로 전환하고 주문서/재고 초기화!
                         setIsLiveBroadcasting(false);
                         setBroadcastName(nextTitle);
@@ -6799,6 +6871,19 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                 '송장번호': ''
                             }];
                             try {
+                                if (savedChatsSnapshot.length > 0) {
+                                    const chatRowsToArchive = savedChatsSnapshot.map(c => [
+                                        c.time ? `[${prevBroadcastTitle}] ${c.time}` : prevBroadcastTitle,
+                                        c.nickname || '',
+                                        c.content || ''
+                                    ]);
+                                    await fetchGas(googleScriptUrl, {
+                                        action: 'save_chats',
+                                        masterId: cleanMaster,
+                                        broadcastName: prevBroadcastTitle,
+                                        data: chatRowsToArchive
+                                    });
+                                }
                                 if (prevBroadcastTitle && activePrevOrders.length > 0) {
                                     await fetchGas(googleScriptUrl, {
                                         action: 'save_orders',
@@ -6815,7 +6900,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         }
 
                         setTimeout(() => {
-                            openModal(`✅ 내 시트에 [${archiveSheetName}] 시트로 저장 및 방송 마감이 완료되었습니다!`, 'alert');
+                            openModal(`✅ 내 시트에 [${archiveSheetName}] 시트 및 [채팅기록] 저장과 방송 마감이 완료되었습니다!`, 'alert');
                         }, 100);
                     },
                     null,
