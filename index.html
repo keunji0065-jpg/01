@@ -4358,7 +4358,8 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             }
             // 🛡️ 이전 방송을 불러와 열람 중일 때는 자동 저장을 완전히 차단하고, 오직 사장님이 직접 [수동 저장(Ctrl+S)]을 눌렀을 때(isManual === true)만 저장!
             if (isViewingPastBroadcast && !isManual) return;
-            const activeOrders = orders.filter(o => !o.isCancelled);
+            // ✨ 노쇼 처리된 고객(noShowCustomers[o.customer])의 주문은 취소 상태여도 시트와 고객 포털에 '노쇼(O)'로 기록되도록 포함!
+            const activeOrders = orders.filter(o => !o.isCancelled || Boolean(noShowCustomers && noShowCustomers[o.customer]));
             if (activeOrders.length === 0 && !isManual) return;
 
             const uniqueNicknames = Array.from(new Set(activeOrders.map(o => o.customer)));
@@ -4502,7 +4503,8 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                     }).catch(() => {});
                                     const safeBKey = cleanBName.replace(/[.#$\[\]\/]/g, '_');
                                     const portalCustomers = uniqueNicknames.map(nick => {
-                                        const custOrders = orders.filter(o => !o.isCancelled && o.customer === nick);
+                                        const isCustNoShow = Boolean(noShowCustomers && noShowCustomers[nick]);
+                                        const custOrders = orders.filter(o => o.customer === nick && (!o.isCancelled || isCustNoShow));
                                         let addrRes = addressLookup.get(nick);
                                         let addr = addrRes.data || {};
                                         const cleanPh = addr.phone ? fixPhoneNumber(addr.phone) : '';
@@ -4523,6 +4525,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                             phoneLast4: pin4,
                                             broadcastName: cleanBName,
                                             isVip: isVip,
+                                            isNoShow: isCustNoShow,
                                             credit: Number(customerCredits?.[nick]) || 0,
                                             freeShippingThreshold: Number(freeShippingThreshold) || 70000,
                                             cardFeeRate: feeRateNum,
@@ -4591,7 +4594,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             // 단, 사장님이 직접 [🔒 방송마감] 버튼을 눌러 [🔴 생방송중]으로 켠 상태일 때만 고객 포털 클라우드에 실시간 반영합니다!
             useEffect(() => {
                 if (isViewingPastBroadcast) return;
-                const activeOrders = orders.filter(o => !o.isCancelled);
+                const activeOrders = orders.filter(o => !o.isCancelled || Boolean(noShowCustomers && noShowCustomers[o.customer]));
 
                 // 만약 모든 주문이 취소되거나 삭제되어 활성 주문이 0개가 되었다면 클라우드(__MAIN_LIVE__)와 메인주문 시트에서도 즉시 비워서 취소된 흔적이 남지 않게 처리!
                 if (activeOrders.length === 0) {
@@ -4643,6 +4646,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         const uniqueNicknames = Array.from(new Set(activeOrders.map(o => o.customer)));
 
                         const portalCustomers = uniqueNicknames.map(nick => {
+                            const isCustNoShow = Boolean(noShowCustomers && noShowCustomers[nick]);
                             const custOrders = activeOrders.filter(o => o.customer === nick);
                             const prodSumForShip = custOrders.filter(o => !o.isWaitlist && Number(o.price) > 0).reduce((s, o) => s + Number(o.price), 0);
                             const depSum = custOrders.reduce((s, o) => s + (Number(o.deposit) || 0), 0);
@@ -4667,6 +4671,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                 phoneLast4: pin4,
                                 broadcastName: cleanBName,
                                 isVip: isVip,
+                                isNoShow: isCustNoShow,
                                 credit: Number(customerCredits?.[nick]) || 0,
                                 freeShippingThreshold: Number(freeShippingThreshold) || 70000,
                                 cardFeeRate: feeRateNum,
@@ -6822,7 +6827,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         const nextTitle = '오늘의방송';
 
                         const feeRateNumNow = (cardFeeRate !== undefined && cardFeeRate !== '' && Number(cardFeeRate) > 0) ? Number(cardFeeRate) : 10;
-                        const activePrevOrders = (Array.isArray(orders) ? orders : []).filter(o => !o.isCancelled);
+                        const activePrevOrders = (Array.isArray(orders) ? orders : []).filter(o => !o.isCancelled || Boolean(noShowCustomers && noShowCustomers[o.customer]));
                         const prevArchiveRows = [{
                             '닉네임': '___WORKSPACE_META___',
                             '주문자': '___WORKSPACE_META___',
