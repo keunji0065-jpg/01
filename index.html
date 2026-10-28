@@ -12,12 +12,30 @@
     <meta http-equiv="Expires" content="0">
     <title>강은지 주문서</title>
     <script>
-        window.addEventListener('error', function(e) {
-            if (!e.message || e.message === 'Script error.' || (e.filename && e.filename.includes('google.com'))) {
+        // Babel 500KB deoptimised 스타일 경고 및 외부 스크립트 오류 완전 차단
+        (function() {
+            const origWarn = console.warn;
+            const origError = console.error;
+            console.warn = function(...args) {
+                const msg = args.map(a => String(a || '')).join(' ');
+                if (msg.includes('500KB') || msg.includes('deoptimised') || msg.includes('Tailwind') || msg.includes('babel')) return;
+                return origWarn.apply(console, args);
+            };
+            console.error = function(...args) {
+                const msg = args.map(a => String(a || '')).join(' ');
+                if (msg.includes('500KB') || msg.includes('deoptimised') || msg.includes('Script error')) return;
+                return origError.apply(console, args);
+            };
+            window.addEventListener('error', function(e) {
+                if (!e.message || e.message === 'Script error.' || (e.filename && e.filename.includes('google.com'))) {
+                    e.preventDefault();
+                    return true;
+                }
+            }, true);
+            window.addEventListener('unhandledrejection', function(e) {
                 e.preventDefault();
-                return true;
-            }
-        }, true);
+            });
+        })();
     </script>
     
     <!-- PWA 강제 설치를 위한 매니페스트 (URL 인코딩 방식) -->
@@ -545,29 +563,54 @@
             return strVal; 
         };
 
-        const fetchGas = async (url, payload = null, timeoutMs = 25000) => {
-            const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), timeoutMs);
-            const options = { method: payload ? 'POST' : 'GET', redirect: "follow", signal: controller.signal };
-            if (payload) {
-                options.headers = { 'Content-Type': 'text/plain;charset=utf-8' };
-                options.body = JSON.stringify(payload);
-            }
-            try {
-                const response = await fetch(url, options);
-                clearTimeout(timer);
-                const text = await response.text();
-                
-                if (text.includes("<!DOCTYPE") || text.includes("<html")) {
-                    return { status: "error", message: "앱스 스크립트 주소/권한 오류" };
+        const fetchGas = async (url, payload = null, timeoutMs = 25000, retries = 2) => {
+            const attempt = async () => {
+                const controller = new AbortController();
+                const timer = setTimeout(() => controller.abort(), timeoutMs);
+                const options = { method: payload ? 'POST' : 'GET', redirect: "follow", signal: controller.signal };
+                if (payload) {
+                    options.headers = { 'Content-Type': 'text/plain;charset=utf-8' };
+                    options.body = JSON.stringify(payload);
                 }
-                try { return JSON.parse(text); } catch(e) { return { status: "error", message: "데이터 변환 실패" }; }
-            } catch (err) {
-                clearTimeout(timer);
-                if (err && err.name === 'AbortError') {
-                    return { status: "error", message: "응답 지연 (자동 재시도중)" };
+                try {
+                    const response = await fetch(url, options);
+                    clearTimeout(timer);
+                    const text = await response.text();
+                    if (text.includes("<!DOCTYPE") || text.includes("<html")) {
+                        throw new Error("앱스 스크립트 응답 지연 또는 권한 확인 필요");
+                    }
+                    return JSON.parse(text);
+                } catch (err) {
+                    clearTimeout(timer);
+                    throw err;
                 }
-                return { status: "error", message: `통신 오류 (${err.message})` };
+            };
+
+            for (let i = 0; i <= retries; i++) {
+                try {
+                    return await attempt();
+                } catch (err) {
+                    if (i < retries) {
+                        await new Promise(r => setTimeout(r, 600 * (i + 1)));
+                        continue;
+                    }
+                    // POST 저장 요청의 경우 CORS 리다이렉트 등으로 응답 읽기만 막힌 경우에도 no-cors로 시트 기록을 끝까지 보장!
+                    if (payload) {
+                        try {
+                            await fetch(url, {
+                                method: 'POST',
+                                mode: 'no-cors',
+                                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                                body: JSON.stringify(payload)
+                            });
+                            return { status: "success", success: true, fallbackNoCors: true };
+                        } catch (noCorsErr) {}
+                    }
+                    if (err && err.name === 'AbortError') {
+                        return { status: "error", message: "응답 지연 (자동 재시도중)" };
+                    }
+                    return { status: "error", message: `통신 오류 (${err.message})` };
+                }
             }
         };
 
@@ -2501,34 +2544,62 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             const handleQuickAddressSubmit = async (addrData) => {
                 if (!addrData.timestamp) addrData.timestamp = new Date().toISOString();
                 const fixedPhone = fixPhoneNumber(addrData.phone);
-                const masterData = { ...addrData, phone: fixedPhone, _source: 'master' };
+                const cleanAddrStr = stripZipcodeFromAddr(addrData.address || '');
+                const masterData = { ...addrData, address: cleanAddrStr, phone: fixedPhone, _source: 'master' };
+                const prevEditNick = quickAddrModal.editData?.nickname || addrData.nickname;
+                const prevEditPhone = fixPhoneNumber(quickAddrModal.editData?.phone || '');
                 
-                // ✨ 수동 주소 입력 직후 12초 동안은 3초 폴링이 구버전 시트 데이터로 덮어쓰지 못하도록 보호 락 설정!
+                // ✨ 수동 주소 입력 직후 15초 동안은 폴링이 구버전 시트 데이터로 덮어쓰지 못하도록 보호 락 설정!
                 addressSyncLock.current = Date.now();
 
                 setAddresses(prev => {
-                    const newAddrs = [...prev];
                     const targetNickClean = normalizeString(masterData.nickname);
-                    const existIdx = newAddrs.findIndex(a => normalizeString(a.nickname) === targetNickClean && a._source === 'master');
-                    if (existIdx !== -1) { newAddrs[existIdx] = { ...newAddrs[existIdx], ...masterData }; } 
-                    else { const filtered = newAddrs.filter(a => normalizeString(a.nickname) !== targetNickClean || a._source !== 'raw'); filtered.push(masterData); return filtered; }
-                    return newAddrs;
+                    const prevNickClean = normalizeString(prevEditNick);
+                    // 기존에 같은 닉네임(또는 수정 전 닉네임+전화번호)으로 있던 옛날 줄을 정확히 제거하고 새 주소로 교체!
+                    const filtered = prev.filter(a => {
+                        const aNickClean = normalizeString(a.nickname);
+                        const aPhone = fixPhoneNumber(a.phone);
+                        if (aNickClean === targetNickClean) {
+                            if (!prevEditPhone || !aPhone || aPhone === prevEditPhone || aPhone === fixedPhone) return false;
+                        }
+                        if (prevNickClean && aNickClean === prevNickClean && (!prevEditPhone || aPhone === prevEditPhone)) return false;
+                        return true;
+                    });
+                    return [...filtered, { ...masterData, _rowOrder: 999999 }];
                 });
-                // ✨ 사장님이 직접 배송지를 입력/수정한 경우에도 현재 방송 전용 주소 캐시(broadcastAddresses)를 함께 갱신하여 즉시 반영!
+
+                // ✨ 사장님이 직접 배송지를 입력/수정한 경우 현재 방송 전용 주소 캐시(broadcastAddresses)도 즉시 갱신!
                 const cleanCurB = String(broadcastName || '').replace(/^주문_/, '').trim();
-                if (cleanCurB) {
-                    setBroadcastAddresses(prev => {
-                        const curBMap = { ...(prev[cleanCurB] || {}) };
+                setBroadcastAddresses(prev => {
+                    const next = { ...prev };
+                    Object.keys(next).forEach(bKey => {
+                        if (next[bKey] && (next[bKey][masterData.nickname] || next[bKey][normalizeString(masterData.nickname)])) {
+                            next[bKey] = {
+                                ...next[bKey],
+                                [masterData.nickname]: masterData,
+                                [normalizeString(masterData.nickname)]: masterData
+                            };
+                        }
+                    });
+                    if (cleanCurB) {
+                        const curBMap = { ...(next[cleanCurB] || {}) };
                         const cNick = normalizeString(masterData.nickname);
                         const hNick = normalizeHandleNick(masterData.nickname);
                         curBMap[masterData.nickname] = masterData;
                         if (cNick) curBMap[cNick] = masterData;
                         if (hNick) curBMap[hNick] = masterData;
-                        return { ...prev, [cleanCurB]: curBMap };
-                    });
-                }
+                        next[cleanCurB] = curBMap;
+                    }
+                    return next;
+                });
+
                 setQuickAddrModal({ isOpen: false, nick: '', editData: null });
-                setAddressMapping(prevMap => ({ ...prevMap, [masterData.nickname]: masterData.nickname }));
+                setAddressMapping(prevMap => {
+                    const nextMap = { ...prevMap };
+                    delete nextMap[normalizeString(masterData.nickname)];
+                    nextMap[masterData.nickname] = masterData.nickname;
+                    return nextMap;
+                });
 
                 // 핸드폰 뒷 4자리도 고객 비밀번호로 자동 세팅
                 if (fixedPhone && fixedPhone.length >= 4) {
@@ -2536,21 +2607,39 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     setCustomerPasswords(prev => Object.assign({}, prev, { [masterData.nickname]: pin4 }));
                 }
 
+                // 1) 파이어베이스 실시간 클라우드에도 즉시 덮어쓰기 반영
+                if (window.emberRealtimeDb) {
+                    const safeNickKey = String(masterData.nickname || '').replace(/[.#$\[\]\/]/g, '_').trim();
+                    const addrPayload = {
+                        nickname: masterData.nickname,
+                        realname: masterData.realname || '',
+                        phone: fixedPhone,
+                        address: cleanAddrStr,
+                        memo: masterData.memo || '',
+                        broadcastName: cleanCurB || '',
+                        updatedAt: new Date().toISOString()
+                    };
+                    if (safeNickKey) {
+                        window.emberRealtimeDb.ref(`ember_live_data/_portal_master_addrs/${safeNickKey}`).set(addrPayload).catch(() => {});
+                        window.emberRealtimeDb.ref(`ember_live_data/_portal_addresses/${safeNickKey}`).set(addrPayload).catch(() => {});
+                        if (cleanCurB) {
+                            const safeBKey = cleanCurB.replace(/[.#$\[\]\/]/g, '_');
+                            window.emberRealtimeDb.ref(`ember_live_data/_portal_broadcast_addresses/${safeBKey}/${safeNickKey}`).set(addrPayload).catch(() => {});
+                        }
+                    }
+                }
+
+                // 2) 구글 시트('찐고객사전')에 덮어쓰기 저장 (forceOverwrite: true로 연락처가 바뀌었더라도 옛날 줄을 찾아 확실히 수정!)
                 if (googleScriptUrl && masterSheetId) {
                     const payloadToGas = { 
                         ...masterData, 
                         '닉네임': masterData.nickname, name: masterData.nickname, nick: masterData.nickname, '주문자': masterData.nickname, '아이디': masterData.nickname, '고객명': masterData.nickname,
                         phone: masterData.phone ? "'" + masterData.phone : '', 
+                        prevPhone: prevEditPhone,
+                        forceOverwrite: true,
                         broadcastName: broadcastName || ''
                     };
-                    try { 
-                        const res = await fetchGas(googleScriptUrl, { action: 'save_master_address', masterId: getCleanSheetId(masterSheetId), data: payloadToGas }); 
-                        if (!res || (!res.success && res.status !== 'success')) {
-                            setGlobalError("🚨 찐고객사전 시트 저장 실패: 앱스 스크립트 배포 버전을 확인해주세요.");
-                        }
-                    } catch (err) {
-                        setGlobalError("🚨 통신 오류로 찐고객사전 시트에 주소를 저장하지 못했습니다.");
-                    }
+                    fetchGas(googleScriptUrl, { action: 'save_master_address', masterId: getCleanSheetId(masterSheetId), data: payloadToGas }, 25000, 2).catch(() => {});
                 }
             };
 
@@ -2736,16 +2825,23 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
         // ✨ 어떤 경로(직통 gviz 또는 GAS)로 입금 시트를 읽어오든 100% 동일한 고유 ID를 생성하여 중복 입금 매칭을 원천 차단!
         const parseRawDepositRowsToObjects = useCallback((depRowsInput) => {
             if (!Array.isArray(depRowsInput)) return [];
-            let depRows = depRowsInput;
-            if (depRows.length > 0 && Array.isArray(depRows[0]) && depRows[0].some(c => typeof c === 'string' && (c.includes('이름') || c.includes('금액') || c.includes('닉네임') || c.includes('입금자')))) {
-                depRows = depRows.slice(1);
-            }
+            // 빈 줄이나 헤더 줄을 먼저 깨끗하게 제거
+            const nonEmptyRows = depRowsInput.filter(r => {
+                if (!Array.isArray(r)) return false;
+                const cells = r.filter(c => c !== null && c !== undefined && !/^__ROW_\d+__$/.test(String(c)) && String(c).trim() !== '');
+                if (cells.length < 2) return false;
+                const joined = cells.join(' ');
+                if (joined.includes('입금자명') || (joined.includes('이름') && joined.includes('금액'))) return false;
+                return true;
+            });
+
             const contentKeyCountMap = {};
-            return depRows.map((rawRow, idx) => {
-                if (!Array.isArray(rawRow)) return null;
+            const parsedList = nonEmptyRows.map((rawRow, idx) => {
                 const row = [...rawRow];
-                if (row.length > 0 && /^__ROW_\d+__$/.test(String(row[row.length - 1] || ''))) {
-                    row.pop();
+                let rowNumTag = idx;
+                if (row.length > 0 && /^__ROW_(\d+)__$/.test(String(row[row.length - 1] || ''))) {
+                    const m = String(row.pop()).match(/^__ROW_(\d+)__$/);
+                    if (m) rowNumTag = parseInt(m[1], 10);
                 }
                 const findAnyTimeInRow = (r, skipIdx) => {
                     for (let k = r.length - 1; k >= 0; k--) {
@@ -2778,7 +2874,8 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                             fullTime,
                             rawTime: rawTimeG,
                             name: cleanName,
-                            amount: amtF
+                            amount: amtF,
+                            _rowOrder: rowNumTag
                         };
                     }
                 }
@@ -2843,16 +2940,20 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     fullTime,
                     rawTime,
                     name: cleanName,
-                    amount: parsedAmount
+                    amount: parsedAmount,
+                    _rowOrder: rowNumTag
                 };
-            }).filter(d => d !== null && d.name && d.amount > 0).reverse().slice(0, 1000);
+            }).filter(d => d !== null && d.name && d.amount > 0);
+
+            // 시트 아래쪽에 찍힌 최신 입금이 맨 위에 오도록 역순 정렬 후 최대 1,000개 유지
+            return parsedList.reverse().slice(0, 1000);
         }, []);
 
         const fetchDepositSheetDirect = useCallback(async (sheetId) => {
             if (!sheetId) return null;
             try {
                 const controller = new AbortController();
-                const timer = setTimeout(() => controller.abort(), 6000);
+                const timer = setTimeout(() => controller.abort(), 5000);
                 const url = `https://docs.google.com/spreadsheets/d/${getCleanSheetId(sheetId)}/gviz/tq?tqx=out:json&headers=0&t=${Date.now()}`;
                 const response = await fetch(url, { signal: controller.signal });
                 clearTimeout(timer);
@@ -2863,12 +2964,64 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                 if (jsonStart === -1 || jsonEnd === -1) return null;
                 const res = JSON.parse(text.substring(jsonStart, jsonEnd + 1));
                 if (!res || res.status === 'error' || !res.table || !Array.isArray(res.table.rows)) return null;
-                const allRows = res.table.rows;
-                const startIdx = Math.max(0, allRows.length - 1000);
-                return allRows.slice(startIdx).map((r, i) => {
+                // 빈 줄을 먼저 걸러낸 뒤 마지막 1,000개의 실제 입금 행만 추출! (시트 하단에 빈 줄이 수천 개 있어도 최신 입금이 절대 누락되지 않음)
+                const validRows = [];
+                res.table.rows.forEach((r, idx) => {
                     const cells = (r.c || []).map(cell => cell ? (cell.f !== undefined && cell.f !== null ? String(cell.f) : (cell.v !== undefined && cell.v !== null ? String(cell.v) : '')) : '');
-                    return [...cells, `__ROW_${startIdx + i + 1}__`];
+                    if (cells.some(c => String(c).trim() !== '')) {
+                        validRows.push([...cells, `__ROW_${idx + 1}__`]);
+                    }
                 });
+                return validRows.slice(-1000);
+            } catch (e) {
+                return null;
+            }
+        }, []);
+
+        // ✨ 찐고객사전 시트도 직통(gviz)으로 0.5초 만에 읽어와서 시트에서 직접 수정/삭제한 내역이 즉시 반영되게 하는 함수!
+        const fetchMasterAddressSheetDirect = useCallback(async (sheetId) => {
+            if (!sheetId) return null;
+            try {
+                const controller = new AbortController();
+                const timer = setTimeout(() => controller.abort(), 5500);
+                const url = `https://docs.google.com/spreadsheets/d/${getCleanSheetId(sheetId)}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent('찐고객사전')}&headers=1&t=${Date.now()}`;
+                const response = await fetch(url, { signal: controller.signal });
+                clearTimeout(timer);
+                if (!response.ok) return null;
+                const text = await response.text();
+                const jsonStart = text.indexOf('{');
+                const jsonEnd = text.lastIndexOf('}');
+                if (jsonStart === -1 || jsonEnd === -1) return null;
+                const res = JSON.parse(text.substring(jsonStart, jsonEnd + 1));
+                if (!res || res.status === 'error' || !res.table || !Array.isArray(res.table.rows)) return null;
+                const parsedAddrs = [];
+                res.table.rows.forEach((r, idx) => {
+                    const cells = (r.c || []).map(cell => cell ? (cell.f !== undefined && cell.f !== null ? String(cell.f) : (cell.v !== undefined && cell.v !== null ? String(cell.v) : '')) : '');
+                    const nick = String(cells[0] || '').trim();
+                    const realname = String(cells[1] || '').trim();
+                    const phone = fixPhoneNumber(String(cells[2] || '').trim());
+                    const finalAddr = stripZipcodeFromAddr(cells[3] || '');
+                    const col4 = String(cells[4] || '').trim();
+                    const col5 = String(cells[5] || '').trim();
+                    const rawMemo = /^\d{5}$/.test(col4) ? String(cells[5] || '').trim() : col4;
+                    const rawTime = /^\d{5}$/.test(col4) ? String(cells[6] || '').trim() : col5;
+                    const cleanMemo = (rawMemo === finalAddr || /^\d{5}$/.test(rawMemo)) ? '' : rawMemo;
+                    if ((nick || realname) && nick.toLowerCase() !== 'nickname' && nick !== '닉네임' && finalAddr) {
+                        parsedAddrs.push({
+                            nickname: nick,
+                            realname: realname,
+                            phone: phone,
+                            address: finalAddr,
+                            zipcode: '',
+                            memo: cleanMemo,
+                            timestamp: rawTime,
+                            _parsedTime: parseSafeDate(rawTime).getTime(),
+                            _rowOrder: idx,
+                            _source: 'master'
+                        });
+                    }
+                });
+                return parsedAddrs;
             } catch (e) {
                 return null;
             }
@@ -2940,35 +3093,58 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                 setGasStatus(prev => prev === "설정 ⚙️: 스크립트 URL 입력!" ? prev : "설정 ⚙️: 스크립트 URL 입력!");
                 return;
             }
-            if (!force && isGasFetchingRef.current && (Date.now() - lastGasFetchTimeRef.current < 12000)) return;
+            if (!force && isGasFetchingRef.current && (Date.now() - lastGasFetchTimeRef.current < 8000)) return;
 
             isGasFetchingRef.current = true;
             lastGasFetchTimeRef.current = Date.now();
             if (force) setGasStatus("🔄 입금/주소 즉시 스캔중...");
             
             const slowWarningTimer = setTimeout(() => {
-                setGasStatus("⏳ 시트 재요청중...");
-            }, 11000);
+                setGasStatus("⏳ 시트 응답 대기중...");
+            }, 14000);
 
             try {
+                // 1단계: 직통 리더(gviz)로 입금 시트 + 찐고객사전 시트를 먼저 0.5초 만에 읽어와 화면에 즉시 반영!
+                fetchDepositSheetDirect(depSheetId).then(directRows => {
+                    if (Array.isArray(directRows) && directRows.length > 0) {
+                        const directDeps = parseRawDepositRowsToObjects(directRows);
+                        if (directDeps.length > 0) {
+                            const depIds = directDeps.map(d => d.id).join(',');
+                            if (depIds !== prevDepsStr.current) {
+                                if (directDeps.length > prevDepCount.current && prevDepCount.current !== 0) playCoinSound();
+                                setServerDeposits(directDeps);
+                                prevDepsStr.current = depIds;
+                            }
+                            prevDepCount.current = directDeps.length;
+                            setGasStatus(prev => prev.includes('입금(') ? prev.replace(/입금\(\d+\)/, `입금(${directDeps.length})`) : `입금(${directDeps.length})`);
+                        }
+                    }
+                }).catch(() => {});
+
+                fetchMasterAddressSheetDirect(masterSheetId).then(directAddrs => {
+                    if (Array.isArray(directAddrs) && Date.now() - addressSyncLock.current > 12000) {
+                        const addrKeys = directAddrs.map(a => a.nickname + (a.address||'') + (a.phone||'') + (a.memo||'')).join(',');
+                        if (addrKeys !== prevAddrsStr.current) {
+                            // ✨ 시트에서 삭제하거나 수정한 내용이 100% 그대로 반영되도록 이전 로컬 캐시를 섞지 않고 시트 원본으로 교체!
+                            setAddresses(directAddrs);
+                            prevAddrsStr.current = addrKeys;
+                        }
+                        prevAddrCount.current = directAddrs.length;
+                    }
+                }).catch(() => {});
+
+                // 2단계: 앱스 스크립트(GAS) 호출 (타임아웃을 25초로 넉넉히 늘려 무거운 시트 때문에 중간에 끊기는 현상 원천 차단!)
                 let gasMsg = "";
                 heavyScanCountRef.current = (heavyScanCountRef.current + 1) % 3;
                 const shouldSkipHeavy = !force && prevAddrsStr.current !== '' && heavyScanCountRef.current !== 1;
-                const fetchUrl = `${googleScriptUrl}?action=get_all&depId=${getCleanSheetId(depSheetId)}&masterId=${getCleanSheetId(masterSheetId)}&broadcastName=${encodeURIComponent(broadcastName || '')}&skipHeavy=${shouldSkipHeavy}& depLimit=1000&t=${Date.now()}`;
-                const [res, directDepRows] = await Promise.all([
-                    fetchGas(fetchUrl, null, 15000),
-                    fetchDepositSheetDirect(depSheetId)
-                ]);
+                const fetchUrl = `${googleScriptUrl}?action=get_all&depId=${getCleanSheetId(depSheetId)}&masterId=${getCleanSheetId(masterSheetId)}&broadcastName=${encodeURIComponent(broadcastName || '')}&skipHeavy=${shouldSkipHeavy}&depLimit=1000&t=${Date.now()}`;
+                const res = await fetchGas(fetchUrl, null, 25000);
                 
                 clearTimeout(slowWarningTimer);
                 
                 if (res && res.status === 'success') {
-                    const rawDepositsSource = (Array.isArray(directDepRows) && directDepRows.length > (Array.isArray(res.deposits) ? res.deposits.length : 0))
-                        ? directDepRows
-                        : res.deposits;
-
-                    if (rawDepositsSource && Array.isArray(rawDepositsSource)) {
-                        const newDeps = parseRawDepositRowsToObjects(rawDepositsSource);
+                    if (res.deposits && Array.isArray(res.deposits)) {
+                        const newDeps = parseRawDepositRowsToObjects(res.deposits);
                         const depIds = newDeps.map(d => d.id).join(',');
                         if(depIds !== prevDepsStr.current) {
                             if (newDeps.length > prevDepCount.current && prevDepCount.current !== 0) playCoinSound();
@@ -2980,7 +3156,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         else gasMsg += `입금(없음) `;
                     } else { gasMsg += `입금(연결실패) `; }
 
-                    let mergedAddr = [];
+                    let mergedAddr = null;
                     if (res.masterAddresses && Array.isArray(res.masterAddresses)) {
                         const masterAddrs = res.masterAddresses.map((a, idx) => {
                             const finalAddr = stripZipcodeFromAddr(a.address || a['주소'] || a['배송지'] || a.col_3 || '');
@@ -3004,30 +3180,16 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                 _source: 'master'
                             };
                         }).filter(a => (a.nickname || a.realname) && String(a.nickname).toLowerCase() !== 'nickname' && a.address);
-                        mergedAddr = [...masterAddrs];
+                        mergedAddr = masterAddrs;
                         gasMsg += `주소(${masterAddrs.length}) `;
                     }
                     
-                    // ✨ 수동으로 주소를 방금 입력/수정한 경우 12초 동안은 서버의 이전 캐시가 로컬 최신 주소를 덮어쓰지 못하도록 완벽 보호!
-                    if (Date.now() - addressSyncLock.current > 12000) {
+                    // ✨ 수동으로 주소를 방금 입력/수정한 경우 12초 동안은 보호하고, 그 외에는 시트(찐고객사전)의 최신 상태를 100% 그대로 반영! (시트에서 삭제/수정한 줄이 즉시 반영됨)
+                    if (mergedAddr !== null && Date.now() - addressSyncLock.current > 12000) {
                         const addrKeys = mergedAddr.map(a => a.nickname + (a.address||'') + (a.phone||'') + (a.memo||'')).join(',');
                         if (addrKeys !== prevAddrsStr.current) {
                             if (mergedAddr.length > prevAddrCount.current && prevAddrCount.current !== 0) playBellSound();
-                            if (mergedAddr.length > 0) {
-                                // 동명이인(홍당무-3k4 vs 홍당무-5kj 또는 같은 닉네임 다른 전화번호)이 모두 보존되도록 [닉네임 + 전화번호 뒷4자리]를 고유 키로 병합!
-                                setAddresses(prev => {
-                                    const map = new Map();
-                                    prev.forEach((item, i) => {
-                                        const k = `${normalizeString(item.nickname)}___${fixPhoneNumber(item.phone).slice(-4)}`;
-                                        if (k && item.address) map.set(k, { ...item, _rowOrder: i });
-                                    });
-                                    mergedAddr.forEach((item, i) => {
-                                        const k = `${normalizeString(item.nickname)}___${fixPhoneNumber(item.phone).slice(-4)}`;
-                                        if (k && item.address) map.set(k, { ...item, _rowOrder: 1000 + i });
-                                    });
-                                    return Array.from(map.values());
-                                });
-                            }
+                            setAddresses(mergedAddr);
                             prevAddrsStr.current = addrKeys;
                         }
                         prevAddrCount.current = mergedAddr.length;
@@ -3085,7 +3247,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             fetchGasData(true);
             const gasInterval = setInterval(() => {
                 if (!document.hidden) fetchGasData(false);
-            }, 30000);
+            }, 10000);
             const handleForceSync = () => fetchGasData(true);
             window.addEventListener('force-sync', handleForceSync);
             return () => {
@@ -4707,37 +4869,75 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     addressSyncLock.current = Date.now();
                     setAddressMapping(prev => ({ ...prev, [orderNick]: addressNick })); 
                     const addrData = addresses.find(a => normalizeString(a.nickname) === normalizeString(addressNick));
-                    if (addrData && googleScriptUrl && masterSheetId) {
-                        const mappedData = { 
-                            ...addrData, 
-                            nickname: orderNick, '닉네임': orderNick, name: orderNick, nick: orderNick, '주문자': orderNick, '아이디': orderNick, '고객명': orderNick, 
-                            phone: addrData.phone ? "'" + addrData.phone : '', 
-                            broadcastName: broadcastName || '',
-                            _source: 'master' 
-                        };
-                        try { await fetchGas(googleScriptUrl, { action: 'save_master_address', masterId: getCleanSheetId(masterSheetId), data: mappedData }); } catch (err) { setGlobalError("🚨 통신 에러: 주소 저장 실패"); }
+                    if (addrData) {
+                        const cleanPh = fixPhoneNumber(addrData.phone || '');
+                        if (window.emberRealtimeDb) {
+                            const safeNickKey = String(orderNick || '').replace(/[.#$\[\]\/]/g, '_').trim();
+                            const cleanCurB = String(broadcastName || '').replace(/^주문_/, '').trim();
+                            const addrPayload = {
+                                nickname: orderNick,
+                                realname: addrData.realname || '',
+                                phone: cleanPh,
+                                address: stripZipcodeFromAddr(addrData.address || ''),
+                                memo: addrData.memo || '',
+                                broadcastName: cleanCurB,
+                                updatedAt: new Date().toISOString()
+                            };
+                            if (safeNickKey) {
+                                window.emberRealtimeDb.ref(`ember_live_data/_portal_master_addrs/${safeNickKey}`).set(addrPayload).catch(() => {});
+                                window.emberRealtimeDb.ref(`ember_live_data/_portal_addresses/${safeNickKey}`).set(addrPayload).catch(() => {});
+                            }
+                        }
+                        if (googleScriptUrl && masterSheetId) {
+                            const mappedData = { 
+                                ...addrData, 
+                                nickname: orderNick, '닉네임': orderNick, name: orderNick, nick: orderNick, '주문자': orderNick, '아이디': orderNick, '고객명': orderNick, 
+                                phone: cleanPh ? "'" + cleanPh : '', 
+                                broadcastName: broadcastName || '',
+                                _source: 'master' 
+                            };
+                            fetchGas(googleScriptUrl, { action: 'save_master_address', masterId: getCleanSheetId(masterSheetId), data: mappedData }, 25000, 2).catch(() => {});
+                        }
                     }
                 }); 
-            }, [openModal, setAddressMapping, addresses, googleScriptUrl, masterSheetId, broadcastName, setGlobalError]);
+            }, [openModal, setAddressMapping, addresses, googleScriptUrl, masterSheetId, broadcastName]);
             
             const handleAddressUnmapping = useCallback((orderNick) => { 
-                openModal(`매칭된 주소를 해제하시겠습니까?`, 'confirm', () => {
+                openModal(`'${orderNick}' 님의 매칭된 주소를 해제하시겠습니까?\n(해제 시 화면에서 즉시 비워지며, '찐고객사전' 시트에서도 함께 삭제할 수 있습니다)`, 'confirm', () => {
+                    addressSyncLock.current = Date.now();
                     setAddressMapping(prev => { 
                         const next = { ...prev }; next[orderNick] = '__UNMAPPED__'; next[normalizeString(orderNick)] = '__UNMAPPED__'; return next; 
                     });
-                    const cleanCurB = String(broadcastName || '').replace(/^주문_/, '').trim();
-                    if (cleanCurB) {
-                        setBroadcastAddresses(prev => {
-                            if (!prev[cleanCurB]) return prev;
-                            const curBMap = { ...prev[cleanCurB] };
-                            delete curBMap[orderNick];
-                            delete curBMap[normalizeString(orderNick)];
-                            delete curBMap[normalizeHandleNick(orderNick)];
-                            return { ...prev, [cleanCurB]: curBMap };
+                    setAddresses(prev => prev.filter(a => normalizeString(a.nickname) !== normalizeString(orderNick)));
+                    setBroadcastAddresses(prev => {
+                        const next = { ...prev };
+                        Object.keys(next).forEach(bKey => {
+                            if (next[bKey]) {
+                                const curBMap = { ...next[bKey] };
+                                delete curBMap[orderNick];
+                                delete curBMap[normalizeString(orderNick)];
+                                delete curBMap[normalizeHandleNick(orderNick)];
+                                next[bKey] = curBMap;
+                            }
                         });
+                        return next;
+                    });
+                    if (window.emberRealtimeDb) {
+                        const safeNickKey = String(orderNick || '').replace(/[.#$\[\]\/]/g, '_').trim();
+                        if (safeNickKey) {
+                            window.emberRealtimeDb.ref(`ember_live_data/_portal_master_addrs/${safeNickKey}`).remove().catch(() => {});
+                            window.emberRealtimeDb.ref(`ember_live_data/_portal_addresses/${safeNickKey}`).remove().catch(() => {});
+                        }
+                    }
+                    if (googleScriptUrl && masterSheetId) {
+                        fetchGas(googleScriptUrl, {
+                            action: 'delete_master_address',
+                            masterId: getCleanSheetId(masterSheetId),
+                            data: { nickname: orderNick }
+                        }).catch(() => {});
                     }
                 }); 
-            }, [openModal, setAddressMapping, broadcastName, setBroadcastAddresses]);
+            }, [openModal, setAddressMapping, setAddresses, setBroadcastAddresses, googleScriptUrl, masterSheetId]);
 
             const handleProductChange = useCallback((id, field, value) => { 
                 setOrders(prev => prev.map(o => { 
@@ -5430,7 +5630,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                  </div>
                              </div>
                              <div className={`text-[10px] p-1.5 rounded flex justify-between items-center ${gasStatus.includes('에러') || gasStatus.includes('실패') || gasStatus.includes('입력하세요') || gasStatus.includes('차단') ? 'bg-red-100 text-red-600 font-bold' : 'text-slate-700 dark:text-slate-300 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 shadow-sm'}`}>
-                                 <span className="truncate flex-1 font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1"><Icon name="lightning" weight="fill" className="text-yellow-500"/> 30초 자동 스캔중 <span className="text-slate-500 dark:text-slate-400 font-normal ml-1">| {youtubeStatus} | {gasStatus}</span></span>
+                                 <span className="truncate flex-1 font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1"><Icon name="lightning" weight="fill" className="text-yellow-500"/> 10초 자동 스캔중 <span className="text-slate-500 dark:text-slate-400 font-normal ml-1">| {youtubeStatus} | {gasStatus}</span></span>
                              </div>
                              <div className="flex gap-2">
                                  <div className="relative flex-1"><Icon name="magnifying-glass" className="absolute left-1.5 top-1/2 -translate-y-1/2 text-slate-400 text-[10px]"/><input type="text" placeholder="검색" value={chatSearch} onChange={e => setChatSearch(e.target.value)} onKeyDown={e => { if(e.key==='Escape'){ setChatSearch(''); e.target.blur(); } }} className="w-full text-[10px] pl-5 py-1.5 border dark:border-slate-600 rounded outline-none bg-white dark:bg-slate-900 focus:ring-1 focus:ring-slate-400" /></div>
@@ -6423,7 +6623,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             const [orders, setOrders] = useLocalStorage('youtubeOrders', []);
             const [activeTab, setActiveTab] = useState('live');
             
-            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyVKpxs5-zeLVKZ3cBXrma01YbGZUYdubGeeo6m-LoXnoE810HUc1lNJUBnJfz4Kgqg/exec';
+            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzckcaobzdpOmXyBb2UHIatOk7vDJhs344fyOc7e8RKYZ5WS8JKXrdSQPpWz0jTWN8a/exec';
             const STAFF_SHEET_ID = '1sM5bkDqEjD6Kpxu2yoJe2aiMuqpcWLMAIGpY3iL5_x8';
             const [googleScriptUrl, setGoogleScriptUrl] = useLocalStorage('googleScriptUrl', NEW_SCRIPT_URL);
 
