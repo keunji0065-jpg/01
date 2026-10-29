@@ -2203,10 +2203,13 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     openModal("등록할 상품이 없거나 모두 이미 존재하는 이름입니다.", "alert");
                 }
             };
-            
-                    const [ isMenuModalOpen, setIsMenuModalOpen ] = useState(false);
-            const [batchChangeModal, setBatchChangeModal] = useState({ isOpen: false, oldStr: '', newStr: '' });
+
+            const [isMenuModalOpen, setIsMenuModalOpen] = useState(false);
+            const [ batchChangeModal, setBatchChangeModal ] = useState({ isOpen: false, oldStr: '', newStr: '' });
             const [liveChatId, setLiveChatId] = useState(null);
+            const lastResolvedVideoIdRef = useRef('');
+            const myPollerTabIdRef = useRef(`boss_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`);
+            const [isActivePollerTab, setIsActivePollerTab] = useState(true);
             const chatNextPageTokenRef = useRef('');
             const unsavedChatsRef = useRef([]);
             const savedChatIdsRef = useRef(new Set());
@@ -2250,24 +2253,41 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             }, [googleScriptUrl, masterSheetId, broadcastName, chats]);
 
             useEffect(() => {
-                const chatBackupTimer = setInterval(() => {
+                const chatFlushTimer = setInterval(() => {
                     if (unsavedChatsRef.current.length > 0) {
                         flushUnsavedChatsToSheet(false);
                     }
                 }, 15000);
-                const handleFlushAllChats = () => {
-                    flushUnsavedChatsToSheet(true);
-                };
-                window.addEventListener('flush-chats-to-sheet', handleFlushAllChats);
-                return () => {
-                    clearInterval(chatBackupTimer);
-                    window.removeEventListener('flush-chats-to-sheet', handleFlushAllChats);
-                };
+                return () => clearInterval(chatFlushTimer);
             }, [flushUnsavedChatsToSheet]);
 
-            // ✨ 추가: 유튜브 요구 폴링 간격 및 GAS 중복 실행 방지 락
-            const chatPollingIntervalRef = useRef(4000);
+            // ✨ 추가: 유튜브 요구 폴링 간격 및 GAS 중복 실행 방지 락 (기본 5.5초로 설정하여 할당량 소모 40% 절감!)
+            const chatPollingIntervalRef = useRef(5500);
             const isGasFetchingRef = useRef(false);
+
+            // 🛡️ 멀티 탭 & 직원용 시스템 중복 폴링 원천 차단: 오직 현재 생방송을 시작한 단 1개의 탭에서만 유튜브 API 호출 허용!
+            useEffect(() => {
+                if (!window.emberRealtimeDb) return;
+                const modeRef = window.emberRealtimeDb.ref('ember_live_data/_portal_live_mode');
+                if (isLiveBroadcasting) {
+                    modeRef.update({
+                        activePollerTabId: myPollerTabIdRef.current,
+                        liveOwner: 'boss'
+                    }).catch(() => {});
+                }
+                const handleModeSnap = (snap) => {
+                    const val = snap.val() || {};
+                    if (val.liveOwner && val.liveOwner !== 'boss') {
+                        setIsActivePollerTab(false);
+                    } else if (val.activePollerTabId && val.activePollerTabId !== myPollerTabIdRef.current) {
+                        setIsActivePollerTab(false);
+                    } else {
+                        setIsActivePollerTab(true);
+                    }
+                };
+                modeRef.on('value', handleModeSnap);
+                return () => modeRef.off('value', handleModeSnap);
+            }, [isLiveBroadcasting]);
 
             const saveInventoryToServer = useCallback(async (newInvList, allowEmpty = false) => {
                 // 🛡️ 안전장치: 명시적 초기화(allowEmpty=true)가 아닌데 빈 배열이면 절대 시트나 라인업을 지우지 않음!
@@ -2786,9 +2806,17 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
 
             useEffect(() => {
                 const getChatId = async () => {
-                    if (!activeApiKey || !youtubeVideoId) {
-                        setLiveChatId(null);
-                        chatNextPageTokenRef.current = '';
+                    // 🛡️ 핵심: 사장님이 직접 [🔴 생방송중]을 켜지 않았거나(🔒 방송마감 상태), 다른 탭/직원용에서 방송 중이면 유튜브 API 절대 호출 금지!
+                    if (!isLiveBroadcasting || !isActivePollerTab || !activeApiKey || !youtubeVideoId) {
+                        if (!isLiveBroadcasting || !youtubeVideoId) {
+                            setLiveChatId(null);
+                            lastResolvedVideoIdRef.current = '';
+                            chatNextPageTokenRef.current = '';
+                        }
+                        return;
+                    }
+                    // 이미 동일한 영상(youtubeVideoId)의 liveChatId를 찾아둔 상태라면 키가 바뀌어도 중복 조회하지 않고 그대로 재사용!
+                    if (liveChatId && lastResolvedVideoIdRef.current === youtubeVideoId) {
                         return;
                     }
                     try {
@@ -2801,7 +2829,8 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                             setGlobalError(`유튜브 API 오류: ${data.error?.message || res.status}`);
                             return;
                         }
-                        if (data.items && data.items.length > 0 && data.items[0].liveStreamingDetails) {
+                        if (data.items && data.items.length > 0 && data.items[0].liveStreamingDetails && data.items[0].liveStreamingDetails.activeLiveChatId) {
+                            lastResolvedVideoIdRef.current = youtubeVideoId;
                             setLiveChatId(data.items[0].liveStreamingDetails.activeLiveChatId);
                             setGlobalError('');
                         } else {
@@ -2816,7 +2845,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     }
                 };
                 getChatId();
-            }, [activeApiKey, youtubeVideoId, setGlobalError, handleKeySwitch]);
+            }, [isLiveBroadcasting, isActivePollerTab, activeApiKey, youtubeVideoId, liveChatId, setGlobalError, handleKeySwitch]);
 
         const [youtubeStatus, setYoutubeStatus] = useState("채팅(대기)");
         const [gasStatus, setGasStatus] = useState("입금(대기)");
@@ -3029,8 +3058,10 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
         }, []);
 
         const fetchYoutubeData = useCallback(async () => {
-            if (!activeApiKey || !liveChatId) {
-                setYoutubeStatus(prev => prev === "채팅(대기)" ? prev : "채팅(대기)");
+            // 🛡️ [🔒 방송마감] 상태이거나 다른 기기/탭에서 이미 폴링 중이면 API 호출 100% 차단!
+            if (!isLiveBroadcasting || !isActivePollerTab || !activeApiKey || !liveChatId) {
+                const idleMsg = !isLiveBroadcasting ? "채팅(마감대기)" : (!isActivePollerTab ? "채팅(타기기실행중)" : "채팅(대기)");
+                setYoutubeStatus(prev => prev === idleMsg ? prev : idleMsg);
                 return;
             }
             try {
@@ -3051,7 +3082,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                 } else {
                     if (data.nextPageToken) chatNextPageTokenRef.current = data.nextPageToken;
                     if (data.pollingIntervalMillis) {
-                        chatPollingIntervalRef.current = Math.max(4000, data.pollingIntervalMillis);
+                        chatPollingIntervalRef.current = Math.max(5500, data.pollingIntervalMillis);
                     }
                     if (data.items && data.items.length > 0) {
                         const newChats = data.items.map(item => ({
@@ -3083,7 +3114,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             } catch (e) {
                 setYoutubeStatus(prev => prev === `채팅(오류)` ? prev : `채팅(오류)`);
             }
-        }, [activeApiKey, liveChatId, handleKeySwitch, setChats, googleScriptUrl, masterSheetId, broadcastName]);
+        }, [isLiveBroadcasting, isActivePollerTab, activeApiKey, liveChatId, handleKeySwitch, setChats, googleScriptUrl, masterSheetId, broadcastName]);
 
         const fetchGasData = useCallback(async (force = false) => {
             if (force && isViewingPastBroadcast) {
@@ -3552,13 +3583,17 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
         }, [broadcastName, setAddresses, setBroadcastAddresses, setAddressMapping, setCheckedOrders, setCustomerCredits, setOrders, setCardPayments, setCashReceipts, setShippingOverrides, setNoShowCustomers, setWaitlistCustomers, setCustomerPasswords, setTrackingNumbers, setCustomerDepositLogs, setInventory]);
 
         useEffect(() => {
+            if (!isLiveBroadcasting || !isActivePollerTab || !liveChatId) {
+                setYoutubeStatus(!isLiveBroadcasting ? "채팅(마감대기)" : (!isActivePollerTab ? "채팅(타기기실행중)" : "채팅(대기)"));
+                return;
+            }
             let isCancelled = false;
             let ytTimer = null;
             const loopYoutube = async () => {
                 if (isCancelled) return;
                 await fetchYoutubeData();
                 if (!isCancelled) {
-                    ytTimer = setTimeout(loopYoutube, chatPollingIntervalRef.current || 4000);
+                    ytTimer = setTimeout(loopYoutube, chatPollingIntervalRef.current || 5500);
                 }
             };
             loopYoutube();
@@ -3566,7 +3601,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                 isCancelled = true;
                 if (ytTimer) clearTimeout(ytTimer);
             };
-        }, [fetchYoutubeData]);
+        }, [isLiveBroadcasting, isActivePollerTab, liveChatId, fetchYoutubeData]);
 
         const allDeposits = useMemo(() => {
             const combined = [...manualDeposits, ...serverDeposits];
