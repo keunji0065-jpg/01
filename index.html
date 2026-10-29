@@ -406,11 +406,12 @@
             if (!str) return '';
             let s = String(str).toLowerCase().replace(/\s/g, '');
             s = s.replace(/[—–−_]/g, '-');
-            if (s.includes('-')) s = s.split('-')[0];
-            // 끝에 붙은 '42번', '7번' 같은 상품번호 꼬리표 제거
+            // 실제 유튜브 핸들(-영문포함 3~10자)만 제거하고 '별1', '별3' 등의 끝 숫자는 절대 지우지 않음!
+            s = s.replace(/-(?=[a-zA-Z0-9_]*[a-zA-Z])[a-zA-Z0-9_]{3,10}$/, '');
+            // 끝에 붙은 '42번', '7번' 같은 상품번호 꼬리표만 제거
             s = s.replace(/\d+번$/, '');
             s = s.replace(/[\(\)\[\]\{\}\.\,\/]/g, '');
-            if (/[가-힣]/.test(s)) s = s.replace(/[a-z0-9]+$/, '');
+            if (/[가-힣]/.test(s)) s = s.replace(/[a-z]+$/, '');
             return s;
         };
 
@@ -462,11 +463,11 @@
             return String(str).replace(/[^가-힣]/g, '');
         };
 
-        // 유튜브 자동생성 핸들 꼬리표(-SD2 등 -영문숫자 1~10자)만 깔끔하게 제거하여 동일 고객 여부를 판별하는 함수
+        // 유튜브 자동생성 핸들 꼬리표(-SD2 등 -영문포함 3~10자)만 깔끔하게 제거하여 '별1', '별3'은 엄격히 분리하는 함수
         const normalizeHandleNick = (str) => {
             if (!str) return '';
             let s = String(str).trim();
-            s = s.replace(/-[a-zA-Z0-9_]{1,10}$/, '');
+            s = s.replace(/-(?=[a-zA-Z0-9_]*[a-zA-Z])[a-zA-Z0-9_]{3,10}$/, '');
             return normalizeString(s);
         };
 
@@ -2720,7 +2721,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         }
 
                         // 3순위: 유튜브 핸들 꼬리표(-e4g 등)만 뗀 기본 닉네임 매칭 (단, 홍당무-3k4와 홍당무-5kj처럼 서로 다른 핸들 동명이인이 있을 때는 비밀번호가 일치할 때만 매칭!)
-                        const orderHasExplicitHandle = /-[a-zA-Z0-9_]{1,10}$/.test(String(nick).trim());
+                        const orderHasExplicitHandle = /-(?=[a-zA-Z0-9_]*[a-zA-Z])[a-zA-Z0-9_]{3,10}$/.test(String(nick).trim());
                         if (!matched && handleNick && handleNick.length >= 2) {
                             const candidates = handleNickMap[handleNick] || [];
                             if (candidates.length > 0) {
@@ -2731,7 +2732,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                     const distinctNicks = new Set(candidates.map(c => normalizeString(c.nickname)));
                                     const distinctPhones = new Set(candidates.map(c => fixPhoneNumber(c.phone)).filter(Boolean));
                                     if (distinctNicks.size === 1 && distinctPhones.size <= 1) {
-                                        const candHasHandle = /-[a-zA-Z0-9_]{1,10}$/.test(String(candidates[0].nickname || '').trim());
+                                        const candHasHandle = /-(?=[a-zA-Z0-9_]*[a-zA-Z])[a-zA-Z0-9_]{3,10}$/.test(String(candidates[0].nickname || '').trim());
                                         if (!(orderHasExplicitHandle && candHasHandle)) {
                                             matched = pickLatestAddr(candidates);
                                         }
@@ -4798,13 +4799,15 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     return nextSpecMap;
                 });
 
-                if (nextStatus) {
-                    setTimeout(() => {
-                        setOrders(prevOrders => prevOrders.map(o => 
-                            o.customer === nick ? { ...o, isCancelled: true } : o
-                        ));
-                    }, 0);
-                }
+                // ✨ 핵심 수정: 노쇼를 켜면 품목들을 취소(isCancelled: true)로 바꾸고, 노쇼를 다시 풀면(nextStatus === false) 취소되었던 품목들을 즉시 정상 주문(isCancelled: false)으로 100% 원상복구!
+                setOrders(prevOrders => prevOrders.map(o => {
+                    if (o.customer !== nick) return o;
+                    if (nextStatus) {
+                        return { ...o, isCancelled: true, cancelledByNoShow: !o.isCancelled };
+                    } else {
+                        return { ...o, isCancelled: false, cancelledByNoShow: false };
+                    }
+                }));
             }, [noShowCustomers, setNoShowCustomers, setSpecialCustomers, googleScriptUrl, masterSheetId, setOrders]);
 
             // 💀 블랙리스트(주문금지) 지정/해제 토글
@@ -4820,6 +4823,10 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                             delete next[norm];
                             return next;
                         });
+                        // 블랙리스트 해제 시에도 주문 품목들을 정상 상태로 복구
+                        setOrders(prevOrders => prevOrders.map(o =>
+                            o.customer === nick ? { ...o, isCancelled: false } : o
+                        ));
                         if (googleScriptUrl && masterSheetId) {
                             fetchGas(googleScriptUrl, {
                                 action: 'save_customer_management',
@@ -6628,7 +6635,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             const [orders, setOrders] = useLocalStorage('youtubeOrders', []);
             const [activeTab, setActiveTab] = useState('live');
             
-            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzckcaobzdpOmXyBb2UHIatOk7vDJhs344fyOc7e8RKYZ5WS8JKXrdSQPpWz0jTWN8a/exec';
+            const NEW_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxhX10VQMbxZIWrIGJGHZp7POtTh9zmqa4awhOpLFJTs58L_nrg5Opw8ha2IFVLU-b_/exec';
             const STAFF_SHEET_ID = '1sM5bkDqEjD6Kpxu2yoJe2aiMuqpcWLMAIGpY3iL5_x8';
             const [googleScriptUrl, setGoogleScriptUrl] = useLocalStorage('googleScriptUrl', NEW_SCRIPT_URL);
 
@@ -7225,13 +7232,13 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl p-5 w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
                         <div className="mb-3 border-b dark:border-slate-700 pb-2.5 flex justify-between items-center">
                             <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-                                <Icon name="megaphone" weight="fill" className="text-amber-500" /> 고객용 공지사항 팝업 관리
+                                <Icon name="megaphone" weight="fill" className="text-amber-500" /> 고객용 주문확인 포털 공지사항 팝업 관리
                             </h3>
                             <button onClick={() => setIsNoticeModalOpen(false)} className="text-slate-400 hover:text-slate-600"><Icon name="x" weight="bold" size={20}/></button>
                         </div>
                         <form onSubmit={handleSaveCustomerNotice} className="space-y-3 text-xs">
                             <div className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-900 rounded-lg border dark:border-slate-700">
-                                <span className="font-bold text-slate-700 dark:text-slate-200">고객 포털 & 라인업 접속 시 팝업 띄우기</span>
+                                <span className="font-bold text-slate-700 dark:text-slate-200">고객 주문확인 포털 접속 시 팝업 띄우기</span>
                                 <button
                                     type="button"
                                     onClick={() => setCustomerNotice(p => ({ ...p, enabled: !p.enabled }))}
