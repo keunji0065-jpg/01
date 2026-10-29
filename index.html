@@ -329,10 +329,8 @@
 </head>
 <body class="transition-colors duration-300">
     <div id="root"></div>
-    <script type="text/babel">
-        const { useState, useEffect, useMemo, useRef, useCallback, memo } = React;
-
-        // 🛡️ 타 업체 무단 코드 열람·복제·불펌 원천 차단 보안 가드 (우클릭, F12, Ctrl+Shift+I/J/C/K, Ctrl+U, Ctrl+P 차단)
+    <script>
+        // 🛡️ 타 업체 무단 코드 열람·복제·불펌 원천 차단 보안 가드 및 순수 헬퍼 함수 (Babel 외부 분리로 컴파일 속도 극대화)
         if (typeof window !== 'undefined') {
             window.addEventListener('contextmenu', (e) => {
                 if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
@@ -372,8 +370,6 @@
             "🐻","🐰","🐱","🐶","🐼","🐯","🦊","🦁","🐮","🐷","🐸","🐒","🐥","🐧","🦋"
         ];
 
-        const Icon = ({ name, className="", weight="regular", size }) => <i className={`ph ph-${name} ${className}`} data-phosphor-icon-weight={weight} style={{fontSize: size}}></i>;
-        
         const normalizeString = (str) => String(str || '').replace(/[\s\(\)\[\]\{\}\-\_\.\,\/]/g, '').toLowerCase();
 
         const getCleanSheetId = (idOrUrl) => {
@@ -384,7 +380,6 @@
 
         const extractYoutubeId = (url) => {
             if (!url) return '';
-            // 유튜브의 다양한 URL 형태(youtu.be, youtube.com/watch, live 등)에서 11자리 ID만 추출
             const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|live\/))([\w-]{11})/);
             return match ? match[1] : url.trim();
         };
@@ -402,44 +397,38 @@
             return result;
         };
 
+        const extractKo = (str) => {
+            if (!str) return '';
+            return String(str).replace(/[^가-힣]/g, '');
+        };
+
         const cleanForMatch = (str) => {
             if (!str) return '';
             let s = String(str).toLowerCase().replace(/\s/g, '');
             s = s.replace(/[—–−_]/g, '-');
-            // 실제 유튜브 핸들(-영문포함 3~10자)만 제거하고 '별1', '별3' 등의 끝 숫자는 절대 지우지 않음!
             s = s.replace(/-(?=[a-zA-Z0-9_]*[a-zA-Z])[a-zA-Z0-9_]{3,10}$/, '');
-            // 끝에 붙은 '42번', '7번' 같은 상품번호 꼬리표만 제거
             s = s.replace(/\d+번$/, '');
             s = s.replace(/[\(\)\[\]\{\}\.\,\/]/g, '');
             if (/[가-힣]/.test(s)) s = s.replace(/[a-z]+$/, '');
             return s;
         };
 
-        // ✨ 입금자명에서 가능한 모든 매칭 조각(괄호 안/밖 분리, 상품번호 제거, 한글 코어 추출)을 뽑아내는 스마트 분석 함수
         const extractDepositTokens = (rawStr) => {
             if (!rawStr) return { norms: [], cleans: [], kos: [] };
             let s = String(rawStr).trim();
-            // 끝에 붙은 '42번', '11번' 등 상품번호 제거
             const withoutItemNo = s.replace(/\s*\d+\s*번$/g, '').trim();
-
             const parts = new Set([s, withoutItemNo]);
-
-            // 1) 괄호 분리: "드리머(한재은)", "이호정(밤송이야)" -> "드리머", "한재은" 각각 분리!
             const parenMatch = withoutItemNo.match(/^([^\(\[\{]+)[\(\[\{]([^\)\]\}]+)[\)\]\}]$/);
             if (parenMatch) {
                 if (parenMatch[1].trim()) parts.add(parenMatch[1].trim());
                 if (parenMatch[2].trim()) parts.add(parenMatch[2].trim());
             }
-
-            // 2) 슬래시, 하이픈, 공백 분리
             withoutItemNo.split(/[\/\,\-\s\(\)\[\]\{\}]+/).forEach(p => {
                 if (p && p.trim().length >= 2) parts.add(p.trim());
             });
-
             const norms = new Set();
             const cleans = new Set();
             const kos = new Set();
-
             parts.forEach(p => {
                 const n = normalizeString(p);
                 const c = cleanForMatch(p);
@@ -448,7 +437,6 @@
                 if (c && c.length >= 2) cleans.add(c);
                 if (k && k.length >= 2) kos.add(k);
             });
-
             return {
                 norms: Array.from(norms),
                 cleans: Array.from(cleans),
@@ -458,12 +446,6 @@
             };
         };
 
-    const extractKo = (str) => {
-            if (!str) return '';
-            return String(str).replace(/[^가-힣]/g, '');
-        };
-
-        // 유튜브 자동생성 핸들 꼬리표(-SD2 등 -영문포함 3~10자)만 깔끔하게 제거하여 '별1', '별3'은 엄격히 분리하는 함수
         const normalizeHandleNick = (str) => {
             if (!str) return '';
             let s = String(str).trim();
@@ -471,7 +453,6 @@
             return normalizeString(s);
         };
 
-        // 주소 앞의 우편번호 '(06035) ' 자동 제거 (우편번호 미사용)
         const stripZipcodeFromAddr = (str) => {
             return String(str || '').replace(/^\(\d{5}\)\s*/, '').trim();
         };
@@ -486,29 +467,19 @@
         const parseSafeDate = (val) => {
             if (!val) return new Date(0);
             const s = String(val).trim();
-            
-            // YYYYMMDD 형식
             if (/^\d{8}$/.test(s)) return new Date(parseInt(s.substring(0, 4)), parseInt(s.substring(4, 6)) - 1, parseInt(s.substring(6, 8)));
-            // YYMMDD 형식
             if (/^\d{6}$/.test(s)) return new Date(2000 + parseInt(s.substring(0, 2)), parseInt(s.substring(2, 4)) - 1, parseInt(s.substring(4, 6)));
-
-            // ✨ 구글 시트/엑셀 숫자형 일련번호(예: 45206.5) 처리 로직
             const numVal = Number(s);
-            // 엑셀에서 30000은 대략 1982년, 60000은 2064년. 이 범위 내일 때만 일련번호로 취급하여 버그 방지
             if (!isNaN(numVal) && numVal > 30000 && numVal < 60000) {
                 const d = new Date(1899, 11, 30);
                 d.setDate(d.getDate() + Math.floor(numVal));
                 if (!isNaN(d) && d.getTime() > 0) return d;
             }
-
             const match = s.match(/(\d{4})[./-]\s*(\d{1,2})[./-]\s*(\d{1,2})/);
             if (match) return new Date(parseInt(match[1]), parseInt(match[2])-1, parseInt(match[3]));
-            
-            // "10. 7" 또는 "10/7" 같은 올해 연도 생략 날짜 (구글폼에서 자주 발생)
             const shortMatch = s.match(/^(\d{1,2})[./-]\s*(\d{1,2})[./]?\s*$/);
             if (shortMatch) return new Date(new Date().getFullYear(), parseInt(shortMatch[1])-1, parseInt(shortMatch[2]));
-
-            let d = new Date(s.replace(/-/g, '/')); // iOS Safari 크로스 브라우징 완벽 호환을 위한 슬래시 치환
+            let d = new Date(s.replace(/-/g, '/'));
             if (!isNaN(d) && d.getTime() > 0) return d;
             return new Date(0);
         };
@@ -516,7 +487,6 @@
         const formatDepositFullDateTime = (val) => {
             if (!val) return '';
             const strVal = String(val).trim();
-            // 1. "2026. 10. 18 오후 4:26:46" 같은 한국어 날짜+시간 형태 -> "26-10-18 16:26"
             const korFullMatch = strVal.match(/(?:20)?(\d{2})[./-]\s*(\d{1,2})[./-]\s*(\d{1,2})[.\s]*(오전|오후|AM|PM)?\s*(\d{1,2}):(\d{2})/i);
             if (korFullMatch) {
                 const yy = korFullMatch[1];
@@ -529,7 +499,6 @@
                 else if ((ampm === '오전' || ampm === 'AM') && hour === 12) hour = 0;
                 return `${yy}-${mm}-${dd} ${String(hour).padStart(2, '0')}:${min}`;
             }
-            // 2. ISO 문자열 -> KST "YY-MM-DD HH:MM"
             const dt = new Date(strVal);
             if (!isNaN(dt.getTime()) && strVal.length > 8) {
                 const kst = new Date(dt.getTime() + (9 * 60 * 60 * 1000));
@@ -546,7 +515,6 @@
         const formatTimeOnly = (val) => { 
             if (!val) return ''; 
             const strVal = String(val).trim(); 
-            // 1. "2026. 10. 18 오후 3:27:27" 또는 "오후 3:27"처럼 한국어 오전/오후가 포함된 경우 최우선 처리
             const korTimeMatch = strVal.match(/(오전|오후|AM|PM)?\s*(\d{1,2}):(\d{2})(?::(\d{2}))?/i);
             if (korTimeMatch && (strVal.includes('오전') || strVal.includes('오후') || /\b(AM|PM)\b/i.test(strVal) || !strVal.includes('T'))) {
                 let ampm = (korTimeMatch[1] || '').toUpperCase();
@@ -556,7 +524,6 @@
                 else if ((ampm === '오전' || ampm === 'AM') && hour === 12) hour = 0;
                 return `${String(hour).padStart(2, '0')}:${min}`;
             }
-            // 2. ISO 문자열 (예: "2026-10-18T06:27:27.000Z") 처리 -> 한국 시간(KST) 변환
             const dt = new Date(strVal);
             if (!isNaN(dt.getTime()) && strVal.length > 8) {
                 return dt.toLocaleTimeString('ko-KR', { hour12: false, hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Seoul' });
@@ -586,7 +553,6 @@
                     throw err;
                 }
             };
-
             for (let i = 0; i <= retries; i++) {
                 try {
                     return await attempt();
@@ -595,7 +561,6 @@
                         await new Promise(r => setTimeout(r, 600 * (i + 1)));
                         continue;
                     }
-                    // POST 저장 요청의 경우 CORS 리다이렉트 등으로 응답 읽기만 막힌 경우에도 no-cors로 시트 기록을 끝까지 보장!
                     if (payload) {
                         try {
                             await fetch(url, {
@@ -627,7 +592,6 @@
                 const clusters = {};
                 items.forEach(item => {
                     const words = String(item.name).trim().split(/\s+/);
-                    // 첫 단어가 숫자/코드 기호로 시작하면 최소 2단어를 기본 상품명 그룹키로 잡음
                     const minLen = (words[0] && /\d/.test(words[0])) ? 2 : 1;
                     const clusterKey = words.slice(0, minLen).join(' ');
                     if (!clusters[clusterKey]) clusters[clusterKey] = [];
@@ -638,14 +602,12 @@
                         groups.push({ baseName: clusterItems[0].name, price: items[0].price, options: [], rawNames: [clusterItems[0].name] });
                         return;
                     }
-                    // 그룹 내 모든 상품명 단어들을 비교하여 완벽하게 일치하는 앞부분(LCP) 추출
                     let lcp = [];
                     const first = clusterItems[0].words;
                     for (let i = 0; i < first.length; i++) {
                         const word = first[i];
                         if (clusterItems.every(ci => ci.words[i] === word)) { lcp.push(word); } else { break; }
                     }
-                    // 열(Column) 단위로 옵션 수집하여 색상은 색상끼리, 사이즈는 사이즈끼리 모이도록 처리
                     const allOptions = [];
                     let maxLen = Math.max(...clusterItems.map(ci => ci.words.length));
                     for (let i = lcp.length; i < maxLen; i++) {
@@ -662,6 +624,18 @@
             groups.sort((a, b) => String(b.baseName).localeCompare(String(a.baseName), 'ko-KR', {numeric: true}));
             return groups;
         };
+
+        const downloadExcel = (data, fileName) => {
+            const ws = XLSX.utils.json_to_sheet(data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+            XLSX.writeFile(wb, `${fileName}_${new Date().toLocaleDateString()}.xlsx`);
+        };
+    </script>
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef, useCallback, memo } = React;
+
+        const Icon = ({ name, className="", weight="regular", size }) => <i className={`ph ph-${name} ${className}`} data-phosphor-icon-weight={weight} style={{fontSize: size}}></i>;
 
         const useLocalStorage = (key, initialValue) => {
             const actualKey = getLsKey(key);
@@ -703,13 +677,6 @@
             }, [lsKey, width]);
 
             return { ref, width };
-        };
-
-        const downloadExcel = (data, fileName) => {
-            const ws = XLSX.utils.json_to_sheet(data);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
-            XLSX.writeFile(wb, `${fileName}_${new Date().toLocaleDateString()}.xlsx`);
         };
 
         const Modal = ({ isOpen, type, message, onConfirm, onCancel, initialValue }) => {
