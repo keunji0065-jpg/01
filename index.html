@@ -4755,17 +4755,25 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     if (val) {
                         const newN = val.replace(/@/g, '').trim(); setOrders(prev => prev.map(o => o.customer === old ? { ...o, customer: newN } : o));
                         if (shippingOverrides[old]) { setShippingOverrides(prev => { const n = {...prev, [newN]: prev[old]}; delete n[old]; return n; }); }
+                        if (cardPayments[old]) { setCardPayments(prev => { const n = {...prev, [newN]: prev[old]}; delete n[old]; return n; }); }
                         if (cashReceipts[old]) { setCashReceipts(prev => { const n = {...prev, [newN]: prev[old]}; delete n[old]; return n; }); }
+                        if (depositorNames[old]) { setDepositorNames(prev => { const n = {...prev, [newN]: prev[old]}; delete n[old]; return n; }); }
                         if (selectedNick === old) setSelectedNick(newN);
                     }
                 }, null, old);
-            }, [openModal, setOrders, shippingOverrides, setShippingOverrides, selectedNick, setSelectedNick, cashReceipts, setCashReceipts]);
+            }, [openModal, setOrders, shippingOverrides, setShippingOverrides, cardPayments, setCardPayments, cashReceipts, setCashReceipts, depositorNames, setDepositorNames, selectedNick]);
 
-            const toggleCardPayment = useCallback((nick) => setCardPayments(prev => {
-                const cur = prev[nick];
-                const nextState = !cur ? true : (cur === true ? 'completed' : false);
-                return { ...prev, [nick]: nextState };
-            }), [setCardPayments]);
+            const toggleCardPayment = useCallback((nick) => {
+                setCardPayments(prev => {
+                    const cur = prev[nick];
+                    const nextState = !cur ? true : (cur === true ? 'completed' : false);
+                    if (nextState && noShowCustomers?.[nick]) {
+                        setNoShowCustomers(ns => ({ ...ns, [nick]: false }));
+                        setOrders(prevOrders => prevOrders.map(o => o.customer === nick ? { ...o, isCancelled: false, cancelledByNoShow: false } : o));
+                    }
+                    return { ...prev, [nick]: nextState };
+                });
+            }, [setCardPayments, noShowCustomers, setNoShowCustomers, setOrders]);
             const toggleCashReceipt = useCallback((nick) => setCashReceipts(prev => {
                 const cur = prev[nick];
                 const nextState = !cur ? true : (cur === true ? 'completed' : false);
@@ -5141,7 +5149,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             }, [getCalculatedShipping, templateConfig, bankAccount, broadcastName, waitlistRankMap, feeRateNum, feeMultiplier, customerCredits]);
 
             const handleFullDepositToggle = useCallback((nick, grandTotal, currentDeposit) => { 
-                if (currentDeposit >= grandTotal) { 
+                if (currentDeposit >= grandTotal && !noShowCustomers?.[nick]) { 
                     setOrders(prev => prev.map(o => o.customer === nick ? { ...o, deposit: 0 } : o)); 
                     // 해당 고객에게 연결되어 있던 입금 매칭 상태도 함께 정리하여 다시 매칭할 수 있게 초기화
                     setMatchedDeposits(prev => {
@@ -5165,16 +5173,28 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     });
                 } 
                 else { 
+                    // ✨ 만약 노쇼 상태였던 고객을 [완납]으로 바꾸면 자동으로 노쇼 상태와 품목 취소선을 즉시 해제하고 전액 입금 처리!
+                    if (noShowCustomers?.[nick]) {
+                        setNoShowCustomers(ns => ({ ...ns, [nick]: false }));
+                    }
                     const nowKst = formatDepositFullDateTime(new Date().toISOString());
                     const addrRes = addressLookup.get(nick);
                     const payerName = depositorNames[nick] || (addrRes && addrRes.data && addrRes.data.realname) || nick;
                     setOrders(prev => { 
+                        const restored = prev.map(o => (o.customer === nick && noShowCustomers?.[nick]) ? { ...o, isCancelled: false, cancelledByNoShow: false } : o);
+                        const activeProdSum = restored
+                            .filter(o => o.customer === nick && !o.isCancelled && !o.isWaitlist)
+                            .reduce((s, o) => s + (Number(o.price) || 0), 0);
+                        const activeShipSum = restored
+                            .filter(o => o.customer === nick && !o.isCancelled && !o.isWaitlist && Number(o.price) > 0)
+                            .reduce((s, o) => s + (Number(o.price) || 0), 0);
+                        const targetGrand = grandTotal > 0 ? grandTotal : (activeProdSum + getCalculatedShipping(nick, activeShipSum));
                         let done = false; 
-                        return prev.map(o => { 
+                        return restored.map(o => { 
                             if (o.customer === nick && !o.isCancelled) { 
                                 if (!done) {
                                     done = true; 
-                                    return { ...o, deposit: grandTotal }; 
+                                    return { ...o, deposit: targetGrand }; 
                                 }
                                 return { ...o, deposit: 0 };
                             } 
@@ -5195,7 +5215,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         });
                     });
                 } 
-            }, [setOrders, setMatchedDeposits, depositLinks, setDepositLinks, setCustomerDepositLogs, addressLookup, depositorNames]);
+            }, [noShowCustomers, setNoShowCustomers, setOrders, setMatchedDeposits, depositLinks, setDepositLinks, setCustomerDepositLogs, addressLookup, depositorNames, getCalculatedShipping]);
 
             const addOrderLogic = useCallback((nick, content, qty = 1, force = false, afterId = null, customPrice = null, markAsModified = false, isAuto = false) => {
                 const cNick = String(nick).replace(/@/g, '').trim(); const cContent = String(content || '').trim();
