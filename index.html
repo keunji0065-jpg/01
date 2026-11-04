@@ -242,6 +242,7 @@
         html, body { height: 100%; margin: 0; padding: 0; overscroll-behavior: none; }
         body { font-family: 'NanumSquareNeo', sans-serif; background-color: #f1f5f9; transition: background-color 0.3s, color 0.3s; overflow: hidden; }
         #root { height: 100%; }
+        input[type="text"], input:not([type]), textarea { ime-mode: active !important; }
         
         /* 모바일/태블릿 브라우저 UI로 인한 하단 짤림 완벽 방지 */
         @supports (height: 100dvh) {
@@ -449,6 +450,8 @@
         const normalizeHandleNick = (str) => {
             if (!str) return '';
             let s = String(str).trim();
+            // 다중배송 별칭 예: 깔로(엄마), 깔로(동생), 깔로(사무실) 제거
+            s = s.replace(/\((?:집|우리집|자택|사무실|직장|회사|엄마|어머니|부모님|본가|시댁|처가|동생|언니|오빠|누나|형|선물|지인|딸|아들|배송지\d+|[^)]*댁|[^)]*집)\)$/i, '');
             s = s.replace(/-(?=[a-zA-Z0-9_]*[a-zA-Z])[a-zA-Z0-9_]{3,10}$/, '');
             return normalizeString(s);
         };
@@ -1561,7 +1564,7 @@ useEffect(() => {
             return true;
         });
 
-        const OrderItem = memo(({ item, nick, nextItemId, isLast, handleProductChange, handleQuantityUpdate, handleOrderCancel, handleOrderDelete, addOrderLogic, setSelectedNick, inventory, productHistory, waitlistRank }) => {
+        const OrderItem = memo(({ item, nick, totalCustomerItemsCount, nextItemId, isLast, handleProductChange, handleQuantityUpdate, handleOrderCancel, handleOrderDelete, handleSplitOrderItem, addOrderLogic, setSelectedNick, inventory, productHistory, waitlistRank }) => {
             const [localProduct, setLocalProduct] = useState(item.product); 
             const [localQty, setLocalQty] = useState(item.quantity === '' ? '' : item.quantity); 
             const [localPrice, setLocalPrice] = useState(item.price === '' || item.price === 0 ? '' : Number(item.price).toLocaleString());
@@ -1572,10 +1575,22 @@ useEffect(() => {
             useEffect(() => { if (!isProductFocused) setLocalProduct(item.product); }, [item.product, isProductFocused]); 
             useEffect(() => { if (!isQtyFocused) setLocalQty(item.quantity === '' ? '' : item.quantity); }, [item.quantity, isQtyFocused]); 
             useEffect(() => { if (!isPriceFocused) setLocalPrice(item.price === '' || item.price === 0 ? '' : Number(item.price).toLocaleString()); }, [item.price, isPriceFocused]);
+
+            // 당일 등록된 실시간 재고(inventory)에서만 검색되는 자동완성 목록
+            const prodSuggestions = useMemo(() => {
+                if (!isProductFocused) return [];
+                const kw = String(localProduct || '').trim().toLowerCase();
+                const validInv = (Array.isArray(inventory) ? inventory : []).filter(i => i && String(i.name || '').trim() && i.name !== '__EMPTY__');
+                if (!kw) return validInv.slice(0, 8);
+                return validInv.filter(i => {
+                    const n = String(i.name).toLowerCase();
+                    return n.includes(kw) || getChosung(n).toLowerCase().includes(kw);
+                }).slice(0, 8);
+            }, [isProductFocused, localProduct, inventory]);
             
             return (
                 <div className={`flex justify-between items-center text-xs px-1 py-0.5 rounded group transition-colors ${item.isCancelled ? 'bg-red-50/80 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30' : (item.isWaitlist ? 'bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800' : (item.isUnmodified ? 'bg-blue-100 dark:bg-blue-900/50 border-2 border-blue-400 dark:border-blue-600 shadow-sm my-0.5' : 'hover:bg-slate-100 dark:hover:bg-slate-700 border-2 border-transparent'))}`}>
-                    <div className="flex-1 flex gap-1 items-center">
+                    <div className="flex-1 flex gap-1 items-center relative">
                         {item.isCancelled && <span className="text-[9px] text-red-500 font-bold shrink-0">[취소]</span>}
                         {/* ✨ 거파 대기 순번(몇 번째) 실시간 표시 뱃지 */}
                         {!item.isCancelled && item.isWaitlist && (
@@ -1584,18 +1599,49 @@ useEffect(() => {
                             </span>
                         )}
                         
-                        <input id={`prod-input-${item.id}`} type="text" list="product-list" autoComplete="off" value={localProduct} 
+                        <input id={`prod-input-${item.id}`} lang="ko" type="text" autoComplete="off" value={localProduct} 
                             onChange={(e) => {
                                 const val = e.target.value; setLocalProduct(val);
                                 const invItem = Array.isArray(inventory) ? inventory.find(i => String(i.name).trim() === String(val).trim()) : null;
-                                const uPrice = invItem ? Number(invItem.price) : (productHistory[val] || 0);
+                                const uPrice = invItem ? Number(invItem.price) : 0;
                                 if (uPrice > 0) setLocalPrice(uPrice.toLocaleString());
                             }} 
                             onClick={(e) => e.stopPropagation()} 
                             onFocus={(e) => { e.target.select(); setIsProductFocused(true); setSelectedNick(nick); if(item.isUnmodified) handleProductChange(item.id, 'isUnmodified', false); }} 
-                            onBlur={() => { setIsProductFocused(false); if (localProduct !== item.product) handleProductChange(item.id, 'product', localProduct); }} 
-                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleProductChange(item.id, 'product', localProduct); setTimeout(() => document.getElementById(`qty-input-${item.id}`)?.focus(), 10); } }} 
+                            onBlur={() => { setTimeout(() => setIsProductFocused(false), 180); if (localProduct !== item.product) handleProductChange(item.id, 'product', localProduct); }} 
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    const picked = (prodSuggestions.length > 0 && localProduct.trim() && !inventory?.some(i => String(i.name).trim() === localProduct.trim())) ? prodSuggestions[0].name : localProduct;
+                                    setLocalProduct(picked);
+                                    handleProductChange(item.id, 'product', picked);
+                                    setIsProductFocused(false);
+                                    setTimeout(() => document.getElementById(`qty-input-${item.id}`)?.focus(), 10);
+                                }
+                            }} 
                             className={`w-full outline-none px-1 rounded bg-transparent font-bold ${item.isCancelled ? 'text-slate-400 line-through' : (item.isWaitlist ? 'text-orange-600 dark:text-orange-400' : (item.isUnmodified ? 'text-blue-700 dark:text-blue-300' : 'dark:text-slate-200'))}`} placeholder="상품명" disabled={item.isCancelled} />
+                        {isProductFocused && prodSuggestions.length > 0 && (
+                            <div className="absolute left-0 top-full mt-0.5 w-64 bg-white dark:bg-slate-800 border border-blue-300 dark:border-blue-600 rounded shadow-xl z-50 max-h-44 overflow-y-auto divide-y dark:divide-slate-700">
+                                {prodSuggestions.map(inv => (
+                                    <div
+                                        key={inv.id || inv.name}
+                                        onMouseDown={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            setLocalProduct(inv.name);
+                                            if (Number(inv.price) > 0) setLocalPrice(Number(inv.price).toLocaleString());
+                                            handleProductChange(item.id, 'product', inv.name);
+                                            setIsProductFocused(false);
+                                            setTimeout(() => document.getElementById(`qty-input-${item.id}`)?.focus(), 10);
+                                        }}
+                                        className="px-2 py-1.5 text-xs hover:bg-blue-50 dark:hover:bg-slate-700 cursor-pointer flex justify-between items-center gap-2"
+                                    >
+                                        <span className={`font-bold truncate ${inv.isSoldOut ? 'line-through text-slate-400' : 'text-slate-800 dark:text-slate-100'}`}>{inv.name}</span>
+                                        <span className="text-[10px] font-extrabold text-blue-600 dark:text-blue-400 shrink-0">{Number(inv.price || 0).toLocaleString()}원</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                     <div className="flex items-center gap-1 group shrink-0">
                         <div className="relative flex items-center">
@@ -1614,6 +1660,15 @@ useEffect(() => {
                             onBlur={() => { setIsPriceFocused(false); const val = String(localPrice).replace(/,/g, ''); if (!isNaN(val) && Number(val) !== Number(item.price)) { handleProductChange(item.id, 'price', val); } }} 
                             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const val = String(localPrice).replace(/,/g, ''); if (!isNaN(val) && Number(val) !== Number(item.price)) { handleProductChange(item.id, 'price', val); } if (!isLast && nextItemId) { setTimeout(() => document.getElementById(`prod-input-${nextItemId}`)?.focus(), 10); } else { addOrderLogic(nick, '', 1, true, item.id); } } }} 
                             className={`w-16 text-right bg-transparent outline-none px-1 rounded font-bold ${item.isCancelled ? 'line-through text-slate-400 cursor-not-allowed' : (item.isWaitlist ? 'text-orange-600 dark:text-orange-400' : (item.isUnmodified ? 'text-blue-700 dark:text-blue-300' : 'text-slate-700 hover:bg-slate-100'))} ${Number(item.price) === 0 && !item.isCancelled ? 'bg-red-50 border-b border-red-300' : ''}`} disabled={item.isCancelled} />
+                        {totalCustomerItemsCount > 1 && !item.isCancelled && handleSplitOrderItem && (
+                            <button
+                                onClick={(e) => { e.stopPropagation(); handleSplitOrderItem(item.id, nick, item.product); }}
+                                className="px-1 rounded text-[10px] text-purple-600 bg-purple-50 hover:bg-purple-100 border border-purple-200 font-extrabold transition-colors"
+                                title="이 상품만 다른 배송지(엄마·동생·사무실 등)로 분리 발송"
+                            >
+                                ✂️분리
+                            </button>
+                        )}
                         <button onClick={(e) => { e.stopPropagation(); handleProductChange(item.id, 'isWaitlist', !item.isWaitlist); }} className={`px-1 rounded text-[10px] transition-colors ${item.isWaitlist ? 'bg-orange-500 text-white font-bold' : 'text-slate-300 hover:text-orange-500'}`} title="거파 대기 전환"><Icon name="hourglass" weight="fill" size={11}/></button>
                         <button onClick={(e) => { e.stopPropagation(); handleOrderCancel(item.id); }} className={`px-1 rounded text-[10px] ${item.isCancelled ? 'bg-slate-200 text-slate-600 font-bold' : 'text-slate-300 hover:text-orange-500'}`} title={item.isCancelled ? "복구" : "취소"}>{item.isCancelled ? '복구' : <Icon name="prohibit" weight="bold" size={11}/>}</button>
                         <button onClick={(e) => { e.stopPropagation(); handleOrderDelete(item.id); }} className="text-slate-300 hover:text-red-600 px-0.5 transition-colors" title="완전 삭제"><Icon name="trash" weight="bold" size={11}/></button>
@@ -1621,10 +1676,10 @@ useEffect(() => {
                 </div>
             );
         }, (prev, next) => {
-            return prev.item.id === next.item.id && prev.item.product === next.item.product && prev.item.quantity === next.item.quantity && prev.item.price === next.item.price && prev.item.isCancelled === next.item.isCancelled && prev.item.isUnmodified === next.item.isUnmodified && prev.item.isWaitlist === next.item.isWaitlist && prev.isLast === next.isLast && prev.nextItemId === next.nextItemId && prev.waitlistRank === next.waitlistRank;
+            return prev.item.id === next.item.id && prev.item.product === next.item.product && prev.item.quantity === next.item.quantity && prev.item.price === next.item.price && prev.item.isCancelled === next.item.isCancelled && prev.item.isUnmodified === next.item.isUnmodified && prev.item.isWaitlist === next.item.isWaitlist && prev.isLast === next.isLast && prev.nextItemId === next.nextItemId && prev.waitlistRank === next.waitlistRank && prev.totalCustomerItemsCount === next.totalCustomerItemsCount && prev.inventory === next.inventory;
         });
 
-        const CustomerBlock = memo(({ nick, items, isSelected, currentShipping, isCard, isCardCompleted, isPaidState, grandTotal, depositTotal, balance, baseGrandTotal, baseBalance, addr, addrType, addressMapping, autoDepositorName, displayDepositorName, isAutoDepositor, depositorNames, copyStatus, isOrderConfirmed, isEditingShipping, setSelectedNick, addOrderLogic, handleNicknameEdit, toggleCardPayment, handleShippingChange, setEditingShippingNick, openModal, setDepositorNames, handleFullDepositToggle, copyOrderSheet, handleOrderCheckToggle, handleAddressUnmapping, handleAddressMapping, handleProductChange, handleQuantityUpdate, handleOrderCancel, handleOrderDelete, toggleVIP, specialCustomers, handleOpenQuickAddress, findAddressSuggestions, cashReceiptStatus, toggleCashReceipt, inventory, productHistory, customerDeposits, handleDepositUnmatch, handleMultiAddOpen, toggleNoShow, toggleBlacklist, toggleWaitlist, noShowStatus, waitlistStatus, customerPassword, handleSetCustomerPassword, waitlistRankMap, trackingNumber, handleSetTrackingNumber, customerCredit, handleSetCustomerCredit, handleConvertOverpaidToCredit, handleApplyCustomerCreditToOrder }) => {
+        const CustomerBlock = memo(({ nick, items, isSelected, currentShipping, isCard, isCardCompleted, isPaidState, grandTotal, depositTotal, balance, baseGrandTotal, baseBalance, addr, addrType, addressMapping, autoDepositorName, displayDepositorName, isAutoDepositor, depositorNames, copyStatus, isOrderConfirmed, isEditingShipping, setSelectedNick, addOrderLogic, handleNicknameEdit, toggleCardPayment, handleShippingChange, setEditingShippingNick, openModal, setDepositorNames, handleFullDepositToggle, copyOrderSheet, handleOrderCheckToggle, handleAddressUnmapping, handleAddressMapping, handleProductChange, handleQuantityUpdate, handleOrderCancel, handleOrderDelete, handleSplitOrderItem, toggleVIP, specialCustomers, handleOpenQuickAddress, findAddressSuggestions, cashReceiptStatus, toggleCashReceipt, inventory, productHistory, customerDeposits, handleDepositUnmatch, handleMultiAddOpen, toggleNoShow, toggleBlacklist, toggleWaitlist, noShowStatus, waitlistStatus, customerPassword, handleSetCustomerPassword, waitlistRankMap, customerCredit, handleSetCustomerCredit, handleConvertOverpaidToCredit, handleApplyCustomerCreditToOrder }) => {
             let borderClass = 'border-transparent', headerBgClass = 'bg-white dark:bg-slate-800';
             
             const suggestions = useMemo(() => findAddressSuggestions ? findAddressSuggestions(nick) : [], [nick, findAddressSuggestions]);
@@ -1694,7 +1749,6 @@ useEffect(() => {
                                 
                                 <div onClick={(e) => { e.stopPropagation(); openModal(`'${nick}'님의 입금자명(실명)을 입력하세요.`, 'prompt', (newName) => { if(newName !== null) setDepositorNames(prev => ({...prev, [nick]: newName})); }, null, depositorNames[nick] || ''); }} className={`cursor-pointer flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border hover:bg-slate-100 transition-colors ml-1 shrink-0 ${depositorNames[nick] ? 'bg-slate-200 text-slate-700 border-slate-400' : (isAutoDepositor ? 'bg-green-50 text-green-700 border-green-200' : 'bg-white text-slate-500 border-slate-300')}`} title={isAutoDepositor ? "주소록 실명 연동됨" : "실명 입금자 등록"}><Icon name="user" weight={depositorNames[nick] || isAutoDepositor ? "fill" : "regular"}/> <span>{displayDepositorName}</span></div>
                                 <button type="button" onClick={(e) => { e.stopPropagation(); handleSetCustomerPassword(nick, effectivePin); }} className={`ml-1 flex items-center gap-0.5 px-1.5 py-0.5 rounded border text-[10px] font-bold transition-colors shrink-0 ${effectivePin ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100' : 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100 animate-pulse'}`} title="고객 주문서 조회용 비밀번호(핸드폰 뒤 4자리) 설정"><Icon name="key" weight="fill" size={11}/><span>{effectivePin ? effectivePin : '비번설정'}</span></button>
-                                <button type="button" onClick={(e) => { e.stopPropagation(); handleSetTrackingNumber(nick, trackingNumber === '__CLEAR__' ? '' : trackingNumber); }} className={`ml-1 flex items-center gap-0.5 px-1.5 py-0.5 rounded border text-[10px] font-bold transition-colors shrink-0 ${(trackingNumber && trackingNumber !== '__CLEAR__') ? 'bg-red-50 border-red-200 text-red-600 hover:bg-red-100' : 'bg-white border-slate-300 text-slate-500 hover:bg-slate-100'}`} title="롯데택배 송장번호 입력/수정"><Icon name="package" weight="fill" size={11}/><span>{(trackingNumber && trackingNumber !== '__CLEAR__') ? `송장:${trackingNumber}` : '송장입력'}</span></button>
                                 <button type="button" onClick={(e) => { e.stopPropagation(); handleSetCustomerCredit(nick, customerCredit); }} className={`ml-1 flex items-center gap-0.5 px-1.5 py-0.5 rounded border text-[10px] font-bold transition-colors shrink-0 ${(Number(customerCredit) > 0) ? 'bg-teal-600 border-teal-700 text-white shadow-sm' : 'bg-white border-slate-300 text-slate-500 hover:bg-slate-100'}`} title="클릭하여 고객 보유 적립금 입력/수정 (고객 포털에 실시간 표시됨)"><Icon name="coins" weight="fill" size={11}/><span>{(Number(customerCredit) > 0) ? `적립금:${Number(customerCredit).toLocaleString()}` : '적립금'}</span></button>
                                 <div onClick={(e) => { e.stopPropagation(); handleFullDepositToggle(nick, baseGrandTotal, depositTotal); }} className={`cursor-pointer ml-1 flex items-center gap-1 px-1.5 py-0.5 rounded border transition-colors shrink-0 ${isPaidState ? 'bg-green-600 border-green-700 text-white shadow-inner' : 'bg-white border-slate-300 text-slate-500 hover:bg-slate-100'}`} title={isPaidState ? "입금 완료됨 (클릭시 취소)" : "클릭시 전액 입금 처리"}><Icon name={isPaidState ? "toggle-right" : "toggle-left"} weight="fill" size={16} /><span className="text-[10px] font-bold">{isPaidState ? "완납" : "미납"}</span></div>
                                 <button onClick={(e) => { e.stopPropagation(); copyOrderSheet(nick, items, baseGrandTotal, depositTotal, balance, isCard, cashReceiptStatus, addr, e); }} className="ml-1 flex items-center gap-1 px-2 py-0.5 rounded border transition-colors shrink-0 bg-[#FEE500] border-[#E5CE00] text-gray-900 hover:bg-[#FADA0A] active:scale-95" title="주문서 카톡 복사"><Icon name="chat-circle-dots" weight="fill" size={16}/><span className="text-[10px] font-bold">카톡</span></button>
@@ -1707,7 +1761,8 @@ useEffect(() => {
                                         <span className="text-slate-500 shrink-0 font-medium">{cleanPhoneDisplay}</span>
                                         <span className="text-slate-700 dark:text-slate-300 truncate flex-1 ml-1" title={`${addr.address} ${addr.memo}`}>{addr.address}{addr.memo && <span className="text-red-500 font-bold ml-1.5">[{addr.memo}]</span>}</span>
                                         <button onClick={(e) => { e.stopPropagation(); handleOpenQuickAddress(nick, addr); }} className="shrink-0 bg-slate-100 hover:bg-slate-200 text-slate-600 border px-1.5 py-0.5 rounded text-[9px] font-bold ml-1 flex items-center gap-0.5 shadow-sm"><Icon name="pencil-simple" weight="bold"/> 수정</button>
-                                        <button onClick={(e) => { e.stopPropagation(); handleAddressUnmapping(nick); }} className="shrink-0 bg-red-50 hover:bg-red-100 text-red-500 border px-1.5 py-0.5 rounded text-[9px] font-bold ml-1 flex items-center gap-0.5 shadow-sm"><Icon name="link-break" weight="bold"/> 해제</button>
+                                        <button onClick={(e) => { e.stopPropagation(); handleAddressUnmapping(nick, true); }} className="shrink-0 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 px-1.5 py-0.5 rounded text-[9px] font-extrabold ml-1 flex items-center gap-0.5 shadow-sm" title="기존 단골과 닉네임만 같은 동명이인 새 고객일 때 클릭하면 찐고객사전 원본은 그대로 보존하고 현재 주문 카드만 비웁니다">👤동명이인</button>
+                                        <button onClick={(e) => { e.stopPropagation(); handleAddressUnmapping(nick, false); }} className="shrink-0 bg-red-50 hover:bg-red-100 text-red-500 border px-1.5 py-0.5 rounded text-[9px] font-bold ml-1 flex items-center gap-0.5 shadow-sm"><Icon name="link-break" weight="bold"/> 해제</button>
                                     </div>
                                 ) : (
                                     <div className="flex items-center gap-1 flex-wrap mt-0.5">
@@ -1763,7 +1818,7 @@ useEffect(() => {
                     </div>
                     <div className="p-0.5 space-y-0.5 bg-white dark:bg-slate-800">
                         {items.map((item, idx) => (
-                            <OrderItem key={item.id} item={item} nick={nick} nextItemId={items[idx + 1]?.id} isLast={idx === items.length - 1} handleProductChange={handleProductChange} handleQuantityUpdate={handleQuantityUpdate} handleOrderCancel={handleOrderCancel} handleOrderDelete={handleOrderDelete} addOrderLogic={addOrderLogic} setSelectedNick={setSelectedNick} inventory={inventory} productHistory={productHistory} waitlistRank={item.isWaitlist && waitlistRankMap ? waitlistRankMap[`${String(item.product || '').trim()}___${nick}`] : null} />
+                            <OrderItem key={item.id} item={item} nick={nick} totalCustomerItemsCount={items.length} nextItemId={items[idx + 1]?.id} isLast={idx === items.length - 1} handleProductChange={handleProductChange} handleQuantityUpdate={handleQuantityUpdate} handleOrderCancel={handleOrderCancel} handleOrderDelete={handleOrderDelete} handleSplitOrderItem={handleSplitOrderItem} addOrderLogic={addOrderLogic} setSelectedNick={setSelectedNick} inventory={inventory} productHistory={productHistory} waitlistRank={item.isWaitlist && waitlistRankMap ? waitlistRankMap[`${String(item.product || '').trim()}___${nick}`] : null} />
                         ))}
                     </div>
                     {customerDeposits && customerDeposits.length > 0 && (
@@ -1943,34 +1998,55 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             const feeMultiplier = feeRateNum / 100;
             
             const [currentApiKeyIndex, setCurrentApiKeyIndex] = useState(0);
-            const deadApiKeysRef = useRef(new Set()); // ✨ 403 에러난 키(죽은 키) 보관용 블랙리스트
+            const currentApiKeyIndexRef = useRef(0);
+            const deadApiKeysRef = useRef(new Set()); // ✨ 진짜 할당량 초과(quotaExceeded)가 난 키만 보관
 
+            // 정규식으로 줄바꿈/쉼표/공백 상관없이 AIza... 39자리 구글 API 키를 모두 정확하게 추출 (중복 제거)
             const apiKeysArray = useMemo(() => {
-                return String(youtubeApiKey || '').split(/[\n,]+/).map(k => k.trim()).filter(Boolean);
+                const rawStr = String(youtubeApiKey || '');
+                const regexMatched = rawStr.match(/AIza[0-9A-Za-z\-_]{35}/g);
+                if (regexMatched && regexMatched.length > 0) {
+                    return Array.from(new Set(regexMatched));
+                }
+                return Array.from(new Set(rawStr.split(/[\n,\s]+/).map(k => k.trim()).filter(Boolean)));
             }, [youtubeApiKey]);
+
+            // 키 목록이 바뀌면 죽은 키 블랙리스트를 자동 초기화하여 새 키나 살아있는 키가 억울하게 막히지 않도록 보장!
+            useEffect(() => {
+                deadApiKeysRef.current.clear();
+                currentApiKeyIndexRef.current = 0;
+                setCurrentApiKeyIndex(0);
+                setGlobalError('');
+            }, [apiKeysArray.join(','), setGlobalError]);
 
             const activeApiKey = apiKeysArray[currentApiKeyIndex] || apiKeysArray[0] || '';
 
-            const handleKeySwitch = useCallback(() => {
-                if (activeApiKey) {
-                    deadApiKeysRef.current.add(activeApiKey); // ✨ 현재 키를 블랙리스트에 추가
+            const handleResetApiKeys = useCallback(() => {
+                deadApiKeysRef.current.clear();
+                currentApiKeyIndexRef.current = 0;
+                setCurrentApiKeyIndex(0);
+                lastResolvedVideoIdRef.current = '';
+                setGlobalError('');
+            }, [setGlobalError]);
+
+            // 특정 키가 진짜 할당량 초과일 때만 블랙리스트에 등록하고 즉시 다음 살아있는 키를 반환하는 동기식 함수 (도미노 현상 원천 차단!)
+            const markKeyDeadAndGetNext = useCallback((failedKey) => {
+                if (failedKey) {
+                    deadApiKeysRef.current.add(failedKey);
                 }
-                
                 const aliveKeys = apiKeysArray.filter(k => !deadApiKeysRef.current.has(k));
-                
                 if (aliveKeys.length > 0) {
-                    // 다음 살아있는 키의 원래 배열 내 인덱스 찾기
                     const nextAliveKey = aliveKeys[0];
                     const nextIndex = apiKeysArray.indexOf(nextAliveKey);
-                    
+                    currentApiKeyIndexRef.current = nextIndex;
                     setCurrentApiKeyIndex(nextIndex);
-                    chatNextPageTokenRef.current = ''; // 키 교체 시 토큰 꼬임 방지
-                    // ✨ 에러창(setGlobalError) 안 띄우고 조용히 넘어감
+                    setGlobalError('');
+                    return nextAliveKey;
                 } else {
-                    // 모든 키가 죽었을 때만 경고창 띄움
-                    setGlobalError('🚨 등록된 모든 유튜브 API 키의 일일 할당량이 초과되었습니다 (403). 내일 다시 시도하거나 새 키를 등록하세요.');
+                    setGlobalError(`🚨 등록된 ${apiKeysArray.length}개의 유튜브 API 키가 모두 할당량을 소진했거나 사용 불가 상태입니다. (다른 구글 계정/프로젝트에서 발급한 키인지 확인해 주세요)`);
+                    return null;
                 }
-            }, [apiKeysArray, activeApiKey, setGlobalError]);
+            }, [apiKeysArray, setGlobalError]);
             
             const [manualNick, setManualNick] = useState('');
             const deferredManualNick = React.useDeferredValue(manualNick);
@@ -2364,6 +2440,17 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             const [lastAddedOrderId, setLastAddedOrderId] = useState(null);
             
             const [showNickSuggestions, setShowNickSuggestions] = useState(false);
+            const [showManualProdSuggestions, setShowManualProdSuggestions] = useState(false);
+
+            const manualProdSuggestions = useMemo(() => {
+                const validInv = (Array.isArray(inventory) ? inventory : []).filter(i => i && String(i.name || '').trim() && i.name !== '__EMPTY__');
+                const kw = String(manualProduct || '').trim().toLowerCase();
+                if (!kw) return validInv.slice(0, 8);
+                return validInv.filter(i => {
+                    const n = String(i.name).toLowerCase();
+                    return n.includes(kw) || getChosung(n).toLowerCase().includes(kw);
+                }).slice(0, 8);
+            }, [manualProduct, inventory]);
 
             const [displayLimit, setDisplayLimit] = useState(30);
             const [quickAddrModal, setQuickAddrModal] = useState({ isOpen: false, nick: '', editData: null });
@@ -2373,11 +2460,17 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             // 🔴 생방송 시작 버튼 핸들러 (켜는 순간 고객 포털이 사장님 실시간 주문서 + 직원용 시트를 함께 조회)
             const handleStartLiveBroadcast = useCallback(() => {
                 openModal(
-                    `🔴 생방송을 시작하시겠습니까?\n현재 방송명을 확인하거나 새로 입력해 주세요.\n\n• 생방송 중에는 고객 포털에서 [현재 사장님 실시간 주문서 + 직원용 이전 주문서]가 함께 조회됩니다.`,
+                    `🔴 생방송을 시작하시겠습니까?\n현재 방송명을 확인하거나 새로 입력해 주세요.\n\n• 생방송을 시작하면 모든 유튜브 API 키 할당량은 사장님 주문서에서 단독으로 사용합니다.`,
                     'prompt',
                     (inputTitle) => {
                         if (inputTitle === null) return;
                         const nextTitle = inputTitle.trim() ? inputTitle.trim() : (broadcastName || '오늘의방송');
+                        // 생방송 시작 시 억울하게 죽어있던 API 키 블랙리스트를 싹 초기화하여 1번 키부터 다시 싱싱하게 탐색!
+                        deadApiKeysRef.current.clear();
+                        currentApiKeyIndexRef.current = 0;
+                        setCurrentApiKeyIndex(0);
+                        lastResolvedVideoIdRef.current = '';
+                        setGlobalError('');
                         setBroadcastName(nextTitle);
                         setIsViewingPastBroadcast(false);
                         setIsLiveBroadcasting(true);
@@ -2385,6 +2478,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                             window.emberRealtimeDb.ref('ember_live_data/_portal_live_mode').set({
                                 isLive: true,
                                 liveOwner: 'boss',
+                                activePollerTabId: myPollerTabIdRef.current,
                                 activeBroadcastName: nextTitle,
                                 updatedAt: Date.now()
                             }).catch(() => {});
@@ -2400,7 +2494,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     null,
                     broadcastName || '오늘의방송'
                 );
-            }, [broadcastName, openModal, setBroadcastName, setIsViewingPastBroadcast, setIsLiveBroadcasting]);
+            }, [broadcastName, openModal, setBroadcastName, setIsViewingPastBroadcast, setIsLiveBroadcasting, setGlobalError]);
 
             // 새방송 초기화 시에는 무조건 현재 방송 모드(자동매칭·자동저장 ON)로 복귀
             useEffect(() => {
@@ -2434,6 +2528,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             const creditSyncLock = useRef(0);
             const staffSyncLockRef = useRef(0);
             const lastStaffUpdateAtRef = useRef(Date.now());
+            const syncedPortalAddrSigRef = useRef(new Set());
             const prevDepsStr = useRef('');
             const prevAddrsStr = useRef('');
             const prevInvStr = useRef('');
@@ -2699,11 +2794,18 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         const exactList = exactNickMap[cleanNick] || [];
                         let matched = null;
                         if (exactList.length === 1) {
-                            matched = exactList[0];
+                            const cand = exactList[0];
+                            const candPin = fixPhoneNumber(cand.phone).slice(-4);
+                            if (!custPin || !candPin || custPin === candPin) {
+                                matched = cand;
+                            }
                         } else if (exactList.length > 1) {
                             const distinctPhones = new Set(exactList.map(x => fixPhoneNumber(x.phone)).filter(Boolean));
-                            if (distinctPhones.size <= 1 || custPin) {
-                                matched = pickLatestAddr(exactList, custPin);
+                            if (custPin) {
+                                const byPin = exactList.filter(x => fixPhoneNumber(x.phone).slice(-4) === custPin);
+                                if (byPin.length > 0) matched = pickLatestAddr(byPin, custPin);
+                            } else if (distinctPhones.size <= 1) {
+                                matched = pickLatestAddr(exactList);
                             }
                         }
 
@@ -2772,9 +2874,10 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
             }, [addresses]);
 
             useEffect(() => {
+                let cancelled = false;
                 const getChatId = async () => {
                     // 🛡️ 핵심: 사장님이 직접 [🔴 생방송중]을 켜지 않았거나(🔒 방송마감 상태), 다른 탭/직원용에서 방송 중이면 유튜브 API 절대 호출 금지!
-                    if (!isLiveBroadcasting || !isActivePollerTab || !activeApiKey || !youtubeVideoId) {
+                    if (!isLiveBroadcasting || !isActivePollerTab || apiKeysArray.length === 0 || !youtubeVideoId) {
                         if (!isLiveBroadcasting || !youtubeVideoId) {
                             setLiveChatId(null);
                             lastResolvedVideoIdRef.current = '';
@@ -2786,33 +2889,57 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     if (liveChatId && lastResolvedVideoIdRef.current === youtubeVideoId) {
                         return;
                     }
-                    try {
-                        const res = await fetch(`https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails&id=${youtubeVideoId}&key=${activeApiKey}`);
-                        const data = await res.json();
-                        if (!res.ok) {
-                            setLiveChatId(null);
-                            chatNextPageTokenRef.current = '';
-                            if (res.status === 403) handleKeySwitch();
-                            setGlobalError(`유튜브 API 오류: ${data.error?.message || res.status}`);
-                            return;
+
+                    // 등록된 키들을 순서대로 시도하여 단 한 번에 살아있는 키로 liveChatId를 획득!
+                    const candidateKeys = apiKeysArray.filter(k => !deadApiKeysRef.current.has(k));
+                    const keysToTry = candidateKeys.length > 0 ? candidateKeys : apiKeysArray;
+
+                    for (let i = 0; i < keysToTry.length; i++) {
+                        if (cancelled) return;
+                        const testKey = keysToTry[i];
+                        try {
+                            const res = await fetch(`https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails&id=${youtubeVideoId}&key=${testKey}`);
+                            const data = await res.json();
+                            if (!res.ok || data?.error) {
+                                const errReason = data?.error?.errors?.[0]?.reason || '';
+                                const isQuotaOrKeyErr = res.status === 403 || res.status === 400 || errReason.includes('quota') || errReason.includes('Limit') || errReason.includes('keyInvalid');
+                                if (isQuotaOrKeyErr) {
+                                    deadApiKeysRef.current.add(testKey);
+                                    continue; // 즉시 다음 키로 시도!
+                                }
+                                setGlobalError(`유튜브 API 오류: ${data?.error?.message || res.status}`);
+                                return;
+                            }
+                            const foundChatId = data?.items?.[0]?.liveStreamingDetails?.activeLiveChatId;
+                            if (foundChatId) {
+                                const goodIdx = apiKeysArray.indexOf(testKey);
+                                if (goodIdx !== -1) {
+                                    currentApiKeyIndexRef.current = goodIdx;
+                                    setCurrentApiKeyIndex(goodIdx);
+                                }
+                                lastResolvedVideoIdRef.current = youtubeVideoId;
+                                setLiveChatId(foundChatId);
+                                setGlobalError('');
+                                return;
+                            } else {
+                                setLiveChatId(null);
+                                chatNextPageTokenRef.current = '';
+                                setGlobalError('해당 영상에서 활성화된 라이브 채팅을 찾을 수 없습니다. (생방송 중인 영상인지 확인해주세요)');
+                                return;
+                            }
+                        } catch (e) {
+                            // 네트워크 일시 오류 시 다음 루프에서 재시도
                         }
-                        if (data.items && data.items.length > 0 && data.items[0].liveStreamingDetails && data.items[0].liveStreamingDetails.activeLiveChatId) {
-                            lastResolvedVideoIdRef.current = youtubeVideoId;
-                            setLiveChatId(data.items[0].liveStreamingDetails.activeLiveChatId);
-                            setGlobalError('');
-                        } else {
-                            setLiveChatId(null);
-                            chatNextPageTokenRef.current = '';
-                            setGlobalError('해당 영상에서 활성화된 라이브 채팅을 찾을 수 없습니다.');
-                        }
-                    } catch (e) {
+                    }
+
+                    if (!cancelled) {
                         setLiveChatId(null);
-                        chatNextPageTokenRef.current = '';
-                        setGlobalError('유튜브 API 호출 실패. API 키나 영상 ID를 확인해주세요.');
+                        setGlobalError(`🚨 등록된 ${apiKeysArray.length}개의 유튜브 API 키 모두 할당량이 초과되었거나 사용할 수 없습니다.`);
                     }
                 };
                 getChatId();
-            }, [isLiveBroadcasting, isActivePollerTab, activeApiKey, youtubeVideoId, liveChatId, setGlobalError, handleKeySwitch]);
+                return () => { cancelled = true; };
+            }, [isLiveBroadcasting, isActivePollerTab, apiKeysArray, youtubeVideoId, liveChatId, setGlobalError]);
 
         const [youtubeStatus, setYoutubeStatus] = useState("채팅(대기)");
         const [gasStatus, setGasStatus] = useState("입금(대기)");
@@ -3026,22 +3153,64 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
 
         const fetchYoutubeData = useCallback(async () => {
             // 🛡️ [🔒 방송마감] 상태이거나 다른 기기/탭에서 이미 폴링 중이면 API 호출 100% 차단!
-            if (!isLiveBroadcasting || !isActivePollerTab || !activeApiKey || !liveChatId) {
-                const idleMsg = !isLiveBroadcasting ? "채팅(마감대기)" : (!isActivePollerTab ? "채팅(타기기실행중)" : "채팅(대기)");
+            if (!isLiveBroadcasting || !isActivePollerTab || apiKeysArray.length === 0 || !liveChatId) {
+                const idleMsg = !isLiveBroadcasting ? "채팅(마감대기)" : (!isActivePollerTab ? "채팅(타탭실행중)" : "채팅(대기)");
                 setYoutubeStatus(prev => prev === idleMsg ? prev : idleMsg);
                 return;
             }
+
+            // 항상 최신 살아있는 키를 동기식 Ref에서 즉시 선택 (이전 죽은 키 중복 호출 원천 방지!)
+            let curIdx = currentApiKeyIndexRef.current;
+            let curKey = apiKeysArray[curIdx];
+            if (!curKey || deadApiKeysRef.current.has(curKey)) {
+                const firstAlive = apiKeysArray.find(k => !deadApiKeysRef.current.has(k));
+                if (!firstAlive) {
+                    setYoutubeStatus("채팅(전체키소진)");
+                    return;
+                }
+                curKey = firstAlive;
+                curIdx = apiKeysArray.indexOf(firstAlive);
+                currentApiKeyIndexRef.current = curIdx;
+                setCurrentApiKeyIndex(curIdx);
+            }
+
             try {
-                let url = `https://www.googleapis.com/youtube/v3/liveChat/messages?liveChatId=${liveChatId}&part=snippet,authorDetails&maxResults=200&key=${activeApiKey}`;
+                let url = `https://www.googleapis.com/youtube/v3/liveChat/messages?liveChatId=${liveChatId}&part=snippet,authorDetails&maxResults=200&key=${curKey}`;
                 if (chatNextPageTokenRef.current) url += `&pageToken=${chatNextPageTokenRef.current}`;
                 
                 const res = await fetch(url);
                 const data = await res.json();
                 
-                if (!res.ok) {
-                    if (res.status === 403) {
-                        handleKeySwitch();
-                        setYoutubeStatus(prev => prev === `채팅(키교체중⚡)` ? prev : `채팅(키교체중⚡)`);
+                if (!res.ok || data?.error) {
+                    const errReason = data?.error?.errors?.[0]?.reason || '';
+                    const errMsg = String(data?.error?.message || '');
+                    // 일시적인 속도 제한(rateLimitExceeded)은 키가 죽은 게 아니므로 키를 버리지 않고 8초 대기!
+                    if (errReason === 'rateLimitExceeded' || errReason === 'userRateLimitExceeded') {
+                        chatPollingIntervalRef.current = 8000;
+                        setYoutubeStatus(`채팅(속도조절중·키${curIdx + 1}/${apiKeysArray.length})`);
+                        return;
+                    }
+                    // 채팅방 종료 또는 무효 토큰인 경우
+                    if (errReason === 'liveChatEnded' || errReason === 'liveChatNotFound') {
+                        setLiveChatId(null);
+                        setYoutubeStatus('채팅(방송종료됨)');
+                        return;
+                    }
+                    if (res.status === 400 && chatNextPageTokenRef.current && !errReason.includes('keyInvalid')) {
+                        // pageToken 만료 시 토큰만 비우고 현재 키 유지!
+                        chatNextPageTokenRef.current = '';
+                        return;
+                    }
+                    // 진짜 일일 할당량 초과(quotaExceeded / dailyLimitExceeded) 또는 잘못된 키일 때만 다음 키로 교체!
+                    if (res.status === 403 || res.status === 400 || errReason.includes('quota') || errReason.includes('Limit') || errMsg.includes('quota')) {
+                        const nextKey = markKeyDeadAndGetNext(curKey);
+                        if (nextKey) {
+                            const nextIdx = apiKeysArray.indexOf(nextKey);
+                            chatPollingIntervalRef.current = 2000;
+                            setYoutubeStatus(`채팅(키${nextIdx + 1}/${apiKeysArray.length}교체⚡)`);
+                        } else {
+                            setYoutubeStatus(`채팅(할당량초과)`);
+                        }
                     } else {
                         const errStr = `채팅(에러:${res.status})`;
                         setYoutubeStatus(prev => prev === errStr ? prev : errStr);
@@ -3049,8 +3218,11 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                 } else {
                     if (data.nextPageToken) chatNextPageTokenRef.current = data.nextPageToken;
                     if (data.pollingIntervalMillis) {
-                        chatPollingIntervalRef.current = Math.max(5500, data.pollingIntervalMillis);
+                        chatPollingIntervalRef.current = Math.max(5500, Number(data.pollingIntervalMillis));
+                    } else {
+                        chatPollingIntervalRef.current = 5500;
                     }
+                    const keyBadge = apiKeysArray.length > 1 ? `·키${curIdx + 1}/${apiKeysArray.length}` : '';
                     if (data.items && data.items.length > 0) {
                         const newChats = data.items.map(item => ({
                             id: item.id,
@@ -3072,16 +3244,17 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                 }
                             });
                         }
-                        const okStr = `채팅(${newChats.length})`;
+                        const okStr = `채팅(${newChats.length}${keyBadge})`;
                         setYoutubeStatus(prev => prev === okStr ? prev : okStr);
                     } else {
-                        setYoutubeStatus(prev => prev === `채팅(없음)` ? prev : `채팅(없음)`);
+                        const waitStr = `채팅(수신중${keyBadge})`;
+                        setYoutubeStatus(prev => prev === waitStr ? prev : waitStr);
                     }
                 }
             } catch (e) {
-                setYoutubeStatus(prev => prev === `채팅(오류)` ? prev : `채팅(오류)`);
+                setYoutubeStatus(prev => prev === `채팅(통신재시도)` ? prev : `채팅(통신재시도)`);
             }
-        }, [isLiveBroadcasting, isActivePollerTab, activeApiKey, liveChatId, handleKeySwitch, setChats, googleScriptUrl, masterSheetId, broadcastName]);
+        }, [isLiveBroadcasting, isActivePollerTab, apiKeysArray, liveChatId, markKeyDeadAndGetNext, setChats, googleScriptUrl, masterSheetId]);
 
         const fetchGasData = useCallback(async (force = false) => {
             if (force && isViewingPastBroadcast) {
@@ -3348,22 +3521,27 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     applyIncomingBroadcastAddrs(incomingForActiveBcast, cleanActiveBName);
                 }
 
-                // 2) 사장님 '찐고객사전' 마스터 주소록(addresses)에는 신규 고객이든 기존 고객이든 가장 최신 주소 1건으로 무조건 갱신!
+                // 2) 사장님 '찐고객사전' 마스터 주소록(addresses)에는 전화번호 뒷 4자리가 다른 동명이인을 덮어쓰지 않고 각각 보존!
                 setAddresses(prev => {
                     let changed = false;
                     const map = new Map();
                     prev.forEach((item, idx) => {
-                        map.set(normalizeString(item.nickname), { ...item, _rowOrder: item._rowOrder ?? idx });
+                        const ph = fixPhoneNumber(item.phone || '');
+                        const p4 = ph.length >= 4 ? ph.slice(-4) : '';
+                        const mKey = p4 ? `${normalizeString(item.nickname)}___${p4}` : normalizeString(item.nickname);
+                        map.set(mKey, { ...item, _rowOrder: item._rowOrder ?? idx });
                     });
                     allPortalAddrs.forEach((item, idx) => {
                         const k = normalizeString(item.nickname);
-                        const existing = map.get(k);
                         const fixedPh = fixPhoneNumber(item.phone || '');
+                        const p4 = fixedPh.length >= 4 ? fixedPh.slice(-4) : '';
+                        const mapKey = p4 ? `${k}___${p4}` : k;
+                        const existing = map.get(mapKey);
                         const cleanAddrStr = stripZipcodeFromAddr(item.address || item.baseAddress || '');
                         const cleanMemoStr = item.memo || '';
                         if (!existing || existing.address !== cleanAddrStr || existing.realname !== (item.realname || '') || existing.phone !== fixedPh || existing.memo !== cleanMemoStr) {
                             changed = true;
-                            map.set(k, {
+                            map.set(mapKey, {
                                 nickname: item.nickname,
                                 realname: item.realname || existing?.realname || '',
                                 phone: fixedPh || existing?.phone || '',
@@ -3375,6 +3553,23 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                             });
                             if (fixedPh.length >= 4) {
                                 setCustomerPasswords(p => ({ ...p, [item.nickname]: fixedPh.slice(-4) }));
+                            }
+                            const sig = `${mapKey}|${item.realname || ''}|${fixedPh}|${cleanAddrStr}|${cleanMemoStr}`;
+                            if (cleanAddrStr && googleScriptUrl && masterSheetId && !syncedPortalAddrSigRef.current.has(sig)) {
+                                syncedPortalAddrSigRef.current.add(sig);
+                                fetchGas(googleScriptUrl, {
+                                    action: 'save_master_address',
+                                    masterId: getCleanSheetId(masterSheetId),
+                                    data: {
+                                        nickname: item.nickname,
+                                        realname: item.realname || '',
+                                        phone: fixedPh ? "'" + fixedPh : '',
+                                        address: cleanAddrStr,
+                                        memo: cleanMemoStr,
+                                        broadcastName: item.broadcastName || '',
+                                        forceOverwrite: false
+                                    }
+                                }).catch(() => {});
                             }
                         }
                     });
@@ -4930,14 +5125,19 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     }
                 }); 
             }, [openModal, setAddressMapping, addresses, googleScriptUrl, masterSheetId, broadcastName]);
-            
-            const handleAddressUnmapping = useCallback((orderNick) => { 
-                openModal(`'${orderNick}' 님의 매칭된 주소를 해제하시겠습니까?\n(해제 시 화면에서 즉시 비워지며, '찐고객사전' 시트에서도 함께 삭제할 수 있습니다)`, 'confirm', () => {
+
+            const handleAddressUnmapping = useCallback((orderNick, onlyThisCard = false) => { 
+                const msg = onlyThisCard
+                    ? `👤 '${orderNick}' 고객님이 기존 단골과 닉네임만 같은 [동명이인 새 고객]인가요?\n\n[확인]을 누르면 '찐고객사전'의 기존 단골 주소는 삭제하지 않고 안전하게 보존하면서, 현재 주문 카드에서만 주소를 비워 새 고객이 직접 입력할 수 있게 분리합니다!`
+                    : `'${orderNick}' 님의 매칭된 주소를 해제하시겠습니까?\n(해제 시 화면에서 즉시 비워지며, '찐고객사전' 시트에서도 함께 삭제됩니다)`;
+                openModal(msg, 'confirm', () => {
                     addressSyncLock.current = Date.now();
                     setAddressMapping(prev => { 
                         const next = { ...prev }; next[orderNick] = '__UNMAPPED__'; next[normalizeString(orderNick)] = '__UNMAPPED__'; return next; 
                     });
-                    setAddresses(prev => prev.filter(a => normalizeString(a.nickname) !== normalizeString(orderNick)));
+                    setCustomerPasswords(prev => {
+                        const next = { ...prev }; delete next[orderNick]; return next;
+                    });
                     setBroadcastAddresses(prev => {
                         const next = { ...prev };
                         Object.keys(next).forEach(bKey => {
@@ -4951,22 +5151,25 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                         });
                         return next;
                     });
-                    if (window.emberRealtimeDb) {
-                        const safeNickKey = String(orderNick || '').replace(/[.#$\[\]\/]/g, '_').trim();
-                        if (safeNickKey) {
-                            window.emberRealtimeDb.ref(`ember_live_data/_portal_master_addrs/${safeNickKey}`).remove().catch(() => {});
-                            window.emberRealtimeDb.ref(`ember_live_data/_portal_addresses/${safeNickKey}`).remove().catch(() => {});
+                    if (!onlyThisCard) {
+                        setAddresses(prev => prev.filter(a => normalizeString(a.nickname) !== normalizeString(orderNick)));
+                        if (window.emberRealtimeDb) {
+                            const safeNickKey = String(orderNick || '').replace(/[.#$\[\]\/]/g, '_').trim();
+                            if (safeNickKey) {
+                                window.emberRealtimeDb.ref(`ember_live_data/_portal_master_addrs/${safeNickKey}`).remove().catch(() => {});
+                                window.emberRealtimeDb.ref(`ember_live_data/_portal_addresses/${safeNickKey}`).remove().catch(() => {});
+                            }
+                        }
+                        if (googleScriptUrl && masterSheetId) {
+                            fetchGas(googleScriptUrl, {
+                                action: 'delete_master_address',
+                                masterId: getCleanSheetId(masterSheetId),
+                                data: { nickname: orderNick }
+                            }).catch(() => {});
                         }
                     }
-                    if (googleScriptUrl && masterSheetId) {
-                        fetchGas(googleScriptUrl, {
-                            action: 'delete_master_address',
-                            masterId: getCleanSheetId(masterSheetId),
-                            data: { nickname: orderNick }
-                        }).catch(() => {});
-                    }
                 }); 
-            }, [openModal, setAddressMapping, setAddresses, setBroadcastAddresses, googleScriptUrl, masterSheetId]);
+            }, [openModal, setAddressMapping, setCustomerPasswords, setAddresses, setBroadcastAddresses, googleScriptUrl, masterSheetId]);
 
             const handleProductChange = useCallback((id, field, value) => { 
                 setOrders(prev => prev.map(o => { 
@@ -5052,6 +5255,30 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     return o;
                 });
             }), [setOrders, resetCustomerConfirmation]);
+
+            const handleSplitOrderItem = useCallback((itemId, currentNick, prodName) => {
+                openModal(
+                    `'${prodName || '선택한 상품'}'을 다른 주소(엄마·동생·사무실 등)로 따로 보내기 위해 주문 카드를 분리합니다.\n\n받는 곳 별칭(예: 엄마, 동생, 사무실)을 입력해 주세요:\n• 확인 시 '${String(currentNick).replace(/\s*\([^)]+\)$/, '').trim()}(별칭)' 카드로 분리되며, 고객 포털에서도 기존 비밀번호로 한 번에 조회됩니다!`,
+                    'prompt',
+                    (tagVal) => {
+                        const cleanTag = String(tagVal || '').trim();
+                        if (!cleanTag) return;
+                        const baseNick = String(currentNick).replace(/\s*\([^)]+\)$/, '').trim();
+                        const newSplitNick = `${baseNick}(${cleanTag})`;
+                        const originAddr = addressLookup.get(currentNick)?.data;
+                        const originPin = customerPasswords?.[currentNick] || (originAddr?.phone ? fixPhoneNumber(originAddr.phone).slice(-4) : '');
+                        if (originPin) {
+                            setCustomerPasswords(prev => ({ ...prev, [newSplitNick]: originPin }));
+                        }
+                        resetCustomerConfirmation(currentNick);
+                        setOrders(prev => prev.map(o => o.id === itemId ? { ...o, customer: newSplitNick, deposit: 0 } : o));
+                        bringToTopAndScroll(newSplitNick);
+                    },
+                    null,
+                    '엄마'
+                );
+            }, [openModal, addressLookup, customerPasswords, setCustomerPasswords, resetCustomerConfirmation, setOrders, bringToTopAndScroll]);
+
             const handleOrderDelete = useCallback((id) => {
                 openModal("주문 삭제하시겠습니까?", 'confirm', () => {
                     setOrders(prev => {
@@ -5672,6 +5899,16 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                              </div>
                              <div className={`text-[10px] p-1.5 rounded flex justify-between items-center ${gasStatus.includes('에러') || gasStatus.includes('실패') || gasStatus.includes('입력하세요') || gasStatus.includes('차단') ? 'bg-red-100 text-red-600 font-bold' : 'text-slate-700 dark:text-slate-300 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 shadow-sm'}`}>
                                  <span className="truncate flex-1 font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1"><Icon name="lightning" weight="fill" className="text-yellow-500"/> 10초 자동 스캔중 <span className="text-slate-500 dark:text-slate-400 font-normal ml-1">| {youtubeStatus} | {gasStatus}</span></span>
+                                 {apiKeysArray.length > 0 && deadApiKeysRef.current.size > 0 && (
+                                     <button
+                                         type="button"
+                                         onClick={handleResetApiKeys}
+                                         className="ml-1 px-1.5 py-0.5 bg-amber-500 hover:bg-amber-600 text-white rounded text-[9px] font-extrabold shrink-0"
+                                         title="차단된 API 키 목록을 초기화하고 1번 키부터 다시 연결합니다"
+                                     >
+                                         🔄 키리셋
+                                     </button>
+                                 )}
                              </div>
                              <div className="flex gap-2">
                                  <div className="relative flex-1"><Icon name="magnifying-glass" className="absolute left-1.5 top-1/2 -translate-y-1/2 text-slate-400 text-[10px]"/><input type="text" placeholder="검색" value={chatSearch} onChange={e => setChatSearch(e.target.value)} onKeyDown={e => { if(e.key==='Escape'){ setChatSearch(''); e.target.blur(); } }} className="w-full text-[10px] pl-5 py-1.5 border dark:border-slate-600 rounded outline-none bg-white dark:bg-slate-900 focus:ring-1 focus:ring-slate-400" /></div>
@@ -5814,7 +6051,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                             </div>
                             <form onSubmit={handleQuickAddProduct} className="flex w-full gap-1 items-center bg-indigo-50 dark:bg-indigo-900/20 p-1.5 rounded border border-indigo-200 dark:border-indigo-800 shadow-sm overflow-hidden">
                                 <div className="flex items-center gap-1 shrink-0 pl-0.5 pr-1"><Icon name="cube" weight="fill" className="text-indigo-500"/><span className="text-[11px] font-bold text-indigo-700 dark:text-indigo-300 whitespace-nowrap">신규</span></div>
-                                <input type="text" placeholder="상품명" value={newInvName} onChange={e=>setNewInvName(e.target.value)} className="flex-1 min-w-0 border dark:border-slate-600 rounded px-2 py-1.5 text-[11px] outline-none focus:ring-1 focus:ring-indigo-500 bg-white dark:bg-slate-900 dark:text-white font-bold" />
+                                <input lang="ko" type="text" placeholder="상품명" value={newInvName} onChange={e=>setNewInvName(e.target.value)} className="flex-1 min-w-0 border dark:border-slate-600 rounded px-2 py-1.5 text-[11px] outline-none focus:ring-1 focus:ring-indigo-500 bg-white dark:bg-slate-900 dark:text-white font-bold" />
                                 <input type="text" placeholder="단가" value={newInvPrice} onChange={e=> { const val = e.target.value.replace(/,/g, ''); if (val === '' || val === '-') setNewInvPrice(val); else if(!isNaN(val)) setNewInvPrice(Number(val).toLocaleString()); }} className="w-14 shrink-0 border dark:border-slate-600 rounded px-1.5 py-1.5 text-[11px] text-right outline-none focus:ring-1 focus:ring-indigo-500 bg-white dark:bg-slate-900 dark:text-white font-bold" />
                                 <input type="number" placeholder="재고" value={newInvStock} onChange={e=>setNewInvStock(e.target.value)} className="w-12 shrink-0 border dark:border-slate-600 rounded px-1.5 py-1.5 text-[11px] text-right outline-none focus:ring-1 focus:ring-indigo-500 bg-white dark:bg-slate-900 dark:text-white font-bold" />
                                 <button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1.5 rounded text-[11px] font-bold shrink-0 transition-colors shadow-sm whitespace-nowrap">등록</button>
@@ -5822,29 +6059,51 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                             <div className="flex gap-2 items-stretch w-full">
                                 <form onSubmit={handleManualSubmit} className="flex-1 flex gap-1.5 items-center bg-slate-100 dark:bg-slate-800 p-1.5 rounded border dark:border-slate-600 shadow-sm min-w-[280px]">
                                     <div className="relative w-20 sm:w-24 shrink-0">
-                                        <input type="text" placeholder="닉네임" value={manualNick} onChange={e => {setManualNick(e.target.value); setShowNickSuggestions(true);}} onFocus={()=>setShowNickSuggestions(true)} onBlur={()=>setTimeout(()=>setShowNickSuggestions(false), 200)} className="w-full border dark:border-slate-600 rounded px-2 py-1.5 text-xs font-bold outline-none focus:ring-1 focus:ring-slate-500 bg-white dark:bg-slate-900 dark:text-white" />
+                                        <input lang="ko" type="text" placeholder="닉네임" value={manualNick} onChange={e => {setManualNick(e.target.value); setShowNickSuggestions(true);}} onFocus={()=>setShowNickSuggestions(true)} onBlur={()=>setTimeout(()=>setShowNickSuggestions(false), 200)} className="w-full border dark:border-slate-600 rounded px-2 py-1.5 text-xs font-bold outline-none focus:ring-1 focus:ring-slate-500 bg-white dark:bg-slate-900 dark:text-white" />
                                         {showNickSuggestions && nicknameSuggestions.length > 0 && (<div className="absolute top-full left-0 mt-1 w-full min-w-[200px] bg-white dark:bg-slate-800 border dark:border-slate-600 rounded shadow-xl z-50 overflow-hidden">{nicknameSuggestions.map((s, i) => (<div key={i} onClick={()=>{setManualNick(s.nick); setShowNickSuggestions(false); document.getElementById('manual-prod-input')?.focus();}} className="px-2 py-1.5 text-xs hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer border-b dark:border-slate-700/50 last:border-0 flex flex-col"><span className="font-bold">{s.nick}</span>{s.realName && <span className="text-[10px] text-slate-500">👤 {s.realName}</span>}</div>))}</div>)}
                                     </div>
                                     <div className="flex-1 flex gap-1 items-center relative">
                                         <div className="relative flex-1">
                                            <input 
                                                 id="manual-prod-input" 
+                                                lang="ko"
                                                 type="text" 
-                                                list="product-list" 
                                                 autoComplete="off"
                                                 placeholder="상품명" 
                                                 value={manualProduct} 
+                                                onFocus={() => setShowManualProdSuggestions(true)}
+                                                onBlur={() => setTimeout(() => setShowManualProdSuggestions(false), 180)}
                                                 onChange={e => {
                                                     const val = e.target.value; 
                                                     setManualProduct(val); 
+                                                    setShowManualProdSuggestions(true);
                                                     const invItem = Array.isArray(inventory) ? inventory.find(i => String(i.name).trim() === String(val).trim()) : null;
-                                                    const uPrice = invItem ? Number(invItem.price) : (productHistory[val] || 0);
+                                                    const uPrice = invItem ? Number(invItem.price) : 0;
                                                     if (uPrice > 0) setManualPrice(uPrice.toLocaleString()); 
                                                     else if (val === '') setManualPrice('');
                                                 }} 
                                                 className={`w-full border dark:border-slate-600 rounded pl-2 pr-9 py-1.5 text-xs outline-none focus:ring-1 focus:ring-slate-500 bg-white dark:bg-slate-900 dark:text-white transition-all ${isFixedProductMode ? 'ring-2 ring-slate-600 border-slate-600' : ''}`} 
                                             />
                                             <button type="button" onClick={(e) => { e.currentTarget.blur(); setIsFixedProductMode(prev => !prev); }} className={`absolute right-1 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors ${isFixedProductMode ? 'bg-slate-700 text-white shadow-inner' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300'}`} title="고정">고정</button>
+                                            {showManualProdSuggestions && manualProdSuggestions.length > 0 && (
+                                                <div className="absolute top-full left-0 mt-1 w-full min-w-[240px] bg-white dark:bg-slate-800 border border-blue-300 dark:border-slate-600 rounded shadow-xl z-50 max-h-48 overflow-y-auto divide-y dark:divide-slate-700/50">
+                                                    {manualProdSuggestions.map((inv, idx) => (
+                                                        <div
+                                                            key={inv.id || idx}
+                                                            onMouseDown={(e) => {
+                                                                e.preventDefault();
+                                                                setManualProduct(inv.name);
+                                                                if (Number(inv.price) > 0) setManualPrice(Number(inv.price).toLocaleString());
+                                                                setShowManualProdSuggestions(false);
+                                                            }}
+                                                            className="px-2.5 py-1.5 text-xs hover:bg-blue-50 dark:hover:bg-slate-700 cursor-pointer flex justify-between items-center gap-2"
+                                                        >
+                                                            <span className={`font-bold truncate ${inv.isSoldOut ? 'line-through text-slate-400' : 'text-slate-800 dark:text-slate-100'}`}>{inv.name}</span>
+                                                            <span className="text-[10px] font-extrabold text-blue-600 dark:text-blue-400 shrink-0">{Number(inv.price || 0).toLocaleString()}원</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
                                         </div>
                                         <input type="text" placeholder="단가" value={manualPrice} onChange={e => { const val = e.target.value.replace(/,/g, ''); if (val === '' || val === '-') setManualPrice(val); else if(!isNaN(val)) setManualPrice(Number(val).toLocaleString()); }} className={`w-16 border dark:border-slate-600 rounded px-2 py-1.5 text-xs outline-none text-right bg-white dark:bg-slate-900 transition-all ${isFixedProductMode ? 'ring-2 ring-slate-600 border-slate-600' : ''}`} />
                                     </div>
@@ -5890,7 +6149,7 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                 liveDepsForNick.forEach(item => { if (!combinedDepsMap.has(item.id)) combinedDepsMap.set(item.id, item); });
                                 const customerDeps = Array.from(combinedDepsMap.values());
                                 
-                                return (<CustomerBlock key={nick} nick={nick} items={items} isSelected={selectedNick === nick} currentShipping={ship} isCard={isCard} isCardCompleted={isCardCompleted} isPaidState={bal <= 0 && activeItems.length > 0} grandTotal={grand} depositTotal={depSum} balance={bal} baseGrandTotal={baseGrand} baseBalance={baseBal} addr={addrData} addrType={addrType} addressMapping={addressMapping} autoDepositorName={addrData?.realname || ''} displayDepositorName={depositorNames[nick] || addrData?.realname || '입금자'} isAutoDepositor={!depositorNames[nick] && addrData?.realname} depositorNames={depositorNames} copyStatus={copyStatus} isOrderConfirmed={checkedOrders.has(nick)} isEditingShipping={editingShippingNick === nick} setSelectedNick={setSelectedNick} addOrderLogic={addOrderLogic} handleNicknameEdit={handleNicknameEdit} toggleCardPayment={toggleCardPayment} handleShippingChange={handleShippingChange} setEditingShippingNick={setEditingShippingNick} openModal={openModal} setDepositorNames={setDepositorNames} handleFullDepositToggle={handleFullDepositToggle} copyOrderSheet={copyOrderSheet} handleOrderCheckToggle={handleOrderCheckToggle} handleAddressUnmapping={handleAddressUnmapping} handleAddressMapping={handleAddressMapping} handleProductChange={handleProductChange} handleQuantityUpdate={handleQuantityUpdate} handleOrderCancel={handleOrderCancel} handleOrderDelete={handleOrderDelete} toggleVIP={specialCustomers} specialCustomers={specialCustomers} handleOpenQuickAddress={handleOpenQuickAddress} findAddressSuggestions={findAddressSuggestions} cashReceiptStatus={cashReceipts[nick]} toggleCashReceipt={toggleCashReceipt} inventory={inventory} productHistory={productHistory} customerDeposits={customerDeps} handleDepositUnmatch={handleDepositUnmatch} handleMultiAddOpen={setMultiAddNick} toggleNoShow={toggleNoShow} toggleBlacklist={toggleBlacklist} toggleWaitlist={toggleWaitlist} noShowStatus={noShowCustomers[nick]} waitlistStatus={waitlistCustomers[nick]} customerPassword={customerPasswords && customerPasswords[nick]} handleSetCustomerPassword={handleSetCustomerPassword} trackingNumber={trackingNumbers && trackingNumbers[nick]} handleSetTrackingNumber={handleSetTrackingNumber} customerCredit={customerCredits && customerCredits[nick]} handleSetCustomerCredit={handleSetCustomerCredit} handleConvertOverpaidToCredit={handleConvertOverpaidToCredit} handleApplyCustomerCreditToOrder={handleApplyCustomerCreditToOrder} waitlistRankMap={waitlistRankMap} />);
+                                return (<CustomerBlock key={nick} nick={nick} items={items} isSelected={selectedNick === nick} currentShipping={ship} isCard={isCard} isCardCompleted={isCardCompleted} isPaidState={bal <= 0 && activeItems.length > 0} grandTotal={grand} depositTotal={depSum} balance={bal} baseGrandTotal={baseGrand} baseBalance={baseBal} addr={addrData} addrType={addrType} addressMapping={addressMapping} autoDepositorName={addrData?.realname || ''} displayDepositorName={depositorNames[nick] || addrData?.realname || '입금자'} isAutoDepositor={!depositorNames[nick] && addrData?.realname} depositorNames={depositorNames} copyStatus={copyStatus} isOrderConfirmed={checkedOrders.has(nick)} isEditingShipping={editingShippingNick === nick} setSelectedNick={setSelectedNick} addOrderLogic={addOrderLogic} handleNicknameEdit={handleNicknameEdit} toggleCardPayment={toggleCardPayment} handleShippingChange={handleShippingChange} setEditingShippingNick={setEditingShippingNick} openModal={openModal} setDepositorNames={setDepositorNames} handleFullDepositToggle={handleFullDepositToggle} copyOrderSheet={copyOrderSheet} handleOrderCheckToggle={handleOrderCheckToggle} handleAddressUnmapping={handleAddressUnmapping} handleAddressMapping={handleAddressMapping} handleProductChange={handleProductChange} handleQuantityUpdate={handleQuantityUpdate} handleOrderCancel={handleOrderCancel} handleOrderDelete={handleOrderDelete} handleSplitOrderItem={handleSplitOrderItem} toggleVIP={specialCustomers} specialCustomers={specialCustomers} handleOpenQuickAddress={handleOpenQuickAddress} findAddressSuggestions={findAddressSuggestions} cashReceiptStatus={cashReceipts[nick]} toggleCashReceipt={toggleCashReceipt} inventory={inventory} productHistory={productHistory} customerDeposits={customerDeps} handleDepositUnmatch={handleDepositUnmatch} handleMultiAddOpen={setMultiAddNick} toggleNoShow={toggleNoShow} toggleBlacklist={toggleBlacklist} toggleWaitlist={toggleWaitlist} noShowStatus={noShowCustomers[nick]} waitlistStatus={waitlistCustomers[nick]} customerPassword={customerPasswords && customerPasswords[nick]} handleSetCustomerPassword={handleSetCustomerPassword} trackingNumber={trackingNumbers && trackingNumbers[nick]} handleSetTrackingNumber={handleSetTrackingNumber} customerCredit={customerCredits && customerCredits[nick]} handleSetCustomerCredit={handleSetCustomerCredit} handleConvertOverpaidToCredit={handleConvertOverpaidToCredit} handleApplyCustomerCreditToOrder={handleApplyCustomerCreditToOrder} waitlistRankMap={waitlistRankMap} />);
                             })}
                         </div>
                     </div>
@@ -6636,25 +6895,6 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                                 <button onClick={() => chatFileInputRef.current.click()} className="w-full bg-indigo-600 text-white font-bold py-3 rounded-lg transition-transform hover:scale-105 shadow-md flex items-center justify-center gap-2 hover:bg-indigo-700"><Icon name="microsoft-excel-logo" weight="fill"/> 엑셀 채팅 업로드</button>
                             </div>
                         </div>
-
-                        {/* ✨ 방송별 롯데택배 송장번호 엑셀 일괄 등록 영역 */}
-                        <div className="col-span-2 bg-red-50 dark:bg-red-900/20 p-6 rounded-xl border border-red-200 dark:border-red-800 flex flex-row items-center justify-between gap-4">
-                            <div className="text-left flex-1">
-                                <h2 className="text-lg font-bold mb-1.5 text-red-700 dark:text-red-300 flex items-center gap-2"><Icon name="truck" weight="fill"/> 방송별 롯데택배 송장번호 일괄 등록</h2>
-                                <p className="text-red-600 dark:text-red-400 text-xs">택배사 출고 엑셀 파일(닉네임 또는 수령인/연락처 + 송장번호 열 포함)을 올리면 해당 방송 주문서 시트에 송장번호가 자동 매칭되어 고객 포털에서 즉시 배송흐름 조회가 가능해집니다.</p>
-                            </div>
-                            <div className="flex items-center gap-2 w-1/2">
-                                <input 
-                                    type="text" 
-                                    value={targetTrackingBroadcast} 
-                                    onChange={e => setTargetTrackingBroadcast(e.target.value)} 
-                                    placeholder="적용할 방송명 (예: 10/18 여성복)" 
-                                    className="flex-1 border border-red-300 dark:border-red-700 rounded-lg px-3 py-3 text-xs font-bold bg-white dark:bg-slate-800 dark:text-white outline-none"
-                                />
-                                <input type="file" accept=".xlsx, .xls, .csv" ref={trackingFileInputRef} onChange={handleTrackingExcelUpload} className="hidden" />
-                                <button onClick={() => trackingFileInputRef.current.click()} className="bg-red-600 text-white font-bold px-4 py-3 rounded-lg transition-transform hover:scale-105 shadow-md flex items-center justify-center gap-1.5 hover:bg-red-700 whitespace-nowrap text-xs"><Icon name="upload-simple" weight="bold"/> 송장 엑셀 업로드</button>
-                            </div>
-                        </div>
                     </div>
                 </div>
             );
@@ -7228,7 +7468,8 @@ const LiveTab = ({ youtubeApiKey, youtubeVideoId, orders, setOrders, productHist
                     {globalError && (
                         <div className="bg-red-500 text-white text-xs py-1 px-4 text-center font-bold shadow-md relative z-50 flex items-center justify-center gap-2">
                             <span>{globalError}</span>
-                            <button onClick={()=>setGlobalError('')} className="ml-2 bg-red-700 px-2 py-0.5 rounded hover:bg-red-800 transition-colors">닫기</button>
+                            <button onClick={() => { setGlobalError(''); window.dispatchEvent(new CustomEvent('force-sync')); }} className="ml-2 bg-amber-400 text-slate-900 px-2 py-0.5 rounded hover:bg-amber-300 transition-colors font-extrabold">키 다시시도</button>
+                            <button onClick={()=>setGlobalError('')} className="bg-red-700 px-2 py-0.5 rounded hover:bg-red-800 transition-colors">닫기</button>
                         </div>
                     )}
                     
